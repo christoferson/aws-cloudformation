@@ -1,0 +1,48 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 
+  S3 Basic Template
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "S3 Configuration"
+        Parameters: 
+          - BucketName
+
+    ParameterLabels: 
+      BucketName: 
+        default: "Bucket Name"
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------# 
+Parameters:
+  BucketName:
+    Type: "String"
+    Default: "my-bucket"
+    Description: "Bucket Name"
+
+Resources:
+# ------------------------------------------------------------#
+#  S3 Bucket
+# ------------------------------------------------------------#        
+  Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: PublicRead
+      VersioningConfiguration:
+         Status: Suspended
+
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+        - Action: "s3:GetObject"
+          Effect: Allow
+          Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+          Principal: '*'
