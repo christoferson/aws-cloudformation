@@ -22,7 +22,7 @@ Parameters:
   BucketName:
     Type: "String"
     Default: "my-bucket"
-    Description: "Bucket Name"
+    Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
 
 Resources:
 # ------------------------------------------------------------#
@@ -32,9 +32,12 @@ Resources:
     Type: "AWS::S3::Bucket"
     Properties:
       BucketName: !Ref BucketName
-      AccessControl: PublicRead
+      AccessControl: Private # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
       VersioningConfiguration:
          Status: Suspended
+      Tags:
+        - Key: "management"
+          Value: "manual"
 
   BucketPolicy:
     Type: "AWS::S3::BucketPolicy"
