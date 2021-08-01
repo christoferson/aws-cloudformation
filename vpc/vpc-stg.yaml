@@ -281,7 +281,16 @@ Resources:
     Properties:
       SubnetId: !Ref PrivateSubnet02
       RouteTableId: !Ref PrivateRouteTable02
-             
+
+# Parameters
+
+  VpcIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/id"
+      Type: String
+      Value: !Ref VPC
+        
 Outputs:
 
   SubnetIds:
