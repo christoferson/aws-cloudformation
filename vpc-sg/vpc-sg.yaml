@@ -1,0 +1,38 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC Security Group'
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
+Resources:
+
+  eksControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${Application}-${Environment}-eks-control-sg"
+      GroupDescription: Cluster communication with worker nodes
+      VpcId: !Sub "{{resolve:ssm:/${Application}/${Environment}/vpc/id:1}}"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-eks-control-sg"
+
+  eksNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${Application}-${Environment}-eks-node-sg"
+      GroupDescription: Communication between nodes
+      VpcId: !Sub "{{resolve:ssm:/${Application}/${Environment}/vpc/id:1}}"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-eks-node-sg"
+
