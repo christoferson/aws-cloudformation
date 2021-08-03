@@ -290,7 +290,21 @@ Resources:
       Name: !Sub "/${Application}/${Environment}/vpc/id"
       Type: String
       Value: !Ref VPC
-        
+
+  PrivateSubnet01IdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/subnet/private-subnet-1/id"
+      Type: String
+      Value: !Ref PrivateSubnet01
+
+  PrivateSubnet02IdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/subnet/private-subnet-2/id"
+      Type: String
+      Value: !Ref PrivateSubnet02
+
 Outputs:
 
   SubnetIds:
