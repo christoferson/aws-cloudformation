@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'IAM Groups, Roles, Policies'
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+Resources:
+
+# EKS Cluster Role
+
+  eksClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Application}-eks-cluster-role'
+      Description: "EKS Cluster Role"    
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - eks.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+ 
