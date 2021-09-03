@@ -1,0 +1,48 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'LAB VPC ENDPOINT'
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+Resources:
+
+  S3Endpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - "s3:ListBucket"
+              - "s3:ListAllMyBuckets"
+            Resource: "arn:aws:s3:::*"                          
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - "s3:*Object*"
+            Resource:
+              - "arn:aws:s3:::*/*"
+      RouteTableIds:
+        - rtb-xxxxx
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: "vpc-xxxxxx"
+
+             
+Outputs:
+
+  VpcEndpointId:
+    Description: The Endpoint Id
+    Value: !Ref S3Endpoint
+    
