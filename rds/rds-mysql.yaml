@@ -1,0 +1,99 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS MySQL'
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  MySQLMajorVersion:
+    Type: String
+    Default: '8.0'
+    AllowedValues:
+      - '5.5'
+      - '5.6'
+      - '5.7'
+      - '8.0'
+
+  MySQLMinorVersion:
+    Type: String
+    Default: '20'
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Database Configuration"
+        Parameters:
+          - MySQLMajorVersion
+          - MySQLMinorVersion
+          
+Resources:
+
+   # ------------------------------------------------------------#
+   #  DBSubnetGroup
+   # ------------------------------------------------------------#
+   DBSubnetGroup: 
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupName: !Sub "${Application}-${Environment}-db-subnet"
+      DBSubnetGroupDescription: "-"
+      SubnetIds: 
+        - !Sub "{{resolve:ssm:/${Application}/${Environment}/vpc/subnet/private-subnet-1/id:1}}"
+        - !Sub "{{resolve:ssm:/${Application}/${Environment}/vpc/subnet/private-subnet-2/id:1}}"
+        #- !Sub "{{resolve:ssm:/${Application}/${Environment}/vpc/subnet/private-subnet-3/id:1}}"
+
+   # ------------------------------------------------------------#
+   #  DBParameterGroup
+   # ------------------------------------------------------------#
+   DBParameterGroup:
+    Type: "AWS::RDS::DBParameterGroup"
+    Properties:
+      Family: !Sub "MySQL${MySQLMajorVersion}"
+      Description: !Sub "${Application}-${Environment}-db-pg"
+
+   # ------------------------------------------------------------#
+   #  Database
+   # ------------------------------------------------------------#
+   DBInstance:
+     Type: AWS::RDS::DBInstance
+     Properties:
+       Engine: MySQL
+       EngineVersion: !Sub "${MySQLMajorVersion}.${MySQLMinorVersion}"
+       DBInstanceIdentifier: !Sub "${Application}-${Environment}-db"
+       MasterUsername: master
+       MasterUserPassword: !Sub "{{resolve:ssm-secure:/${Application}/${Environment}/db/master/password:1}}"
+       DBInstanceClass: db.t2.micro
+       StorageType: "gp2"
+       AllocatedStorage: "20"
+       MultiAZ: false  
+       DBSubnetGroupName: !Ref DBSubnetGroup
+       PubliclyAccessible: false
+       VPCSecurityGroups:
+       - !Sub "{{resolve:ssm:/${Application}/${Environment}/db/sg/id:1}}"
+       DBParameterGroupName: !Ref DBParameterGroup
+       CopyTagsToSnapshot: true
+       BackupRetentionPeriod: 7
+     DeletionPolicy: "Delete"
+     
+              
+Outputs:
+
+  DBInstanceEndpoint:
+    Value: !GetAtt DBInstance.Endpoint.Address
