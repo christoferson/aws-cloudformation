@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources: 
+  DynamoDBTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "PlayerID"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "PlayerID"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName: "Player"
+
+Outputs:
+
+  DynamoDBTableId:
+    Description: The DynamoDB Table
+    Value: !Ref DynamoDBTable
