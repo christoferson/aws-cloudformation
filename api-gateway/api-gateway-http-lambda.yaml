@@ -23,7 +23,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-  MyLambdaFunction:
+  LambdaFunctionGetDemo:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: nodejs12.x
@@ -54,7 +54,7 @@ Resources:
       ApiId: !Ref HttpApi
       Description: Lambda Integration GET /demo
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt MyLambdaFunction.Arn
+      IntegrationUri: !GetAtt LambdaFunctionGetDemo.Arn
       IntegrationMethod: POST
       PayloadFormatVersion: '2.0'
 
@@ -76,10 +76,10 @@ Resources:
         DestinationArn: !GetAtt MyLogGroup.Arn
         Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
 
-  APIInvokeLambdaPermission:
+  InvokeLambdaPermissionGetDemo:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref MyLambdaFunction
+      FunctionName: !Ref LambdaFunctionGetDemo
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
@@ -95,4 +95,9 @@ Resources:
 Outputs:
   InvokeURL:
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  LambdaFunctionGetDemoName:
+    Value: !Ref LambdaFunctionGetDemo
+  FunctionExecutionRoleName:
+    Value: !Ref FunctionExecutionRole
+
 
