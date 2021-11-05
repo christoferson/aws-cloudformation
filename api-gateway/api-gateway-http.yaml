@@ -1,0 +1,67 @@
+# TODO
+# Parameterize Lambda ARN. ${LambdaArn}
+
+Resources:
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: demo-lambda-proxy
+      Description: Lambda Proxy / Uses  resource-based permissions
+      ProtocolType: HTTP
+
+  Integration:
+    Type: 'AWS::ApiGatewayV2::Integration'
+    Properties:
+      ApiId: !Ref HttpApi
+      Description: Lambda Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations  
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  RouteGetDemo:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /demo'
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref Integration
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      AutoDeploy: true
+      StageName: 'stg'
+
+
+  APIInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub ${LambdaArn}
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+Outputs:
+  InvokeURL:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+
