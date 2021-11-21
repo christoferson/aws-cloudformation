@@ -13,14 +13,14 @@ Parameters:
   TopicName:
     Type: String
     Default: sample-topic
-    Description: Environment    
+    Description: Topic Name    
 
 Resources:
   
   SNSTopic:
     Type: "AWS::SNS::Topic"
     Properties:
-      TopicName: !Ref TopicName
+      TopicName: !Sub "${Application}-${Environment}-${TopicName}"
 
   Subscription:
     Type: AWS::SNS::Subscription
