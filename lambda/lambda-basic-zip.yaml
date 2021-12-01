@@ -1,6 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Lambda Basic with Zip Source in S3
 
+Parameters:
+
+  CodeBucketName:
+    Type: String
+    Default: demo-cloudformation
+    Description: Bucket containing lambda code
+
+  CodeObjectKey:
+    Type: String
+    Default: lambda/basic-lambda-zip.zip
+    Description: Object Key of the zipped code
+
 Resources:
 
   # Lambda
@@ -30,13 +42,13 @@ Resources:
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Code:
-        S3Bucket: demo-cloudformation
-        S3Key: lambda/basic-lambda-zip.zip
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
 
 Outputs:
-  LambdaFunctionName:
-    Value: !Ref LambdaFunction
-  FunctionExecutionRoleName:
-    Value: !Ref FunctionExecutionRole
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
 
 
