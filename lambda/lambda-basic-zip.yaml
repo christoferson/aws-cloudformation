@@ -41,9 +41,15 @@ Resources:
       Runtime: nodejs12.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
       Code:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey
+        #S3ObjectVersion: 1
+
 
 Outputs:
   LambdaFunctionArn:

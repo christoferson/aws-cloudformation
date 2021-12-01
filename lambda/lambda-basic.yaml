@@ -1,3 +1,5 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Basic with Inline Source
 
 Resources:
 
@@ -27,6 +29,10 @@ Resources:
       Runtime: nodejs12.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
       Code:
         ZipFile: |
           exports.handler = async (event) => {
@@ -38,9 +44,9 @@ Resources:
           };
 
 Outputs:
-  LambdaFunctionName:
-    Value: !Ref LambdaFunction
-  FunctionExecutionRoleName:
-    Value: !Ref FunctionExecutionRole
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
 
 
