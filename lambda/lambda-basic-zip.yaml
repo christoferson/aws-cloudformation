@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Basic with Zip Source in S3
+
+Resources:
+
+  # Lambda
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "basic-lambda-zip-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "basic-lambda-zip"
+      Description: "Basic Lambda Zip File in S3"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Code:
+        S3Bucket: demo-cloudformation
+        S3Key: lambda/basic-lambda-zip.zip
+
+Outputs:
+  LambdaFunctionName:
+    Value: !Ref LambdaFunction
+  FunctionExecutionRoleName:
+    Value: !Ref FunctionExecutionRole
+
+
