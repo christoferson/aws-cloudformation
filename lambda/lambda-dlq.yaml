@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda with DLQ. Uses DeadLetterConfig to specify the SQS Queue.
+
+Resources:
+
+  DeadLetterQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       QueueName: dlq-lambda-dlq-queue
+
+ 
+  DeadLetterQueuePolicy: 
+    Type: AWS::SQS::QueuePolicy
+    Properties: 
+      Queues: 
+        - !Ref DeadLetterQueue
+      PolicyDocument: 
+        Statement:
+          - 
+            Action: 
+              - "SQS:SendMessage" 
+              - "SQS:ReceiveMessage"
+            Effect: "Allow"
+            Resource: !GetAtt DeadLetterQueue.Arn
+            Principal: "*" 
+              #AWS:
+               # - !Sub "${AWS::AccountId}"
+      
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "dlq-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole 
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "dlq-lambda"
+      Description: "Lambda DLQ"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              throw new Error('Authentication Failed');
+          };
+      DeadLetterConfig:
+        TargetArn: !GetAtt DeadLetterQueue.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+  DeadLetterQueueArn:
+    Value: !GetAtt DeadLetterQueue.Arn
+
