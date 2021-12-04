@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda with Destination
+
+Resources:
+
+  DestinationSuccessQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       QueueName: dst-lambda-success-queue
+
+  DestinationFailureQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       QueueName: dst-lambda-failure-queue
+
+  # Lambda
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "dst-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "dst-lambda"
+      Description: "Lambda with Destination"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+  DestinationSuccessQueueArn:
+    Value: !GetAtt DestinationSuccessQueue.Arn
+  DestinationFailureQueueArn:
+    Value: !GetAtt DestinationFailureQueue.Arn
+
+
