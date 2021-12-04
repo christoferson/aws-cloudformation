@@ -22,9 +22,8 @@ Resources:
               - "SQS:ReceiveMessage"
             Effect: "Allow"
             Resource: !GetAtt DeadLetterQueue.Arn
-            Principal: "*" 
-              #AWS:
-               # - !Sub "${AWS::AccountId}"
+            Principal:
+              AWS: !Sub "${AWS::AccountId}"
       
   FunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -41,7 +40,15 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+      Policies:
+        - PolicyName: sqs-integration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Action: "sqs:SendMessage"
+              Effect: Allow
+              Resource: !GetAtt DeadLetterQueue.Arn
 
   LambdaFunction:
     Type: AWS::Lambda::Function
