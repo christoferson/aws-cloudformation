@@ -30,6 +30,16 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: sqs-integration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Action: "sqs:SendMessage"
+              Effect: Allow
+              Resource: 
+                - !GetAtt DestinationSuccessQueue.Arn
+                - !GetAtt DestinationFailureQueue.Arn
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -46,12 +56,33 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = async (event) => {
+	          if (event.type == 'error') { throw new Error('Authentication Failed');
               const response = {
                   statusCode: 200,
                   body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
               };
               return response;
           };
+
+#  LambdaFunctionVersion:
+#    Type: AWS::Lambda::Version
+#    Properties:
+#      FunctionName: !Ref LambdaFunction
+
+  LambdaFunctionEventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      MaximumEventAgeInSeconds: 300
+      MaximumRetryAttempts: 1
+      Qualifier: "$LATEST"
+#      Qualifier: !GetAtt version.Version
+      DestinationConfig:
+          OnSuccess:
+            Destination: !GetAtt DestinationSuccessQueue.Arn
+          OnFailure:
+            Destination: !GetAtt DestinationFailureQueue.Arn
+
 
 Outputs:
   LambdaFunctionArn:
