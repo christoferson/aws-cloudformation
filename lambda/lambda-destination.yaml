@@ -13,6 +13,11 @@ Resources:
     Properties: 
        QueueName: dst-lambda-failure-queue
 
+  DeadLetterQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       QueueName: dst-lambda-deadletter-queue
+
   # Lambda
 
   FunctionExecutionRole:
@@ -40,6 +45,7 @@ Resources:
               Resource: 
                 - !GetAtt DestinationSuccessQueue.Arn
                 - !GetAtt DestinationFailureQueue.Arn
+                - !GetAtt DeadLetterQueue.Arn
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -63,6 +69,8 @@ Resources:
               };
               return response;
           };
+      DeadLetterConfig:
+        TargetArn: !GetAtt DeadLetterQueue.Arn
 
 #  LambdaFunctionVersion:
 #    Type: AWS::Lambda::Version
@@ -83,7 +91,6 @@ Resources:
           OnFailure:
             Destination: !GetAtt DestinationFailureQueue.Arn
 
-
 Outputs:
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
@@ -93,5 +100,8 @@ Outputs:
     Value: !GetAtt DestinationSuccessQueue.Arn
   DestinationFailureQueueArn:
     Value: !GetAtt DestinationFailureQueue.Arn
+  DeadLetterQueueArn:
+    Value: !GetAtt DeadLetterQueue.Arn
+
 
 
