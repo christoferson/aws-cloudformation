@@ -1,12 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Resources: 
+Resources:
+
   StandardQueue: 
     Type: AWS::SQS::Queue
     Properties: 
-       QueueName: standard-queue
+       QueueName: sqs-queue-standard
+       VisibilityTimeout: 30
+       Tags:
+         -
+            Key: env
+            Value: test
+Outputs:
 
-Outputs: 
   StandardQueueARN: 
     Description: "ARN of queue"
     Value: !GetAtt StandardQueue.Arn
