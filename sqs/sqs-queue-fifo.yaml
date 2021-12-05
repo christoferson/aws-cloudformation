@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources: 
+
+  FifoQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       QueueName: sqs-queue-fifo.fifo
+       FifoQueue: true
+       ContentBasedDeduplication: true
+       DelaySeconds: 0
+       MaximumMessageSize: 262144
+       MessageRetentionPeriod: 345600
+       ReceiveMessageWaitTimeSeconds: 20
+       VisibilityTimeout: 30
+       Tags:
+         -
+            Key: env
+            Value: test
+
+Outputs:
+
+  FifoQueueArn: 
+    Description: "ARN of queue"
+    Value: !GetAtt FifoQueue.Arn
