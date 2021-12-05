@@ -41,6 +41,7 @@ Resources:
         ZipFile: |
           exports.handler = async (event) => {
               console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed');
               const response = {
                   statusCode: 200,
                   body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
@@ -53,7 +54,12 @@ Resources:
     Properties:
       EventSourceArn: !GetAtt LambdaTriggerSqsQueue.Arn
       FunctionName: !GetAtt LambdaFunction.Arn
-
+      Enabled: true
+      BatchSize: 10
+      #MaximumBatchingWindowInSeconds: 1
+      #FilterCriteria: xx
+        #filters:
+           #- Pattern: ""
 Outputs:
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
