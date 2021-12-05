@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda triggerd by SQS
+
+Resources:
+
+  LambdaTriggerSqsQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       QueueName: lambda-trigger-sqs-queue
+      
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "lambda-trigger-sqs-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "lambda-trigger-sqs-lambda"
+      Description: "Lambda Triggered by SQS"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt LambdaTriggerSqsQueue.Arn
+      FunctionName: !GetAtt LambdaFunction.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+  LambdaTriggerSqsQueueArn:
+    Value: !GetAtt LambdaTriggerSqsQueue.Arn
+
