@@ -6,7 +6,7 @@ Resources:
   DeadLetterQueue: 
     Type: AWS::SQS::Queue
     Properties: 
-       QueueName: dlq-lambda-dlq-queue
+       QueueName: deadletter-lambda-dlq-queue
 
 #  DeadLetterQueuePolicy: 
 #    Type: AWS::SQS::QueuePolicy
@@ -27,7 +27,7 @@ Resources:
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "dlq-lambda-role"
+      RoleName: "deadletter-lambda-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -52,7 +52,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "dlq-lambda"
+      FunctionName : "deadletter-lambda-function"
       Description: "Lambda DLQ"
       Runtime: nodejs12.x
       Role: !GetAtt FunctionExecutionRole.Arn
