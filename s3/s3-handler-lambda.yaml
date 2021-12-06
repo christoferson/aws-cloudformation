@@ -1,0 +1,101 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 
+  S3 Basic Template
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "S3 Configuration"
+        Parameters: 
+          - BucketName
+
+    ParameterLabels: 
+      BucketName: 
+        default: "Bucket Name"
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------# 
+Parameters:
+  BucketName:
+    Type: "String"
+    Default: "s3-handler-lambda-bucket"
+    Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
+
+Resources:
+        
+  Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      VersioningConfiguration:
+         Status: Suspended
+      NotificationConfiguration:
+         LambdaConfigurations:
+            - Event: "s3:ObjectCreated:*"
+              Function: !GetAtt LambdaFunction.Arn
+              #TODO: Add Filter
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "s3-handler-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        #- arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "s3-handler-lambda-function"
+      Description: "S3 Lambda Notification Handler"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+  InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "s3.amazonaws.com"
+      SourceArn: !Sub "arn:aws:s3:::${BucketName}"
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+  BucketArn:
+    Value: !GetAtt Bucket.Arn
