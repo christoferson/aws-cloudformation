@@ -1,7 +1,6 @@
 
 AWSTemplateFormatVersion: "2010-09-09"
-Description: 
-  S3 Basic Template
+Description: S3 with Event Notification - Trigger Lambda
 
 Metadata:
   "AWS::CloudFormation::Interface":
@@ -15,10 +14,8 @@ Metadata:
       BucketName: 
         default: "Bucket Name"
 
-# ------------------------------------------------------------#
-# Input Parameters
-# ------------------------------------------------------------# 
 Parameters:
+
   BucketName:
     Type: "String"
     Default: "s3-handler-lambda-bucket"
@@ -37,7 +34,11 @@ Resources:
          LambdaConfigurations:
             - Event: "s3:ObjectCreated:*"
               Function: !GetAtt LambdaFunction.Arn
-              #TODO: Add Filter
+              Filter:
+                 S3Key:
+                    Rules:
+                       - Name: suffix
+                         Value: txt
       Tags:
         - Key: "management"
           Value: "manual"

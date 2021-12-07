@@ -12,6 +12,14 @@ aws cloudformation validate-template --template-body file://C:\xxx\yyy\zzz\lambd
 
 lambda-trigger-sqs.yaml
 
+
+## S3
+
+### S3 Notification Handler Lambda
+
+s3-handler-lambda.yaml
+
+
 TODO
 
 ### Lambda triggered by S3
