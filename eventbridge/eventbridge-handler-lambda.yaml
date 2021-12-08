@@ -1,0 +1,78 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Notification (Periodic) - Trigger Lambda
+
+Metadata:
+
+  StackVersion: 1
+
+Resources:
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "eventbridge-handler-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "eventbridge-handler-lambda-function"
+      Description: "EventBridge Lambda Notification Handler"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              console.log('Bucket: ' + event.Records[0].s3.bucket.name);
+              console.log('Key: ' + event.Records[0].s3.object.key);
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+  EventBridgeScheduledRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(2 minutes)"
+      State: "ENABLED"
+      Targets:
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunctionV1"
+
+  InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeScheduledRule.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+  EventBridgeScheduledRuleArn:
+    Value: !GetAtt EventBridgeScheduledRule.Arn
