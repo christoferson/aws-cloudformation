@@ -12,7 +12,9 @@ Metadata:
 
     ParameterLabels: 
       BucketName: 
-        default: "Bucket Name"
+        Default: "Bucket Name"
+        MinLength: 1
+        MaxLength: 64
 
 Parameters:
 
@@ -37,6 +39,8 @@ Resources:
               Filter:
                  S3Key:
                     Rules:
+                       - Name: prefix
+                         Value: notify
                        - Name: suffix
                          Value: txt
       Tags:
@@ -78,6 +82,8 @@ Resources:
           exports.handler = async (event) => {
               console.log(event);
               if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              console.log('Bucket: ' + event.Records[0].s3.bucket.name);
+              console.log('Key: ' + event.Records[0].s3.object.key);
               const response = {
                   statusCode: 200,
                   body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
