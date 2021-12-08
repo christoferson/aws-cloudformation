@@ -4,7 +4,7 @@ Description: EventBridge Notification (Periodic) - Trigger Lambda
 
 Metadata:
 
-  StackVersion: 1
+  StackVersion: 2
 
 Resources:
 
@@ -41,8 +41,8 @@ Resources:
           exports.handler = async (event) => {
               console.log(event);
               if (event.type == 'error') { throw new Error('Authentication Failed'); }
-              console.log('Bucket: ' + event.Records[0].s3.bucket.name);
-              console.log('Key: ' + event.Records[0].s3.object.key);
+              console.log('Type: ' + event['detail-type']);
+              console.log('Time: ' + event.time);
               const response = {
                   statusCode: 200,
                   body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
@@ -53,10 +53,12 @@ Resources:
   EventBridgeScheduledRule: 
     Type: AWS::Events::Rule
     Properties: 
+      #Name: xx
       Description: "ScheduledRule"
+      #EventBusName: default
       ScheduleExpression: "rate(2 minutes)"
       State: "ENABLED"
-      Targets:
+      Targets: #up to five (5) targets
         - 
           Arn: !GetAtt LambdaFunction.Arn
           Id: "TargetFunctionV1"
