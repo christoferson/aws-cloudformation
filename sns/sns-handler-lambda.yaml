@@ -23,6 +23,7 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess 
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -41,8 +42,8 @@ Resources:
           exports.handler = async (event) => {
               console.log(event);
               if (event.type == 'error') { throw new Error('Authentication Failed'); }
-              //console.log('Type: ' + event['detail-type']);
-              //console.log('Time: ' + event.time);
+              var message = event.Records[0].Sns.Message;
+              console.log(message);
               const response = {
                   statusCode: 200,
                   body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
