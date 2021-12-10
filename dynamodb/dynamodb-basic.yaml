@@ -1,29 +1,32 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Resources: 
-  DynamoDBTable: 
+Description: "Dynamo DB"
+
+Resources:
+
+  DynamoTable: 
     Type: AWS::DynamoDB::Table
     Properties: 
+      TableName: "Character"
       AttributeDefinitions: 
         - 
           AttributeName: "Region"
           AttributeType: "S"
         - 
-          AttributeName: "PlayerID"
+          AttributeName: "Name"
           AttributeType: "S"
       KeySchema: 
         - 
           AttributeName: "Region"
           KeyType: "HASH"
         - 
-          AttributeName: "PlayerID"
+          AttributeName: "Name"
           KeyType: "RANGE"
       ProvisionedThroughput: 
         ReadCapacityUnits: "5"
         WriteCapacityUnits: "5"
-      TableName: "Player"
 
 Outputs:
 
-  DynamoDBTableId:
-    Description: The DynamoDB Table
-    Value: !Ref DynamoDBTable
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
