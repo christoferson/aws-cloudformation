@@ -4,7 +4,7 @@ Description: SNS Notification - Trigger Lambda
 
 Metadata:
 
-  StackVersion: 1
+  StackVersion: 2
 
 Resources:
 
@@ -37,6 +37,8 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
+      TracingConfig:
+        Mode: "Active"
       Code:
         ZipFile: |
           exports.handler = async (event) => {
