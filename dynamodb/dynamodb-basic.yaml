@@ -12,14 +12,14 @@ Resources:
           AttributeName: "Region"
           AttributeType: "S"
         - 
-          AttributeName: "Name"
+          AttributeName: "CharacterName"
           AttributeType: "S"
       KeySchema: 
         - 
           AttributeName: "Region"
           KeyType: "HASH"
         - 
-          AttributeName: "Name"
+          AttributeName: "CharacterName"
           KeyType: "RANGE"
       ProvisionedThroughput: 
         ReadCapacityUnits: "5"
