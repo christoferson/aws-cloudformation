@@ -17,6 +17,9 @@ Resources:
         - 
           AttributeName: "Race"
           AttributeType: "S"
+        - 
+          AttributeName: "Profession"
+          AttributeType: "S"
       KeySchema: 
         - 
           AttributeName: "Region"
@@ -40,6 +43,21 @@ Resources:
           Projection: 
             NonKeyAttributes: 
               - "CharacterName"
+              - "Profession"
+            ProjectionType: "INCLUDE"
+        - 
+          IndexName: "region-profession"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Profession"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Race"
             ProjectionType: "INCLUDE"
 
 Outputs:
