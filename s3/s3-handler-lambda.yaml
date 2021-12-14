@@ -3,6 +3,9 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: S3 with Event Notification - Trigger Lambda
 
 Metadata:
+
+  StackVersion: 1
+
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label: 
@@ -13,7 +16,7 @@ Metadata:
     ParameterLabels: 
       BucketName: 
         Default: "Bucket Name"
-        MinLength: 1
+        MinLength: 5
         MaxLength: 64
 
 Parameters:
