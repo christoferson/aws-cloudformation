@@ -35,6 +35,10 @@ Resources:
         RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
