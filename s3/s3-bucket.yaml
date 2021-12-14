@@ -1,0 +1,54 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: S3 Template
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "S3 Configuration"
+        Parameters: 
+          - BucketName
+
+    ParameterLabels: 
+      BucketName: 
+        default: "Bucket Name"
+
+Parameters:
+
+  BucketName:
+    Type: "String"
+    Default: "my-bucket"
+    Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
+
+Resources:
+
+  Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+        - Action: "s3:GetObject"
+          Effect: Allow
+          Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+          Principal: '*'
