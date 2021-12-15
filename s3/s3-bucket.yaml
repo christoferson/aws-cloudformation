@@ -29,8 +29,8 @@ Resources:
       AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
       PublicAccessBlockConfiguration:
         BlockPublicAcls: True
-        BlockPublicPolicy: True
         IgnorePublicAcls: True
+        BlockPublicPolicy: True
         RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
@@ -83,9 +83,9 @@ Resources:
           Effect: Allow
           Resource: !Sub "arn:aws:s3:::${Bucket}/*"
           Principal: '*'
-          #Condition:
-            #StringEquals: 
-              #s3:x-amz-acl: bucket-owner-full-control
+          Condition:
+            StringEquals: 
+              aws:SourceAccount: ${AWS::AccountId}
 
 Outputs:
   BucketArn:
