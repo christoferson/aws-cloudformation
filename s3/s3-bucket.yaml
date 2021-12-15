@@ -42,6 +42,35 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: !Sub "${BucketName}-lifecycle-rule-1"
+            Status: Enabled
+            Prefix: logs/
+            TagFilters:
+              - Key: key1
+                Value: value1
+              - Key: key2
+                Value: value2
+            ExpirationInDays: 365
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+              - StorageClass: GLACIER
+                TransitionInDays: 120
+          - Id: !Sub "${BucketName}-lifecycle-rule-2"
+            Status: Enabled
+            Prefix: uploads/
+            AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 3
+            ExpirationInDays: 365
+            NoncurrentVersionExpirationInDays: 145
+            # ObjectSizeGreaterThan: 
+            # ObjectSizeLessThan
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+
       Tags:
         - Key: "management"
           Value: "manual"
@@ -56,3 +85,10 @@ Resources:
           Effect: Allow
           Resource: !Sub "arn:aws:s3:::${Bucket}/*"
           Principal: '*'
+          Condition:
+            StringEquals: 
+              s3:x-amz-acl: bucket-owner-full-control
+
+Outputs:
+  BucketArn:
+    Value: !Ref Bucket
