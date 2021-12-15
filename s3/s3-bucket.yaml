@@ -63,14 +63,13 @@ Resources:
             Prefix: uploads/
             AbortIncompleteMultipartUpload:
                 DaysAfterInitiation: 3
-            ExpirationInDays: 365
-            NoncurrentVersionExpirationInDays: 145
+            #ExpirationInDays: 365
+            #NoncurrentVersionExpirationInDays: 145
             # ObjectSizeGreaterThan: 
             # ObjectSizeLessThan
-            Transitions:
-              - StorageClass: STANDARD_IA
-                TransitionInDays: 90
-
+            #Transitions:
+              #- StorageClass: STANDARD_IA
+                #TransitionInDays: 90
       Tags:
         - Key: "management"
           Value: "manual"
@@ -85,9 +84,9 @@ Resources:
           Effect: Allow
           Resource: !Sub "arn:aws:s3:::${Bucket}/*"
           Principal: '*'
-          Condition:
-            StringEquals: 
-              s3:x-amz-acl: bucket-owner-full-control
+          #Condition:
+            #StringEquals: 
+              #s3:x-amz-acl: bucket-owner-full-control
 
 Outputs:
   BucketArn:
