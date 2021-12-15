@@ -63,7 +63,7 @@ Resources:
             AbortIncompleteMultipartUpload:
                 DaysAfterInitiation: 3
             #ExpirationInDays: 365
-            #NoncurrentVersionExpirationInDays: 145
+            NoncurrentVersionExpirationInDays: 145
             # ObjectSizeGreaterThan: 
             # ObjectSizeLessThan
             #Transitions:
@@ -72,7 +72,6 @@ Resources:
       Tags:
         - Key: "management"
           Value: "manual"
-
 
 
 Outputs:
