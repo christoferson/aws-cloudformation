@@ -29,8 +29,8 @@ Resources:
       AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
       PublicAccessBlockConfiguration:
         BlockPublicAcls: True
-        BlockPublicPolicy: True
         IgnorePublicAcls: True
+        BlockPublicPolicy: False
         RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Enabled
@@ -73,6 +73,19 @@ Resources:
         - Key: "management"
           Value: "manual"
 
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+        - Action: "s3:GetObject"
+          Effect: Allow
+          Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+          Principal: '*'
+          #Condition:
+            #StringEquals: 
+              #s3:x-amz-acl: bucket-owner-full-control
 
 Outputs:
   BucketArn:
