@@ -12,6 +12,8 @@ Metadata:
     ParameterLabels: 
       BucketName: 
         default: "Bucket Name"
+        MinLength: 5
+        MaxLength: 64
 
 Parameters:
 

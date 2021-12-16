@@ -33,6 +33,11 @@ Resources:
     Properties:
       BucketName: !Ref BucketName
       AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
       NotificationConfiguration:
