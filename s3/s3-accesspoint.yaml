@@ -37,7 +37,7 @@ Resources:
       PublicAccessBlockConfiguration:
         BlockPublicAcls: True
         IgnorePublicAcls: True
-        BlockPublicPolicy: True
+        BlockPublicPolicy: False
         RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
@@ -86,13 +86,15 @@ Resources:
       Bucket: !Ref Bucket
       PolicyDocument:
         Statement:
-        - Action: "s3:GetObject"
-          Effect: Allow
+        - Action: 
+            - 's3:GetObject'
+            - 's3:PutObject'
+          Effect: Deny
           Resource: !Sub "arn:aws:s3:::${Bucket}/*"
           Principal: '*'
           Condition:
-            StringEquals: 
-              aws:SourceAccount: ${AWS::AccountId}
+            StringNotLike: 
+              s3:DataAccessPointArn: !Sub "arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/*"
 
   S3AccessPoint:
     Type: 'AWS::S3::AccessPoint'
@@ -110,6 +112,11 @@ Resources:
               - !Sub "arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${BucketName}-access-point/object/*"
             Principal:
               AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/sandbox'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: true
 
 Outputs:
   BucketArn:
