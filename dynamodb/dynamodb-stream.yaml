@@ -28,8 +28,8 @@ Resources:
           AttributeName: "CharacterName"
           KeyType: "RANGE"
       ProvisionedThroughput: 
-        ReadCapacityUnits: "2"
-        WriteCapacityUnits: "2"
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
       LocalSecondaryIndexes: 
         - 
           IndexName: "region-race"
@@ -59,9 +59,14 @@ Resources:
               - "CharacterName"
               - "Race"
             ProjectionType: "INCLUDE"
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
 
 Outputs:
 
   DynamoTableArn:
     Description: Dynamo Database Arn
     Value: !GetAtt DynamoTable.Arn
+
+  DynamoTableStreamArn:
+    Value: !GetAtt DynamoTable.StreamArn
