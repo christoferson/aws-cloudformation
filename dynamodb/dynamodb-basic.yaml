@@ -22,8 +22,8 @@ Resources:
           AttributeName: "CharacterName"
           KeyType: "RANGE"
       ProvisionedThroughput: 
-        ReadCapacityUnits: "2"
-        WriteCapacityUnits: "2"
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
 
 Outputs:
 
