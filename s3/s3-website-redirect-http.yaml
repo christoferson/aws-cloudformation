@@ -22,6 +22,12 @@ Parameters:
     Default: "s3-bucket-website"
     Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
 
+  RedirectTargetDomain:
+    Type: "String"
+    Default: "www.google.com"
+    Description: "Redirect target domain name"
+
+
 Resources:
 
   Bucket:
@@ -37,7 +43,7 @@ Resources:
             SSEAlgorithm: AES256
       WebsiteConfiguration:
         RedirectAllRequestsTo:
-          HostName: www.google.com
+          HostName: !Sub "${RedirectTargetDomain}"
           Protocol: http
       Tags:
         - Key: "management"
