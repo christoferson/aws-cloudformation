@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: S3 Static Website Redirect All
+Description: S3 Static Website - Redirects All HTTP Traffic
 
 Metadata:
   "AWS::CloudFormation::Interface":
@@ -8,11 +8,16 @@ Metadata:
           Default: "S3 Website Configuration"
         Parameters: 
           - BucketName
+          - RedirectTargetDomain
 
     ParameterLabels: 
       BucketName: 
         Default: "Bucket Name"
         MinLength: 5
+        MaxLength: 64
+      RedirectTargetDomain: 
+        Default: "Redirect Target Domain"
+        MinLength: 3
         MaxLength: 64
 
 Parameters:
@@ -20,7 +25,7 @@ Parameters:
   BucketName:
     Type: "String"
     Default: "s3-bucket-website"
-    Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
+    Description: "Name of the bucket"
 
   RedirectTargetDomain:
     Type: "String"
