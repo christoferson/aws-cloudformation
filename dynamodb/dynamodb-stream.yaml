@@ -62,6 +62,59 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
 
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "lambda-trigger-dynamodb-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "lambda-trigger-dynamodb-lambda"
+      Description: "Lambda Triggered by DynamoDB"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DynamoTable.StreamArn
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Enabled: true
+      BatchSize: 10
+      #MaximumBatchingWindowInSeconds: 1
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+      StartingPosition: LATEST
+
 Outputs:
 
   DynamoTableArn:
@@ -70,3 +123,4 @@ Outputs:
 
   DynamoTableStreamArn:
     Value: !GetAtt DynamoTable.StreamArn
+
