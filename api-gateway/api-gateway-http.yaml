@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - HTTP - "
+Description: "API Gateway - HTTP - Integrate with Existing Lambda Function"
 
 Parameters:
 
