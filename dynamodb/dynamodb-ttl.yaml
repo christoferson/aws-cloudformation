@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB - Time to Live"
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: "CharacterTTL"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+        - 
+          AttributeName: "Race"
+          AttributeType: "S"
+        - 
+          AttributeName: "Profession"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      TimeToLiveSpecification:
+        AttributeName: expires_on
+        Enabled: true
+      LocalSecondaryIndexes: 
+        - 
+          IndexName: "region-race"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Race"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Profession"
+            ProjectionType: "INCLUDE"
+        - 
+          IndexName: "region-profession"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Profession"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Race"
+            ProjectionType: "INCLUDE"
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
