@@ -44,14 +44,28 @@ Resources:
       AutoDeploy: true
       StageName: 'stg'
 
+  StageProduction:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      AutoDeploy: true
+      StageName: 'prd'
 
-  APIInvokeLambdaPermission:
+  InvokeLambdaPermissionStaging:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageStaging}/GET/demo
+
+  InvokeLambdaPermissionProduction:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageProduction}/GET/demo
 
 Outputs:
   InvokeURL:
