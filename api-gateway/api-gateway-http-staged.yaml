@@ -41,15 +41,23 @@ Resources:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       ApiId: !Ref HttpApi
-      AutoDeploy: true
       StageName: 'stg'
+      Description: Stage - Staging
+      AutoDeploy: true
+      DefaultRouteSettings:
+        #DetailedMetricsEnabled: true
+        #LoggingLevel: INFO
+        #DataTraceEnabled: false
+        ThrottlingBurstLimit: 2
+        ThrottlingRateLimit: 2
 
   StageProduction:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       ApiId: !Ref HttpApi
-      AutoDeploy: true
       StageName: 'prd'
+      Description: Stage - Production
+      AutoDeploy: true
 
   InvokeLambdaPermissionStaging:
     Type: AWS::Lambda::Permission
@@ -57,7 +65,7 @@ Resources:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageStaging}/GET/demo
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageStaging}/GET/*
 
   InvokeLambdaPermissionProduction:
     Type: AWS::Lambda::Permission
@@ -65,7 +73,7 @@ Resources:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageProduction}/GET/demo
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageProduction}/GET/*
 
 Outputs:
   InvokeURL:
