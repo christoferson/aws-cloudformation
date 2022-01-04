@@ -44,6 +44,8 @@ Resources:
       StageName: 'stg'
       Description: Stage - Staging
       AutoDeploy: true
+      StageVariables:
+         FunctionName: my-function-name
       DefaultRouteSettings:
         #DetailedMetricsEnabled: true
         #LoggingLevel: INFO
