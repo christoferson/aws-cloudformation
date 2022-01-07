@@ -1,0 +1,91 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (CodeCommit)- Format
+
+Metadata:
+
+  StackVersion: 1
+
+Resources:
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "eventbridge-rule-codecommit-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "eventbridge-rule-codecommit-lambda-function"
+      Description: "EventBridge CodeCommit Lambda Notification Handler"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              console.log('Type: ' + event['detail-type']);
+              console.log('Time: ' + event.time);
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+  EventBridgeRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: CodeCommitOnCommitRule
+      Description: "CodeCommit Trigger"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.ec2
+      State: "ENABLED"
+      Targets: #up to five (5) targets
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunctionV1"
+          InputTransformer: 
+            InputPathsMap:
+              "instance" : "$.detail.instance-id"
+              "state" : "$.detail.state"
+            InputTemplate: |
+              {
+                "instance" : <instance>,
+                "state" : <state>,
+                "instanceStatus": "instance \"<instance>\" is in <state>"
+              }
+  InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRule.Arn
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+  EventBridgeRuleArn:
+    Value: !GetAtt EventBridgeRule.Arn
