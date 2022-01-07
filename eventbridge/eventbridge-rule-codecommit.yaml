@@ -58,7 +58,13 @@ Resources:
       #EventBusName: default
       EventPattern:
         source:
-          - aws.ec2
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Repository State Change"
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
       State: "ENABLED"
       Targets: #up to five (5) targets
         - 
@@ -66,13 +72,13 @@ Resources:
           Id: "TargetFunctionV1"
           InputTransformer: 
             InputPathsMap:
-              "instance" : "$.detail.instance-id"
-              "state" : "$.detail.state"
+              "author" : "$.detail.author"
+              "repositories" : "$.detail.repositoryNames"
             InputTemplate: |
               {
-                "instance" : <instance>,
-                "state" : <state>,
-                "instanceStatus": "instance \"<instance>\" is in <state>"
+                "instance" : <author>,
+                "state" : <author>,
+                "instanceStatus": "instance \"<repositories>\" is in <author>"
               }
   InvokeLambdaPermission:
     Type: AWS::Lambda::Permission
