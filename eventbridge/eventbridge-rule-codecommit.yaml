@@ -65,10 +65,10 @@ Resources:
           event:
             - referenceCreated
             - referenceUpdated
-        #  referenceType:
-        #    - branch
-        #  referenceName:
-        #    - main
+          referenceType:
+            - branch
+          referenceName:
+            - main
       State: "ENABLED"
       Targets: #up to five (5) targets
         - 
