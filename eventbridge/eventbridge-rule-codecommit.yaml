@@ -69,6 +69,10 @@ Resources:
             - branch
           referenceName:
             - main
+            - staging
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository1"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository2"
       State: "ENABLED"
       Targets: #up to five (5) targets
         - 
@@ -79,11 +83,13 @@ Resources:
               "CallerUserArn" : "$.detail.callerUserArn"
               "ReferenceName" : "$.detail.referenceName"
               "RepositoryName" : "$.detail.repositoryName"
+              "CommitId" : "$.detail.commitId"
             InputTemplate: |
               {
-                "CallerUserArn" : <CallerUserArn>,
-                "ReferenceName" : <ReferenceName>,
-                "RepositoryName": "\"<RepositoryName>\""
+                "CallerUserArn" : "\"<CallerUserArn>\"",
+                "ReferenceName" : "\"<ReferenceName>\"",
+                "RepositoryName": "\"<RepositoryName>\"",
+                "CommitId": "\"<CommitId>\""
               }
   InvokeLambdaPermission:
     Type: AWS::Lambda::Permission
