@@ -65,6 +65,10 @@ Resources:
           event:
             - referenceCreated
             - referenceUpdated
+        #  referenceType:
+        #    - branch
+        #  referenceName:
+        #    - main
       State: "ENABLED"
       Targets: #up to five (5) targets
         - 
@@ -72,13 +76,14 @@ Resources:
           Id: "TargetFunctionV1"
           InputTransformer: 
             InputPathsMap:
-              "author" : "$.detail.author"
-              "repositories" : "$.detail.repositoryNames"
+              "CallerUserArn" : "$.detail.callerUserArn"
+              "ReferenceName" : "$.detail.referenceName"
+              "RepositoryName" : "$.detail.repositoryName"
             InputTemplate: |
               {
-                "instance" : <author>,
-                "state" : <author>,
-                "instanceStatus": "instance \"<repositories>\" is in <author>"
+                "CallerUserArn" : <CallerUserArn>,
+                "ReferenceName" : <ReferenceName>,
+                "RepositoryName": "\"<RepositoryName>\""
               }
   InvokeLambdaPermission:
     Type: AWS::Lambda::Permission
