@@ -50,10 +50,10 @@ Resources:
               return response;
           };
 
-  EventBridgeRule: 
+  EventBridgeRuleCodeCommitPushed: 
     Type: AWS::Events::Rule
     Properties: 
-      Name: CodeCommitOnCommitRule
+      Name: eventbridge-rule-codecommit-pushed
       Description: "CodeCommit Trigger"
       #EventBusName: default
       EventPattern:
@@ -77,7 +77,7 @@ Resources:
       Targets: #up to five (5) targets
         - 
           Arn: !GetAtt LambdaFunction.Arn
-          Id: "TargetFunctionV1"
+          Id: "TargetFunction"
           InputTransformer: 
             InputPathsMap:
               "CallerUserArn" : "$.detail.callerUserArn"
@@ -118,14 +118,14 @@ Resources:
       Targets:
         - 
           Arn: !GetAtt LambdaFunction.Arn
-          Id: "TargetFunctionV1"
+          Id: "TargetFunction"
           InputTransformer:
             InputPathsMap:
               "Author" : "$.detail.author"
               "CallerUserArn" : "$.detail.callerUserArn"
               "Title" : "$.detail.title"
               "Description" : "$.detail.description"
-              "RepositoryNames" : "$.detail.repositoryNames"
+              "RepositoryName" : "$.detail.repositoryNames[0]"
               "DestinationReference" : "$.detail.destinationReference"
               "NotificationBody" : "$.detail.notificationBody"
               "PullRequestId" : "$.detail.pullRequestId"
@@ -134,22 +134,36 @@ Resources:
                 "Author" : "\"<Author>\"",
                 "CallerUserArn" : "\"<CallerUserArn>\"",
                 "Title" : "\"<Title>\"",
-                "Description" : "\"<Description>\""
+                "Description" : "\"<Description>\"",
+                "DestinationReference" : "\"<DestinationReference>\"",
+                "PullRequestId" : "\"<PullRequestId>\"",
+                "NotificationBody" : "\"<NotificationBody>\"",
+                "RepositoryName" : "\"<RepositoryName>\""
               }
 
 
-  InvokeLambdaPermission:
+  InvokeLambdaPermissionCodeCommitPushed:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt EventBridgeRule.Arn
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitPushed.Arn
+
+  InvokeLambdaPermissionCodeCommitPullRequestMerged:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitPullRequestMerged.Arn
 
 Outputs:
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
   FunctionExecutionRoleArn:
     Value: !GetAtt FunctionExecutionRole.Arn
-  EventBridgeRuleArn:
-    Value: !GetAtt EventBridgeRule.Arn
+  EventBridgeRuleCodeCommitPushedArn:
+    Value: !GetAtt EventBridgeRuleCodeCommitPushed.Arn
+  EventBridgeRuleCodeCommitPullRequestMergedArn:
+    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestMerged.Arn
