@@ -1,6 +1,6 @@
 
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EventBridge Rule (CodeCommit)- Format
+Description: EventBridge Rule (CodeCommit) - Transform Output - Send to Lambda
 
 Metadata:
 
@@ -91,6 +91,53 @@ Resources:
                 "RepositoryName": "\"<RepositoryName>\"",
                 "CommitId": "\"<CommitId>\""
               }
+
+  EventBridgeRuleCodeCommitPullRequestMerged: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: eventbridge-rule-codecommit-pr-merged
+      Description: "CodeCommit Notification Trigger on Pull Request Merged"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Pull Request State Change"
+        detail:
+          event:
+            - pullRequestMergeStatusUpdated
+          destinationReference:
+            - refs/heads/main
+          isMerged: 
+            - "True"
+          pullRequestStatus:
+            - "Closed"
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository1"
+      State: "ENABLED"
+      Targets:
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunctionV1"
+          InputTransformer:
+            InputPathsMap:
+              "Author" : "$.detail.author"
+              "CallerUserArn" : "$.detail.callerUserArn"
+              "Title" : "$.detail.title"
+              "Description" : "$.detail.description"
+              "RepositoryNames" : "$.detail.repositoryNames"
+              "DestinationReference" : "$.detail.destinationReference"
+              "NotificationBody" : "$.detail.notificationBody"
+              "PullRequestId" : "$.detail.pullRequestId"
+            InputTemplate: |
+              {
+                "Author" : "\"<Author>\"",
+                "CallerUserArn" : "\"<CallerUserArn>\"",
+                "Title" : "\"<Title>\"",
+                "Description" : "\"<Description>\""
+              }
+
+
   InvokeLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
