@@ -1,0 +1,78 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (CodeCommit) - Transform Output - Send to Lambda
+
+Metadata:
+
+  StackVersion: 1
+
+Resources:
+# Description, Encryption
+  EventBridgeCodeCommitSnsTopicOnPush:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      TopicName: !Sub "eventbridge-codecommit-sns-topic-on-push"
+
+  EventBridgeRuleCodeCommitOnPush: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: eventbridge-rule-codecommit-on-push-sns
+      Description: "CodeCommit OnPush Trigger"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Repository State Change"
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - main
+            - staging
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+      State: "ENABLED"
+      Targets:
+        -
+          Arn: !Ref EventBridgeCodeCommitSnsTopicOnPush
+          Id: "TargetFunctionSnsTopic"
+          InputTransformer: 
+            InputPathsMap:
+              "CallerUserArn" : "$.detail.callerUserArn"
+              "ReferenceName" : "$.detail.referenceName"
+              "RepositoryName" : "$.detail.repositoryName"
+              "CommitId" : "$.detail.commitId"
+            InputTemplate: |
+              {
+                "CallerUserArn" : "\"<CallerUserArn>\"",
+                "ReferenceName" : "\"<ReferenceName>\"",
+                "RepositoryName": "\"<RepositoryName>\"",
+                "CommitId": "\"<CommitId>\""
+              }
+
+  InvokeSnsTopicPermissionCodeCommitOnPush:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EventBridgeCodeCommitSnsTopicOnPush
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sns:Publish'
+            Resource: '*' #Todo
+
+
+
+Outputs:
+  EventBridgeCodeCommitSnsTopicOnPushArn:
+    Value: !Ref EventBridgeCodeCommitSnsTopicOnPush
+  EventBridgeRuleCodeCommitOnPushArn:
+    Value: !GetAtt EventBridgeRuleCodeCommitOnPush.Arn
+#  EventBridgeRuleCodeCommitPullRequestMergedArn:
+#    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestMerged.Arn
