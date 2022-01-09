@@ -7,11 +7,15 @@ Metadata:
   StackVersion: 1
 
 Resources:
-# Description, Encryption
+
   EventBridgeCodeCommitSnsTopicOnPush:
     Type: "AWS::SNS::Topic"
     Properties:
       TopicName: !Sub "eventbridge-codecommit-sns-topic-on-push"
+      DisplayName: "CodeCommit - OnPush"
+      #DisplayName: "EventBridgeCodeCommitSnsTopicOnPush"
+      #KmsMasterKeyId: alias/aws/sns
+      #FifoTopic: false
 
   EventBridgeRuleCodeCommitOnPush: 
     Type: AWS::Events::Rule
@@ -65,7 +69,7 @@ Resources:
             Principal:
               Service: events.amazonaws.com
             Action: 'sns:Publish'
-            Resource: '*' #Todo
+            Resource: !Ref EventBridgeCodeCommitSnsTopicOnPush
 
 
 
