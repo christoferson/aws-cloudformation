@@ -16,6 +16,21 @@ Resources:
       #DisplayName: "EventBridgeCodeCommitSnsTopicOnPush"
       #KmsMasterKeyId: alias/aws/sns
       #FifoTopic: false
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  EventBridgeCodeCommitSnsTopicOnPrMerge:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      TopicName: !Sub "eventbridge-codecommit-sns-topic-on-prmerge"
+      DisplayName: "CodeCommit - OnPullRequestMerge"
+      #DisplayName: "EventBridgeCodeCommitSnsTopicOnPush"
+      #KmsMasterKeyId: alias/aws/sns
+      #FifoTopic: false
+      Tags:
+        - Key: "management"
+          Value: "manual"
 
   EventBridgeRuleCodeCommitOnPush: 
     Type: AWS::Events::Rule
@@ -43,7 +58,7 @@ Resources:
       Targets:
         -
           Arn: !Ref EventBridgeCodeCommitSnsTopicOnPush
-          Id: "TargetFunctionSnsTopic"
+          Id: "TargetSnsTopic"
           InputTransformer: 
             InputPathsMap:
               "CallerUserArn" : "$.detail.callerUserArn"
@@ -52,10 +67,61 @@ Resources:
               "CommitId" : "$.detail.commitId"
             InputTemplate: |
               {
-                "CallerUserArn" : "\"<CallerUserArn>\"",
-                "ReferenceName" : "\"<ReferenceName>\"",
-                "RepositoryName": "\"<RepositoryName>\"",
-                "CommitId": "\"<CommitId>\""
+                "Message": "Code pushed by <CallerUserArn> on <RepositoryName>",
+                "RepositoryName": "<RepositoryName>",
+                "Branch" : "<ReferenceName>",
+                "Caller" : "<CallerUserArn>",
+                "Commit": "<CommitId>"
+              }
+
+  EventBridgeRuleCodeCommitOnPrMerge: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: eventbridge-rule-codecommit-on-prmerge-sns
+      Description: "CodeCommit Notification Trigger on Pull Request Merge"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Pull Request State Change"
+        detail:
+          event:
+            - pullRequestMergeStatusUpdated
+          destinationReference:
+            - refs/heads/main
+          isMerged: 
+            - "True"
+          pullRequestStatus:
+            - "Closed"
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+      State: "ENABLED"
+      Targets:
+        - 
+          Arn: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
+          Id: "TargetSnsTopic"
+          InputTransformer:
+            InputPathsMap:
+              "Author" : "$.detail.author"
+              "CallerUserArn" : "$.detail.callerUserArn"
+              "Title" : "$.detail.title"
+              "Description" : "$.detail.description"
+              "RepositoryName" : "$.detail.repositoryNames[0]"
+              "DestinationReference" : "$.detail.destinationReference"
+              "NotificationBody" : "$.detail.notificationBody"
+              "PullRequestId" : "$.detail.pullRequestId"
+            InputTemplate: |
+              {
+                "Message": "PR merged by <CallerUserArn> on <DestinationReference> - <Title>",
+                "Repository" : "<RepositoryName>",
+                "DestinationBranch" : "<DestinationReference>",
+                "Author" : "<Author>",
+                "Caller" : "<CallerUserArn>",
+                "Title" : "<Title>",
+                "Description" : "<Description>",
+                "PullRequest" : "<PullRequestId>",
+                "Details" : "<NotificationBody>"
               }
 
   InvokeSnsTopicPermissionCodeCommitOnPush:
@@ -69,14 +135,29 @@ Resources:
             Principal:
               Service: events.amazonaws.com
             Action: 'sns:Publish'
+            #Resource: '*'
             Resource: !Ref EventBridgeCodeCommitSnsTopicOnPush
 
-
+  InvokeSnsTopicPermissionCodeCommitOnPrMerge:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sns:Publish'
+            #Resource: '*'
+            Resource: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
 
 Outputs:
   EventBridgeCodeCommitSnsTopicOnPushArn:
     Value: !Ref EventBridgeCodeCommitSnsTopicOnPush
+  EventBridgeCodeCommitSnsTopicOnPrMergeArn:
+    Value: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
   EventBridgeRuleCodeCommitOnPushArn:
     Value: !GetAtt EventBridgeRuleCodeCommitOnPush.Arn
-#  EventBridgeRuleCodeCommitPullRequestMergedArn:
-#    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestMerged.Arn
+  EventBridgeRuleCodeCommitOnPrMergeArn:
+    Value: !GetAtt EventBridgeRuleCodeCommitOnPrMerge.Arn
