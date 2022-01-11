@@ -8,6 +8,15 @@ Metadata:
 
 Resources:
 
+  EventBridgeCodeCommitSnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      TopicName: !Sub "eventbridge-codecommit-sns-topic"
+      DisplayName: "CodeCommit - Event"
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
   EventBridgeCodeCommitSnsTopicOnPush:
     Type: "AWS::SNS::Topic"
     Properties:
@@ -129,7 +138,7 @@ Resources:
             - pullRequestCreated
           destinationReference:
             - refs/heads/main
-          isMerged: 
+          isMerged:
             - "False"
           pullRequestStatus:
             - "Open"
@@ -163,11 +172,11 @@ Resources:
                 "Details" : "<NotificationBody>"
               }
 
-  EventBridgeRuleCodeCommitOnPrModified: 
+  EventBridgeRuleCodeCommitOnPrModify: 
     Type: AWS::Events::Rule
     Properties: 
-      Name: eventbridge-rule-codecommit-on-prmodified-sns
-      Description: "CodeCommit Notification Trigger on Pull Request Modified"
+      Name: eventbridge-rule-codecommit-on-prmodify-sns
+      Description: "CodeCommit Notification Trigger on Pull Request Modify"
       #EventBusName: default
       EventPattern:
         source:
@@ -177,13 +186,11 @@ Resources:
         detail:
           event:
             - pullRequestStatusChanged
+            - pullRequestSourceBranchUpdated
           destinationReference:
             - refs/heads/main
           isMerged: 
             - "False"
-          pullRequestStatus:
-            - "Open"
-            - "Closed"
         resources:
           - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
       State: "ENABLED"
@@ -198,13 +205,15 @@ Resources:
               "Title" : "$.detail.title"
               "Description" : "$.detail.description"
               "RepositoryName" : "$.detail.repositoryNames[0]"
+              "SourceReference" : "$.detail.sourceReference"
               "DestinationReference" : "$.detail.destinationReference"
               "NotificationBody" : "$.detail.notificationBody"
               "PullRequestId" : "$.detail.pullRequestId"
             InputTemplate: |
               {
-                "Message": "PR Modified by <CallerUserArn> on <DestinationReference>",
+                "Message": "PR Modify by <CallerUserArn> on <DestinationReference>",
                 "Repository" : "<RepositoryName>",
+                "SourceBranch" : "<SourceReference>",
                 "DestinationBranch" : "<DestinationReference>",
                 "Author" : "<Author>",
                 "User" : "<CallerUserArn>",
@@ -213,6 +222,7 @@ Resources:
                 "PullRequest" : "<PullRequestId>",
                 "Details" : "<NotificationBody>"
               }
+
 
   EventBridgeRuleCodeCommitOnPrMerge: 
     Type: AWS::Events::Rule
@@ -264,6 +274,20 @@ Resources:
                 "Details" : "<NotificationBody>"
               }
 
+  InvokeSnsTopicPermissionCodeCommit:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EventBridgeCodeCommitSnsTopic
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sns:Publish'
+            #Resource: '*'
+            Resource: !Ref EventBridgeCodeCommitSnsTopic
+
   InvokeSnsTopicPermissionCodeCommitOnPush:
     Type: AWS::SNS::TopicPolicy
     Properties:
@@ -293,10 +317,14 @@ Resources:
             Resource: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
 
 Outputs:
+
+  EventBridgeCodeCommitSnsTopicArn:
+    Value: !Ref EventBridgeCodeCommitSnsTopic
   EventBridgeCodeCommitSnsTopicOnPushArn:
     Value: !Ref EventBridgeCodeCommitSnsTopicOnPush
   EventBridgeCodeCommitSnsTopicOnPrMergeArn:
     Value: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
+
   EventBridgeRuleCodeCommitOnPushArn:
     Value: !GetAtt EventBridgeRuleCodeCommitOnPush.Arn
   EventBridgeRuleCodeCommitOnPrCreateArn:
