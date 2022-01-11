@@ -1,6 +1,6 @@
 
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EventBridge Rule (CodeCommit) - Transform Output - Send to Lambda
+Description: EventBridge Rule (CodeCommit) - Transform Output - Send to SNS
 
 Metadata:
 
@@ -74,6 +74,45 @@ Resources:
                 "Commit": "<CommitId>"
               }
 
+  EventBridgeRuleCodeCommitOnPrComment: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: eventbridge-rule-codecommit-on-prcomment-sns
+      Description: "CodeCommit Notification Trigger on Pull Request Comment"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Comment on Pull Request"
+        detail:
+          event:
+            - commentOnPullRequestCreated
+            - commentOnPullRequestUpdated
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+      State: "ENABLED"
+      Targets:
+        - 
+          Arn: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
+          Id: "TargetSnsTopic"
+          InputTransformer:
+            InputPathsMap:
+              "CallerUserArn" : "$.detail.callerUserArn"
+              "RepositoryName" : "$.detail.repositoryName"
+              "PullRequestId" : "$.detail.pullRequestId"
+              "CommentId" : "$.detail.commentId"
+              "NotificationBody" : "$.detail.notificationBody"
+            InputTemplate: |
+              {
+                "Message": "PR Comment by <CallerUserArn>",
+                "Repository" : "<RepositoryName>",
+                "PullRequest" : "<PullRequestId>",
+                "Comment" : "<CommentId>",
+                "User" : "<CallerUserArn>",
+                "Details" : "<NotificationBody>"
+              }
+
   EventBridgeRuleCodeCommitOnPrCreate: 
     Type: AWS::Events::Rule
     Properties: 
@@ -144,6 +183,7 @@ Resources:
             - "False"
           pullRequestStatus:
             - "Open"
+            - "Closed"
         resources:
           - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
       State: "ENABLED"
@@ -237,34 +277,6 @@ Resources:
             Action: 'sns:Publish'
             #Resource: '*'
             Resource: !Ref EventBridgeCodeCommitSnsTopicOnPush
-
-  InvokeSnsTopicPermissionCodeCommitOnPrCreate:
-    Type: AWS::SNS::TopicPolicy
-    Properties:
-      Topics:
-        - !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
-      PolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: 'sns:Publish'
-            #Resource: '*'
-            Resource: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
-
-  InvokeSnsTopicPermissionCodeCommitOnPrModified:
-    Type: AWS::SNS::TopicPolicy
-    Properties:
-      Topics:
-        - !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
-      PolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: 'sns:Publish'
-            #Resource: '*'
-            Resource: !Ref EventBridgeCodeCommitSnsTopicOnPrMerge
 
   InvokeSnsTopicPermissionCodeCommitOnPrMerge:
     Type: AWS::SNS::TopicPolicy
