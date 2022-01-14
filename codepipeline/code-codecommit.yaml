@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeCommit
+
+Resources:
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    DeletionPolicy: Retain
+    Properties:
+      RepositoryDescription: "Demo Repository"
+      RepositoryName: code-repository-demo
+      Tags:
+        - Key: environment
+          Value: stg
+
+Outputs:
+
+  CodeCommitRepositoryArn:
+    Value: !GetAtt CodeCommitRepository.Arn
+  CodeCommitRepositoryCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
