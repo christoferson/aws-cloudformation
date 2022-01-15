@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'IAM Groups, Roles, Policies'
+
+Resources:
+
+  UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: iam-group-demo
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
+      - arn:aws:iam::aws:policy/AWSDirectConnectReadOnlyAccess
+      Path: "/demo/"
+      Policies:
+      - PolicyName: inline-1
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - sqs:*
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - s3:*
+            Resource: '*'
+
+  UserGroupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: iam-group-demo-policy
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action: cloudformation:*
+          Resource: '*'
+      Groups: 
+        - !Ref UserGroup
+ 
+Outputs:
+
+  UserGroupArn:
+    Value: !GetAtt UserGroup.Arn
