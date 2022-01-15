@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'IAM Managed Policy'
+
+Resources:
+
+  ManagedPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "Custom Managed Policy"
+      ManagedPolicyName: "managed-policy-custom"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::code-demo-bucket/*"
+          - Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+            Effect: Allow
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
+
+Outputs:
+
+  ManagedPolicyArn:
+    Value: !Ref ManagedPolicy
+
+ 
