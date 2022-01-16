@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SES -> SNS -> Lamba -> DynamoDB
+
+Parameters:
+
+  CodeBucketName:
+    Type: String
+    Default: demo-cloudformation
+    Description: Bucket Containing Lambda Code
+
+  CodeObjectKey:
+    Type: String
+    Default: ses-lambda-dynamo/ses-lambda-dynamo.zip
+    Description: Object Key of the Zipped Lambda Code
+
+Resources:
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "role-lambda-ses-notification"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "lambda-ses-notification"
+      Description: "Lambda to store SES message in Dynamo"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: ses-lambda-dynamo.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+
+
