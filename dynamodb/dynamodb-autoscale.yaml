@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB - Autoscale (StepScaling | TargetTrackingScaling) RCU and WCU"
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: "Character7"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+        - 
+          AttributeName: "Race"
+          AttributeType: "S"
+        - 
+          AttributeName: "Profession"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      LocalSecondaryIndexes: 
+        - 
+          IndexName: "region-race"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Race"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Profession"
+            ProjectionType: "INCLUDE"
+        - 
+          IndexName: "region-profession"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Profession"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Race"
+            ProjectionType: "INCLUDE"
+
+
+  # Dynamo Read Capacity Unit AutoScaling
+
+  DynamoTableRcuScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties:
+      MaxCapacity: 2
+      MinCapacity: 1
+      ResourceId: !Sub "table/${DynamoTable}"
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable"
+      ScalableDimension: "dynamodb:table:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DynamoTableSesNotificationRcuScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: dynamo-table-autoscale-policy-rcu
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: DynamoTableRcuScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 30
+        ScaleOutCooldown: 30 
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
