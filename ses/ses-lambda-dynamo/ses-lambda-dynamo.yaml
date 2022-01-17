@@ -15,6 +15,28 @@ Parameters:
 
 Resources:
 
+  DynamoTableSesNotification: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: "dynamodb-ses-notification"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "SesMessageId"
+          AttributeType: "S"
+        - 
+          AttributeName: "SnsPublishTime"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "SesMessageId"
+          KeyType: "HASH"
+        - 
+          AttributeName: "SnsPublishTime"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -38,7 +60,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
-                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/asics-common-dynamodb-ses-notification'
+                Resource: !GetAtt DynamoTableSesNotification.Arn
 
       Tags:
         - Key: 'environment'
