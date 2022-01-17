@@ -30,6 +30,19 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: dynamodb
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/asics-common-dynamodb-ses-notification'
+
+      Tags:
+        - Key: 'environment'
+          Value: common
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -46,6 +59,9 @@ Resources:
       Code:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey
+      Tags:
+        - Key: 'environment'
+          Value: common
 
 Outputs:
   LambdaFunctionArn:
