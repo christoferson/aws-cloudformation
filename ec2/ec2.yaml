@@ -6,6 +6,7 @@ Metadata:
   StackVersion: 1
 
   AWS::CloudFormation::Interface:
+
     ParameterGroups:
       -
         Label:
@@ -13,6 +14,8 @@ Metadata:
         Parameters:
           - VpcId
           - VpcSubnetCidr
+          - VpcEc2Subnet1
+          - VpcEc2Subnet2
           - StaticIPforSSH
       -
         Label:
@@ -21,6 +24,13 @@ Metadata:
           - Ec2ImageId
           - Ec2InstanceType
           - Ec2InstanceKeyName
+      -
+        Label:
+          Default: "Auto Scaling Configuration"
+        Parameters:
+          - Ec2AutoscaleMinSize
+          - Ec2AutoscaleMaxSize
+          - Ec2AutoscaleDesiredCapacity
 
 Parameters:
 
@@ -32,6 +42,14 @@ Parameters:
     Description: VPC subnet CIDR
     Type: String
     Default: 10.0.0.0/16
+
+  VpcEc2Subnet1:
+    Description: EC2 subnet 1(AZ-a)
+    Type: AWS::EC2::Subnet::Id
+
+  VpcEc2Subnet2:
+    Description: EC2 subnet 2(AZ-c)
+    Type: AWS::EC2::Subnet::Id
 
   StaticIPforSSH:
     Description: Static IP for SSH access
@@ -52,6 +70,21 @@ Parameters:
     Description: EC2 SSH KEY
     Type: AWS::EC2::KeyPair::KeyName
     Default: SSHKey
+
+  Ec2AutoscaleMinSize:
+    Description: AutoScalingGroup MinSize
+    Type: String
+    Default: '1'
+
+  Ec2AutoscaleMaxSize:
+    Description: AutoScalingGroup MaxSize
+    Type: String
+    Default: '1'
+
+  Ec2AutoscaleDesiredCapacity:
+    Description: AutoScalingGroup DesiredCapacity
+    Type: String
+    Default: '1'
 
 Resources:
 
@@ -138,6 +171,23 @@ Resources:
         SecurityGroupIds:
         - !Ref 'Ec2SecurityGroup'
         - !Ref 'Ec2SecurityGroupSSH'
+        InstanceInitiatedShutdownBehavior: terminate
+        Monitoring:
+          Enabled: false
+        BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+            DeleteOnTermination: true
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            yum update -y
+            yum install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
+            echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
         TagSpecifications:
         - ResourceType: instance
           Tags:
@@ -151,33 +201,16 @@ Resources:
           Tags:
           - Key: Name
             Value: !Ref 'AWS::StackName'
-#        UserData:
-#          Fn::Base64: |
-#            #!/bin/bash -xe
-#            date > /tmp/run.log
-#            yum update -y
-#            yum install jq awslogs -y
-#            chkconfig awslogs on
-#            service awslogs start
-#            if [ ! -f /swapfile ]; then dd if=/dev/zero of=/swapfile bs=1M count=128; chmod 600 /swapfile; mkswap /swapfile; swapon /swapfile; echo "/swapfile  swap  swap  defaults  0  0" >> /etc/fstab; fi
-        InstanceInitiatedShutdownBehavior: terminate
-        Monitoring:
-          Enabled: false
-#        CreditSpecification:
-#          CpuCredits: standard
-#        InstanceMarketOptions:
-#          SpotOptions:
-#            SpotInstanceType: one-time
-#            InstanceInterruptionBehavior: terminate
-#          MarketType: spot
-        BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: 8
-            VolumeType: gp2
-            DeleteOnTermination: true
-#        - DeviceName: /dev/xvdf
-#          Ebs:
-#            VolumeSize: 1
-#            VolumeType: gp2
-#            DeleteOnTermination: true
+
+  Ec2InstanceAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+      - !Ref 'VpcEc2Subnet1'
+      - !Ref 'VpcEc2Subnet2'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref 'Ec2InstanceLaunchTemplate'
+        Version: !GetAtt 'Ec2InstanceLaunchTemplate.LatestVersionNumber'
+      MinSize: !Ref 'Ec2AutoscaleMinSize'
+      MaxSize: !Ref 'Ec2AutoscaleMaxSize'
+      DesiredCapacity: !Ref 'Ec2AutoscaleDesiredCapacity'
