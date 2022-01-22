@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EC2 Load Balancer + Autoscaling Group
+Description: EC2 Load Balancer + Autoscaling Group. EC2 on Private Subnet.
 
 Metadata:
 
@@ -10,31 +10,35 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          Default: "Network Configuration"
+          default: "Network Configuration"
         Parameters:
           - VpcId
           - VpcSubnetCidr
           - VpcPublicSubnet1
           - VpcPublicSubnet2
-          - VpcEc2Subnet1
-          - VpcEc2Subnet2
           - VpcPrivateSubnet1
           - VpcPrivateSubnet2
           - StaticIPforSSH
       -
         Label:
-          Default: "Instance Configuration"
+          default: "Instance Configuration"
         Parameters:
           - Ec2ImageId
           - Ec2InstanceType
           - Ec2InstanceKeyName
       -
         Label:
-          Default: "Auto Scaling Configuration"
+          default: "Auto Scaling Configuration"
         Parameters:
           - Ec2AutoscaleMinSize
           - Ec2AutoscaleMaxSize
           - Ec2AutoscaleDesiredCapacity
+
+    ParameterLabels: 
+      VpcId: 
+        default: "Vpc ID"
+      VpcPublicSubnet1: 
+        default: "Public Subnet 1"
 
 Parameters:
 
@@ -53,14 +57,6 @@ Parameters:
 
   VpcPublicSubnet2:
     Description: Public Subnet 2
-    Type: AWS::EC2::Subnet::Id
-
-  VpcEc2Subnet1:
-    Description: EC2 subnet 1(AZ-a)
-    Type: AWS::EC2::Subnet::Id
-
-  VpcEc2Subnet2:
-    Description: EC2 subnet 2(AZ-c)
     Type: AWS::EC2::Subnet::Id
 
   VpcPrivateSubnet1:
