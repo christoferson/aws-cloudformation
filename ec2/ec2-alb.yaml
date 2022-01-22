@@ -14,6 +14,8 @@ Metadata:
         Parameters:
           - VpcId
           - VpcSubnetCidr
+          - VpcPublicSubnet1
+          - VpcPublicSubnet2
           - VpcEc2Subnet1
           - VpcEc2Subnet2
           - StaticIPforSSH
@@ -42,6 +44,14 @@ Parameters:
     Description: VPC subnet CIDR
     Type: String
     Default: 10.0.0.0/16
+
+  VpcPublicSubnet1:
+    Description: Public Subnet 1
+    Type: AWS::EC2::Subnet::Id
+
+  VpcPublicSubnet2:
+    Description: Public Subnet 2
+    Type: AWS::EC2::Subnet::Id
 
   VpcEc2Subnet1:
     Description: EC2 subnet 1(AZ-a)
@@ -265,8 +275,8 @@ Resources:
       SecurityGroups:
         - !Ref LoadBalancerSecurityGroup
       Subnets: 
-        - !Ref 'VpcEc2Subnet1'
-        - !Ref 'VpcEc2Subnet2'
+        - !Ref VpcPublicSubnet1
+        - !Ref VpcPublicSubnet2
 
   LoadBalancerListener: 
     Type: "AWS::ElasticLoadBalancingV2::Listener"
