@@ -18,6 +18,8 @@ Metadata:
           - VpcPublicSubnet2
           - VpcEc2Subnet1
           - VpcEc2Subnet2
+          - VpcPrivateSubnet1
+          - VpcPrivateSubnet2
           - StaticIPforSSH
       -
         Label:
@@ -59,6 +61,14 @@ Parameters:
 
   VpcEc2Subnet2:
     Description: EC2 subnet 2(AZ-c)
+    Type: AWS::EC2::Subnet::Id
+
+  VpcPrivateSubnet1:
+    Description: Private Subnet 1
+    Type: AWS::EC2::Subnet::Id
+
+  VpcPrivateSubnet2:
+    Description: Private Subnet 2
     Type: AWS::EC2::Subnet::Id
 
   StaticIPforSSH:
@@ -146,6 +156,16 @@ Resources:
       Roles:
       - !Ref 'Ec2IAMRole'
 
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: allow ICMP via same VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
 
   Ec2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -160,7 +180,11 @@ Resources:
       - IpProtocol: tcp
         FromPort: 80
         ToPort: 80
-        CidrIp: "0.0.0.0/0"
+        SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      #- IpProtocol: tcp
+      #  FromPort: 80
+      #  ToPort: 80
+      #  CidrIp: "0.0.0.0/0"
 
   Ec2SecurityGroupSSH:
     Type: AWS::EC2::SecurityGroup
@@ -248,17 +272,6 @@ Resources:
       #  - Key: Name
       #    Value: !Sub "${PJPrefix}-${InternetALBName}-tg"
 
-  LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      VpcId: !Ref 'VpcId'
-      GroupDescription: allow ICMP via same VPC
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: "0.0.0.0/0"
-
   LoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties: 
@@ -293,8 +306,8 @@ Resources:
     Properties:
       #AutoScalingGroupName: ApplicationAsg
       VPCZoneIdentifier:
-      - !Ref 'VpcEc2Subnet1'
-      - !Ref 'VpcEc2Subnet2'
+      - !Ref VpcPrivateSubnet1
+      - !Ref VpcPrivateSubnet2
       LaunchTemplate:
         LaunchTemplateId: !Ref 'Ec2InstanceLaunchTemplate'
         Version: !GetAtt 'Ec2InstanceLaunchTemplate.LatestVersionNumber'
