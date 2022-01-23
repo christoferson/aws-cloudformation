@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2
+
+Metadata:
+
+  StackVersion: 1
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetCidr
+          - VpcEc2Subnet
+          - StaticIPforSSH
+      -
+        Label:
+          default: "Instance Configuration"
+        Parameters:
+          - Ec2ImageId
+          - Ec2InstanceType
+          - Ec2InstanceKeyName
+
+Parameters:
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnetCidr:
+    Description: VPC subnet CIDR
+    Type: String
+    Default: 10.0.0.0/16
+
+  VpcEc2Subnet:
+    Description: EC2 subnet
+    Type: AWS::EC2::Subnet::Id
+
+  StaticIPforSSH:
+    Description: Static IP for SSH access
+    Type: String
+    Default: 127.0.0.1/32
+
+  Ec2ImageId:
+    Description: AMI ID
+    Type: String
+    Default: ami-01efa4023f0f3a042
+
+  Ec2InstanceType:
+    Description: EC2 InstanceType
+    Type: String
+    Default: t2.micro
+
+  Ec2InstanceKeyName:
+    Description: EC2 SSH KEY
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: SSHKey
+
+Resources:
+
+  Ec2IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      Path: /
+      Policies: !Ref 'AWS::NoValue'
+      RoleName: !Ref 'AWS::NoValue'
+
+  Ec2RolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: Ec2RolePolicies
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:List*
+          Resource:
+          - '*'
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogStreams
+          Resource:
+          - arn:aws:logs:*:*:*
+      Roles:
+      - !Ref 'Ec2IAMRole'
+
+  Ec2IAMProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn: Ec2IAMRole
+    Properties:
+      Path: /
+      Roles:
+      - !Ref Ec2IAMRole
+
+
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: allow ICMP via same VPC
+      SecurityGroupIngress:
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: !Ref 'VpcSubnetCidr'
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+
+  Ec2SecurityGroupSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: allow SSH via static IP
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref 'StaticIPforSSH'
+
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !Ref Ec2ImageId
+      InstanceType: !Ref Ec2InstanceType
+      KeyName: !Ref Ec2InstanceKeyName
+      IamInstanceProfile: !Ref Ec2IAMProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: "gp2"
+            VolumeSize: "8"
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+        - !Ref Ec2SecurityGroupSSH
+      SubnetId: !Ref VpcEc2Subnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
+      #Tags:
+      #  - Key: Name
+      #    Value: !Sub "${PJPrefix}-${EC2InstanceName}-01"
