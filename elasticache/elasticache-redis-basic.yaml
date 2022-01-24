@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Elasticache Redis Basic
+
+Parameters:
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnet1:
+    Description: EC2 subnet 1
+    Type: AWS::EC2::Subnet::Id
+
+  VpcSubnet2:
+    Description: EC2 subnet 2
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+
+  ECacheSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties: 
+      VpcId: !Ref VpcId
+      #GroupName: !Ref ECacheSecurityGroupName
+      GroupDescription: Security Group for Elasticache Redis
+      SecurityGroupIngress:
+        - 
+          IpProtocol: tcp
+          CidrIp: '0.0.0.0/0'
+          FromPort: 6379
+          ToPort: 6379
+        - 
+          IpProtocol: tcp
+          CidrIpv6: '::/0'
+          FromPort: 6379
+          ToPort: 6379
+      Tags:
+        - Key: environment
+          Value: dev
+
+  ECacheSubnetGroup:
+    Type: "AWS::ElastiCache::SubnetGroup"
+    Properties:
+      CacheSubnetGroupName: ecache-redis-subnet-group
+      Description: Redis Subnet Group
+      SubnetIds:
+        - !Ref VpcSubnet1
+        - !Ref VpcSubnet2
+
+  ECacheReplicationGroup:
+    Type: "AWS::ElastiCache::ReplicationGroup"
+    Properties:
+      AutomaticFailoverEnabled: true
+      AutoMinorVersionUpgrade: true
+      CacheNodeType: cache.t2.micro
+      CacheParameterGroupName: default.redis6.x
+      CacheSubnetGroupName: !Ref ECacheSubnetGroup
+      Engine: redis
+      EngineVersion: 6.2
+      NumCacheClusters: 2
+      ReplicationGroupDescription: 'Elasticache Redis'
+      ReplicationGroupId: ecache-redis-replication-group
+      SecurityGroupIds:
+        - !Ref ECacheSecurityGroup
+      SnapshotRetentionLimit: 5
+      SnapshotWindow: '03:15-08:15'
+      Tags:
+        - Key: environment
+          Value: dev
