@@ -1,7 +1,7 @@
 
 ## Basic
 
-Launch Elasticache Redis Cluster
+Launch Elasticache Redis Cluster inside a VPC with single shard
 
 elasticache-redis-basic.yaml
 

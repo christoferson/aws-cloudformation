@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Elasticache Redis Basic
+Description: Elasticache Redis Basic - Launch Redis inside VPC with 2 Notes. NodeGroup not enabled.
 
 Parameters:
 
@@ -50,6 +50,7 @@ Resources:
   ECacheReplicationGroup:
     Type: "AWS::ElastiCache::ReplicationGroup"
     Properties:
+      AtRestEncryptionEnabled: false
       AutomaticFailoverEnabled: true
       AutoMinorVersionUpgrade: true
       CacheNodeType: cache.t2.micro
@@ -58,6 +59,7 @@ Resources:
       Engine: redis
       EngineVersion: 6.2
       NumCacheClusters: 2
+      MultiAZEnabled: true
       ReplicationGroupDescription: 'Elasticache Redis'
       ReplicationGroupId: ecache-redis-replication-group
       SecurityGroupIds:
