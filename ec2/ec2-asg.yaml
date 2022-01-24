@@ -10,27 +10,31 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          Default: "Network Configuration"
+          default: "Network Configuration"
         Parameters:
           - VpcId
           - VpcSubnetCidr
           - VpcEc2Subnet1
           - VpcEc2Subnet2
-          - StaticIPforSSH
       -
         Label:
-          Default: "Instance Configuration"
+          default: "Instance Configuration"
         Parameters:
           - Ec2ImageId
           - Ec2InstanceType
           - Ec2InstanceKeyName
       -
         Label:
-          Default: "Auto Scaling Configuration"
+          default: "Auto Scaling Configuration"
         Parameters:
           - Ec2AutoscaleMinSize
           - Ec2AutoscaleMaxSize
           - Ec2AutoscaleDesiredCapacity
+      -
+        Label:
+          default: "Client Configuration"
+        Parameters:
+          - StaticIPforSSH
 
 Parameters:
 
@@ -218,3 +222,13 @@ Resources:
       MinSize: !Ref 'Ec2AutoscaleMinSize'
       MaxSize: !Ref 'Ec2AutoscaleMaxSize'
       DesiredCapacity: !Ref 'Ec2AutoscaleDesiredCapacity'
+
+  Ec2InstanceAutoScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref Ec2InstanceAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70
