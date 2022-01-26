@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ECR"
+
+Resources:
+
+  PrivateRegistryPolicy:
+    Type: AWS::ECR::RegistryPolicy
+    Properties:
+      PolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: pull-through-cache-policy
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "ecr:CreateRepository"
+              - "ecr:BatchImportUpstreamImage"
+            Resource: 
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/ecr-public/docker/*"
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/ecr-public/bitnami/*"
+
+Outputs:
+
+  PrivateRegistryPolicyRegistryId:
+    Value: !GetAtt PrivateRegistryPolicy.RegistryId
