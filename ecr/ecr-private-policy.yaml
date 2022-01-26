@@ -12,7 +12,11 @@ Resources:
           - Sid: pull-through-cache-policy
             Effect: Allow
             Principal:
-              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              AWS: 
+              - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              - !Sub "arn:aws:iam::${AWS::AccountId}:user/admin"
+              #Service:
+              #- ec2.amazonaws.com
             Action:
               - "ecr:CreateRepository"
               - "ecr:BatchImportUpstreamImage"
