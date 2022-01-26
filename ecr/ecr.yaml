@@ -7,9 +7,14 @@ Resources:
     Type: AWS::ECR::Repository
     Properties: 
       RepositoryName: "ecr-repository-demo"
+      ImageTagMutability: MUTABLE
       ImageScanningConfiguration: 
         ScanOnPush: true
-
+      Tags: 
+        - Key: "owner"
+          Value: "me"
+        - Key: "environment"
+          Value: "dev"
 
 Outputs:
 
