@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ECR"
+
+Resources:
+
+  EcrRepository: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: "ecr-repository-demo"
+      ImageScanningConfiguration: 
+        ScanOnPush: true
+
+
+Outputs:
+
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
