@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Lambda Client for RDS (MySQL)
-# todo get rds password from secret
+
 Parameters:
 
   CodeBucketName:
@@ -63,8 +63,10 @@ Resources:
       Timeout: 30
       Environment:
         Variables:
-          databaseName: lambdadb
-          databaseUser: admin
+          EDATABASE_ENDPOINT: xxx
+          EDATABASE_USER: xxx
+          EDATABASE_NAME: xxx
+          EDATABASE_PASSWORD: xxx
       Code:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey

@@ -1,9 +1,9 @@
 ﻿var mysql = require('mysql');
 
-var mysql_host = "endpoint";
-var mysql_user = "user";
-var mysql_dbname = "demo";
-var mysql_password = "password";
+var mysql_host = process.env.DATABASE_ENDPOINT;
+var mysql_user = process.env.DATABASE_USER;
+let mysql_dbname = process.env.DATABASE_NAME;
+var mysql_password = process.env.DATABASE_PASSWORD;
 
 var connection = null;
 
