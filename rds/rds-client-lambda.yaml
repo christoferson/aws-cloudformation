@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Lambda Client for RDS (MySQL)
-
+# todo get rds password from secret
 Parameters:
 
   CodeBucketName:
@@ -75,6 +75,12 @@ Resources:
         SubnetIds:
           - !Ref VpcSubnet
           #- subnet-07fd123456788a036
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
 
 Outputs:
   LambdaFunctionArn:
