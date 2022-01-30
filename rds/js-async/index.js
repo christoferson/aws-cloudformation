@@ -1,4 +1,4 @@
-const mysql = require('mysql2');
+const mysql = require('mysql2/promise');
 const ssm = new (require('aws-sdk/clients/ssm'))();
 
 let configurationLoaded = false;
@@ -27,8 +27,6 @@ async function readSsmParameters(parameterNames, withDecryption) {
 
 async function readConfiguration() {
 
-    count++;
-
     if (configurationLoaded) {
         return;
     }
@@ -49,21 +47,73 @@ async function readConfiguration() {
 
     configurationLoaded = true;
     
-    return parameterValue;
+    console.log(`Loaded Configuration.`);
+
 
 }
 
+async function createSingleConnection() {
+    
+    if (connection !== null) {
+        console.log(`Reuse Database Connection.`);
+        return;
+    }
+
+    connection = await mysql.createConnection({
+        host     : mysql_host,
+        user     : mysql_user,
+        password : mysql_password,
+        database : mysql_dbname
+    });
+
+    connection.on('error', (err) => {
+        if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+            // reconnect if connection is lost
+            createSingleConnection();
+            console.log(`Reconnected`);
+        } else {
+            throw err;
+        }
+    });
+    
+    console.log(`Connected to Database.`);
+
+}
+
+async function executeQuery(context) {
+
+    try {
+        const sql = "SELECT * FROM information_schema.PROCESSLIST";
+        const [rows, fields] = await connection.query(sql);
+        for (const row of rows) {
+            //console.log(">>> ", row, row.ID, row.STATE);
+            console.log(">>> ", row.ID, row.STATE);
+        }
+    } catch (e) {
+        console.log(e);
+        context.fail(e);
+    } finally {
+        //connection.end();
+    }
+
+}
 
 exports.handler = async function(event, context) {
     
     context.callbackWaitsForEmptyEventLoop = false;
+    
+    count++;
 
     await readConfiguration();
 
     console.log(`Count: ${count}`);
     
+    await createSingleConnection();
     
+    await executeQuery(context);
     
     console.log(`Done`);
 
+    context.done();
+    
 };
