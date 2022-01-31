@@ -52,6 +52,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
         - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -78,6 +79,8 @@ Resources:
         SubnetIds:
           - !Ref VpcSubnet
           #- subnet-07fd123456788a036
+      TracingConfig:
+        Mode: Active
 
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
