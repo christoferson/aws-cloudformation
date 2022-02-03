@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Cognito User Pool with Domain Hosted UI"
+
+Parameters:
+
+  CognitoDomainName:
+    Type: String
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$
+    Description: Cognito Domain Name. xxx.auth.us-west-2.amazoncognito.com
+
+Resources:
+
+  UserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: "cognito-userpool-domain"
+      AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: false
+          UnusedAccountValidityDays: 7
+      AliasAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Name: "email"
+          StringAttributeConstraints:
+            MaxLength: "128"
+            MinLength: "0"
+          Required: true
+        - AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Name: "name"
+          StringAttributeConstraints:
+            MaxLength: "256"
+            MinLength: "0"
+          Required: false
+        - AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Name: "custom-attributes"
+          StringAttributeConstraints:
+            MaxLength: "256"
+            MinLength: "0"
+          Required: false
+      UserPoolTags:
+        Environment: "cmn"
+        Owner: "me"
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - http://localhost:3000
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - phone
+        - email
+        - openid
+        - profile
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainName
+      UserPoolId: !Ref UserPool
+
+Outputs:
+
+  UserPoolName:
+    Description: 'The name of the user pool'
+    Value: !Ref UserPool
+
+  UserPoolClientID:
+    Value: !Ref UserPoolClient
+    Description: The app client
+
+  HostedUIURL:
+    Value: !Sub https://${CognitoDomainName}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&scope=email+openid+phone+profile&redirect_uri=http://localhost:3000
+    Description: The hosted UI URL
