@@ -77,6 +77,14 @@ Resources:
         - profile
       SupportedIdentityProviders:
         - COGNITO
+      DefaultRedirectURI: "http://localhost:3000"
+      ExplicitAuthFlows:
+        - 'ALLOW_REFRESH_TOKEN_AUTH'
+      LogoutURLs:
+        - 'http://localhost:3000'
+      PreventUserExistenceErrors: ENABLED
+      WriteAttributes:
+        - 'email'
 
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
