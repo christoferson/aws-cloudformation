@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB"
+
+Resources:
+
+  UserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: "cognito-userpool-basic"
+      AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: false
+          UnusedAccountValidityDays: 7
+      AliasAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Name: "email"
+          StringAttributeConstraints:
+            MaxLength: "128"
+            MinLength: "0"
+          Required: true
+        - AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Name: "name"
+          StringAttributeConstraints:
+            MaxLength: "256"
+            MinLength: "0"
+          Required: false
+        - AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Name: "custom-attributes"
+          StringAttributeConstraints:
+            MaxLength: "256"
+            MinLength: "0"
+          Required: false
+      UserPoolTags:
+        Environment: "cmn"
+        Owner: "me"
+
+Outputs:
+
+  UserPoolId:
+    Description: 'The name of the user pool'
+    Value: !Ref UserPool
