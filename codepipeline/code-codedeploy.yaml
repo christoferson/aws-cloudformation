@@ -6,12 +6,12 @@ Parameters:
   RevisionBucketName:
     Description: Lambda Function Name
     Type: String
-    Default: "code-build-demo-bucket"
+    Default: "my-bucket"
 
   RevisionObjectKey:
     Description: Lambda Function Name
     Type: String
-    Default: "MyCodePipeline/SourceArti/3UNjWmm"
+    Default: "xxx/zzz/ddd"
 
 Resources:
 
