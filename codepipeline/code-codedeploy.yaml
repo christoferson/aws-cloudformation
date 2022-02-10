@@ -1,6 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CodeDeploy
 
+Parameters:
+
+  RevisionBucketName:
+    Description: Lambda Function Name
+    Type: String
+    Default: "code-build-demo-bucket"
+
+  RevisionObjectKey:
+    Description: Lambda Function Name
+    Type: String
+    Default: "MyCodePipeline/SourceArti/3UNjWmm"
+
 Resources:
 
   CodeDeployServiceRole:
@@ -29,6 +41,21 @@ Resources:
       ApplicationName: !Ref CodeDeployAplication
       DeploymentGroupName: "code-codedeploy-demo-deployment-group"
       DeploymentConfigName: CodeDeployDefault.OneAtATime
+      Deployment: 
+        Description: "First time"
+        IgnoreApplicationStopFailures: true 
+        Revision: 
+          RevisionType: S3 
+          S3Location: 
+            Bucket: 
+              Ref: RevisionBucketName 
+            Key: 
+              Ref: RevisionObjectKey 
+            BundleType: Zip 
+            #ETag: 
+              #Ref: ETag 
+            #Version: 
+              #Ref: Version  
       Ec2TagFilters:
         - Type: KEY_AND_VALUE
           Key: "Environment"
