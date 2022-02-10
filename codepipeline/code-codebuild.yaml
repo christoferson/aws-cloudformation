@@ -1,7 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeCommit
+Description: CodeBuild + CODEPIPELINE
 
 Resources:
+
+  # TODO: Add s3 bucket code-build-demo-bucket to export aftifact
 
   CodeBuildRole:
     Type: 'AWS::IAM::Role'
