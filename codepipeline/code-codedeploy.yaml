@@ -17,3 +17,24 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+
+  CodeDeployAplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: "code-codedeploy-demo"
+
+  CodeDeployGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployAplication
+      DeploymentGroupName: "code-codedeploy-demo-deployment-group"
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      Ec2TagFilters:
+        - Type: KEY_AND_VALUE
+          Key: "Environment"
+          Value: "Development"
+        - Type: KEY_AND_VALUE
+          Key: "Name"
+          Value: "Webserver"
+      ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
+
