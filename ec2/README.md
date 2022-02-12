@@ -5,6 +5,10 @@ Launch instance inside a public subnet
 
 ec2-basic
 
+## User Data
+
+ec2-user-data
+
 ## Launch Template
 
 Launch instance using launch template
