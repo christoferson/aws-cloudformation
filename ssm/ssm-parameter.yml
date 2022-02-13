@@ -3,13 +3,21 @@ Description: Systems Manager - Parameter Store Reference
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: b2b
+    Description: Application Name
+
   VpcId: 
+    Type: AWS::EC2::VPC::Id
+
+  ParameterVpcId: 
     Type: AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>
 
-  SubnetId: 
+  ParameterSubnetId: 
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>
 
-  DatabaseEndpoint:
+  ParameterDatabaseEndpoint:
     Type: AWS::SSM::Parameter::Value<String>
 
 Resources:
@@ -18,9 +26,20 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VpcId
-      GroupDescription: !Sub "VpcId=${VpcId} SubnetId=${SubnetId} DB=${DatabaseEndpoint}"
+      GroupDescription: !Sub "VpcId=${ParameterVpcId} SubnetId=${ParameterSubnetId} DB=${ParameterDatabaseEndpoint}"
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
         ToPort: 80
         CidrIp: "0.0.0.0/0"
+
+Outputs:
+
+  ParameterVpcId:
+    Value: !Ref ParameterVpcId
+
+  ResolveVpcId:
+    Value: "{{resolve:ssm:/b2b/dev/vpc/id}}"
+
+  ResolveVpcIdVersions1:
+    Value: "{{resolve:ssm:/b2b/dev/vpc/id:1}}"
