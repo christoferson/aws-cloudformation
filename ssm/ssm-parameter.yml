@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Systems Manager - Parameter Store Reference
 
+
 Parameters:
 
   Application:
@@ -21,7 +22,11 @@ Parameters:
 
   ParameterDatabaseEndpoint:
     Type: AWS::SSM::Parameter::Value<String>
-    Default: /xxx/database/endpoint
+    Default: /demo/database/endpoint
+
+  AmazonLinuxAmiIdLatest: # aws ssm get-parameters-by-path --path /aws/service/ami-amazon-linux-latest  --query 'Parameters[].Name'
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-kernel-5.10-hvm-x86_64-gp2
 
 Resources:
 
@@ -29,7 +34,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VpcId
-      GroupDescription: !Sub "VpcId=${ParameterVpcId} SubnetId=${ParameterSubnetId} DB=${ParameterDatabaseEndpoint}"
+      GroupDescription: !Sub "VpcId=${ParameterVpcId} SubnetId=${ParameterSubnetId} DB=${ParameterDatabaseEndpoint} AmazonLinuxAmiIdLatest=${AmazonLinuxAmiIdLatest}"
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
