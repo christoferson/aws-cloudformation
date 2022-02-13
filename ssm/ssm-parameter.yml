@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Systems Manager - Parameter Store Reference
+
+Parameters:
+
+  VpcId: 
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>
+
+  SubnetId: 
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>
+
+  DatabaseEndpoint:
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources:
+
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: !Sub "VpcId=${VpcId} SubnetId=${SubnetId} DB=${DatabaseEndpoint}"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
