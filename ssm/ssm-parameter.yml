@@ -5,7 +5,7 @@ Parameters:
 
   Application:
     Type: String
-    Default: b2b
+    Default: xxx
     Description: Application Name
 
   VpcId: 
@@ -13,12 +13,15 @@ Parameters:
 
   ParameterVpcId: 
     Type: AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>
+    Default: /xxx/dev/vpc/id
 
   ParameterSubnetId: 
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>
+    Default: /xxx/dev/vpc/subnet/private-subnet-1/id
 
   ParameterDatabaseEndpoint:
     Type: AWS::SSM::Parameter::Value<String>
+    Default: /xxx/database/endpoint
 
 Resources:
 
@@ -38,8 +41,15 @@ Outputs:
   ParameterVpcId:
     Value: !Ref ParameterVpcId
 
-  ResolveVpcId:
-    Value: "{{resolve:ssm:/b2b/dev/vpc/id}}"
+  ResolveVpcId: # Resolve the latest version
+    Value: "{{resolve:ssm:/xxx/dev/vpc/id}}"
 
-  ResolveVpcIdVersions1:
-    Value: "{{resolve:ssm:/b2b/dev/vpc/id:1}}"
+  ResolveVpcIdVersions1: # Resolve version 1
+    Value: "{{resolve:ssm:/xxx/dev/vpc/id:1}}"
+
+# SSM Secure reference is not supported in: Outputs
+#  ResolveDatabasePassword:
+#    Value: "{{resolve:ssm-secure:/xxx/database/password}}"
+
+#  ResolveDatabasePasswordVersion1:
+#    Value: "{{resolve:ssm-secure:/xxx/database/password:1}}"
