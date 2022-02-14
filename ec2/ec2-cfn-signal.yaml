@@ -111,7 +111,7 @@ Resources:
             # Get the latest CloudFormation package
             yum update -y aws-cfn-bootstrap
             # Start cfn-init
-            /opt/aws/bin/cfn-init -s ${AWS::StackId} -r EC2Instance --region ${AWS::Region}
+            /opt/aws/bin/cfn-init -s ${AWS::StackId} -r EC2Instance --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
             # Start cfn-signal to the wait condition
             /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource Ec2WaitCondition --region ${AWS::Region}
     Metadata:
@@ -123,9 +123,9 @@ Resources:
               httpd: []
           files:
             "/var/www/html/index.html":
-              content: |
+              content: !Sub |
                 <h1>Hi from EC2 instance!</h1>
-                <p>This page was created using cfn-init.</p>
+                <p>This page was created using cfn-init. ${AWS::Region}</p>
               mode: '000644'
           commands:
             hello:
