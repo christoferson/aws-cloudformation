@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Basic with Inline Source (Python)
+
+Resources:
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "basic-lambda-python-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName : "basic-lambda-python"
+      Description: "Basic Lambda Python"
+      Runtime: python3.8
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+            import json
+            import boto3
+            import os
+
+            def handler(event, context):
+                result = "???";
+                try:
+                  result = event['key1'] + os.environ['databaseName'];
+                except Exception as e:
+                    print(f'Got Exception: {e}')
+                return result
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+
+
