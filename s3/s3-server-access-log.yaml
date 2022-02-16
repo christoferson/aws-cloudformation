@@ -44,6 +44,12 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerPreferred
+      LifecycleConfiguration:
+        Rules: 
+        - Id: ExpireRule
+          Status: Enabled
+          ExpirationInDays: 7
+          #NoncurrentVersionExpirationInDays: 7
       Tags:
         - Key: "usage"
           Value: !Sub "Server Log for ${BucketName}"
