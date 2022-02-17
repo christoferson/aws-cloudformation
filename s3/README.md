@@ -1,6 +1,17 @@
 
+## S3 Cloudformation Templates
 
-### S3 Object Lambda s3-object-lambda
+### S3 Basic Minimum Example
+
+s3-basic
+
+### S3 Standard Example
+
+s3-bucket
+
+### S3 Object Lambda 
+
+s3-object-lambda
 
 #### S3 Server Access Logging 
 
