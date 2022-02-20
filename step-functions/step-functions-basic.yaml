@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Example template for a Step Functions state machine.
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+
+  LambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = (event, context, callback) => {
+              callback(null, "Hello World!");
+          };
+      Runtime: "nodejs12.x"
+      Timeout: "25"
+
+  StateMachineExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+
+  StateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      #StateMachineName: StateMachine
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Call Lambda",
+              "StartAt": "Step1",
+              "States": {
+                "Step1": {
+                  "Type": "Task",
+                  "Resource": "${lambdaArn}",
+                  "End": true
+                }
+              }
+            }
+          - {lambdaArn: !GetAtt [ LambdaFunction, Arn ]}
+      
+      Tags:
+        -
+          Key: "Environment"
+          Value: "dev"
+        -
+          Key: "Application"
+          Value: "app"
+
