@@ -64,7 +64,9 @@ Resources:
                 "Step1": {
                   "Type": "Task",
                   "Resource": "${lambdaArn}",
-                  "End": true
+                  "End": true,
+                  "TimeoutSeconds" : 30,
+                  "HeartbeatSeconds" : 6 
                 }
               }
             }
