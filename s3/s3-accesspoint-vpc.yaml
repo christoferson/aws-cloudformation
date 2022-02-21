@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: S3 AccessPoint (Restricted to VPC)
+# Needs VPC Endpoint to Access S3
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: S3 Configuration
+        Parameters:
+          - BucketName
+    ParameterLabels:
+      BucketName:
+        default: Bucket Name
+        MinLength: 5
+        MaxLength: 64
+
+Parameters:
+
+  BucketName:
+    Type: String
+    Default: my-bucket
+    Description: 'Must contain only lowercase letters, numbers, periods (.), and dashes (-) '
+
+  AccessPointVpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Default: vpc-
+    Description: Vpc ID of the access point
+
+  AccessPointVpcRouteTable:
+    #Type: 'AWS::EC2::RouteTable::Id'
+    Type: String
+    Default: rtb-058d38512gc052bE3
+    Description: Route Table for VPC Gateway Endpoint
+
+Resources:
+  Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Suspended
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: !Sub '${BucketName}-lifecycle-rule-1'
+            Status: Enabled
+            Prefix: logs/
+            TagFilters:
+              - Key: key1
+                Value: value1
+              - Key: key2
+                Value: value2
+            ExpirationInDays: 365
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+              - StorageClass: GLACIER
+                TransitionInDays: 120
+          - Id: !Sub '${BucketName}-lifecycle-rule-2'
+            Status: Enabled
+            Prefix: uploads/
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 3
+      Tags:
+        - Key: management
+          Value: manual
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Effect: Deny
+            Resource: !Sub 'arn:aws:s3:::${Bucket}/*'
+            Principal: '*'
+            Condition:
+              StringNotLike:
+                's3:DataAccessPointArn': !Sub >-
+                  arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/*
+  S3AccessPoint:
+    Type: 'AWS::S3::AccessPoint'
+    Properties:
+      Bucket: !Ref Bucket
+      Name: !Sub '${BucketName}-access-point'
+      VpcConfiguration:
+        VpcId:
+          Ref: AccessPointVpcId
+      Policy:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Effect: Allow
+            Resource:
+              - !Sub >-
+                arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${BucketName}-access-point/object/*
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/sandbox'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: true
+  S3GatewayEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcId: !Ref AccessPointVpcId
+      RouteTableIds:
+        - !Ref AccessPointVpcRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Resource:
+              - !Sub 'arn:aws:s3:::${BucketName}/*'
+Outputs:
+  BucketArn:
+    Value: !GetAtt Bucket.Arn
+  S3AccessPointArn:
+    Value: !GetAtt S3AccessPoint.Arn
+    Description: ARN of the sample Amazon S3 access point.
+  S3AccessPointName:
+    Value: !GetAtt S3AccessPoint.Name
+    Description: Name of the sample Amazon S3 access point.
+  S3AccessPointAlias:
+    Value: !GetAtt S3AccessPoint.Alias
+    Description: Alias of the sample Amazon S3 access point.
+

@@ -1,5 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: S3 Template
+Description: S3 AccessPoint
+
+# arn:partition:service:region:account-id:accesspoint/resource
+# arn:partition:service:region:account-id:accesspoint/access-point-name/object/resource
 
 Metadata:
   "AWS::CloudFormation::Interface":
