@@ -25,11 +25,6 @@ Parameters:
     Default: "my-bucket"
     Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
 
-  AccessPointVpcId:
-    Type: "AWS::EC2::VPC::Id"
-    Default: "vpc-"
-    Description: "Vpc ID of the access point"
-
 Resources:
 
   Bucket:

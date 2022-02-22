@@ -93,6 +93,7 @@ Resources:
               StringNotLike:
                 's3:DataAccessPointArn': !Sub >-
                   arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/*
+
   S3AccessPoint:
     Type: 'AWS::S3::AccessPoint'
     Properties:
@@ -109,8 +110,7 @@ Resources:
               - 's3:PutObject'
             Effect: Allow
             Resource:
-              - !Sub >-
-                arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${BucketName}-access-point/object/*
+              - !Sub "arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${BucketName}-access-point/object/*"
             Principal:
               AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/sandbox'
       PublicAccessBlockConfiguration:
@@ -118,6 +118,7 @@ Resources:
         IgnorePublicAcls: true
         BlockPublicPolicy: false
         RestrictPublicBuckets: true
+
   S3GatewayEndpoint:
     Type: 'AWS::EC2::VPCEndpoint'
     Properties:
