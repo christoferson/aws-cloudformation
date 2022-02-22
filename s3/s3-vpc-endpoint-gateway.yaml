@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: S3 VPC Endpoint Gateway
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: S3 Configuration
+        Parameters:
+          - BucketName
+    ParameterLabels:
+      BucketName:
+        default: Bucket Name
+        MinLength: 5
+        MaxLength: 64
+
+Parameters:
+
+  BucketName:
+    Type: String
+    Default: my-bucket
+    Description: 'Must contain only lowercase letters, numbers, periods (.), and dashes (-) '
+
+  EndpointVpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Default: vpc-
+    Description: Vpc ID of the access point
+
+  EndpointVpcRouteTableId:
+    #Type: 'AWS::EC2::RouteTable::Id'
+    Type: String
+    Default: rtb-058d38512gc052bE3
+    Description: Route Table for VPC Gateway Endpoint
+
+Resources:
+
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref EndpointVpcId
+      RouteTableIds:
+        - !Ref EndpointVpcRouteTableId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:PutObject
+            Resource:
+              - !Sub 'arn:aws:s3:::${BucketName}'
+              - !Sub 'arn:aws:s3:::${BucketName}/*'
+
+  Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Suspended
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: !Sub '${BucketName}-lifecycle-rule-1'
+            Status: Enabled
+            Prefix: logs/
+            TagFilters:
+              - Key: key1
+                Value: value1
+              - Key: key2
+                Value: value2
+            ExpirationInDays: 365
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+              - StorageClass: GLACIER
+                TransitionInDays: 120
+          - Id: !Sub '${BucketName}-lifecycle-rule-2'
+            Status: Enabled
+            Prefix: uploads/
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 3
+      Tags:
+        - Key: management
+          Value: manual
+
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Effect: Deny
+            Resource: 
+              - !Sub 'arn:aws:s3:::${Bucket}'
+              - !Sub 'arn:aws:s3:::${Bucket}/*'
+            Principal: '*'
+            Condition:
+              StringNotEquals:
+                "aws:SourceVpce": !Ref S3GatewayEndpoint
+
+Outputs:
+
+  BucketArn:
+    Value: !GetAtt Bucket.Arn
+  S3GatewayEndpointId:
+    Value: !Ref S3GatewayEndpoint
+    Description: S3GatewayEndpoint
+
+
