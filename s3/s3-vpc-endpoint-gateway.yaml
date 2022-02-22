@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: S3 VPC Endpoint Gateway
+Description: S3 VPC Endpoint Gateway. Access Polcicy will be managed in the S3GatewayEndpoint. S3 BucketPolicy will Deny access unless accessed from Endpoint.
 
 Metadata:
   'AWS::CloudFormation::Interface':
@@ -19,7 +19,7 @@ Parameters:
   BucketName:
     Type: String
     Default: my-bucket
-    Description: 'Must contain only lowercase letters, numbers, periods (.), and dashes (-) '
+    Description: 'Name of the Bucket'
 
   EndpointVpcId:
     Type: 'AWS::EC2::VPC::Id'
@@ -50,6 +50,7 @@ Resources:
               - s3:ListBucket
               - s3:GetObject
               - s3:PutObject
+              - s3:DeleteObject
             Resource:
               - !Sub 'arn:aws:s3:::${BucketName}'
               - !Sub 'arn:aws:s3:::${BucketName}/*'
