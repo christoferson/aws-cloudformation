@@ -102,7 +102,7 @@ Resources:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         #Image: aws/codebuild/java:openjdk-8
-        Image: aws/codebuild/standard:1.0
+        Image: aws/codebuild/standard:5.0
         EnvironmentVariables:
         - Name: varName
           Type: PLAINTEXT # PLAINTEXT PARAMETER_STORE SECRETS_MANAGER
