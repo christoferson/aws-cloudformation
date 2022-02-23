@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeBuild - S3 Input Source - No Output Artifact
+
+Resources:
+
+  CodeBuildSourceBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      #BucketName: !Ref BucketName
+      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  CodeBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      #RoleName: !Sub "code-build-demo-role"
+      Description: !Sub "CodeBuild Role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref CodeBuildRolePolicy
+      Path: /
+      Tags:
+        - Key: 'environment'
+          Value: common
+
+  CodeBuildRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeBuild Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'ecr:GetAuthorizationToken'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::${CodeBuildSourceBucket}/*"
+          - Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+            Effect: Allow
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
+          - Action:
+              - 'ecr:BatchGetImage'
+              - 'ecr:GetDownloadUrlForLayer'
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      #Name: myProjectName
+      Description: Project Description
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: no_artifacts
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        #Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:1.0
+        EnvironmentVariables:
+        - Name: varName
+          Type: PLAINTEXT # PLAINTEXT PARAMETER_STORE SECRETS_MANAGER
+          Value: varValue
+      Source: #buildspec.yaml in zip file
+        Type: S3
+        Location: !Sub "${CodeBuildSourceBucket}/code-codebuild-s3.zip"
+      TimeoutInMinutes: 10
+      Tags:
+        - Key: Key1
+          Value: Value1
+        - Key: Key2
+          Value: Value2
+
+Outputs:
+
+  CodeBuildRoleArn:
+    Value: !Ref CodeBuildRole
