@@ -1,9 +1,15 @@
 
+## CodeCommit
+
+CodeCommit example
+
+code-codecommit
+
 ## CodeBuild
 
-Source - NoSource, CodeCommit, GitHub, Bitbucket, CODEPIPELINE, S3
-Operating System - Linux, Ubuntu, Docket
-Output: NoOutput, S3
+- Source - NoSource, CodeCommit, GitHub, Bitbucket, CODEPIPELINE, S3
+- Operating System - Linux, Ubuntu, Docket
+- Output: NoOutput, S3
 
 ### CodeBuild - Input:none Output:none
 
@@ -41,5 +47,44 @@ code-codebuild-s3
 
 CodeBuild example with CodeCommit Input Source and S3 Output Artifact
 
+- CodeCommit source must contain buildspec.yaml at the root of the repository.
+
 code-codebuild-codecommit
 
+```yaml
+      Source:
+        Type: CODECOMMIT
+        Location: !Sub "${CodeCommitRepository.CloneUrlHttp}"
+```
+
+```yaml
+      Artifacts:
+        Type: S3
+        Location: !Sub "${CodeBuildOutputBucket}"
+        Path: /output
+        Name: build.zip
+        NamespaceType: BUILD_ID # NONE | BUILD_ID
+        Packaging: ZIP
+        OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
+```
+
+
+## CodeDeploy
+
+CodeDeploy example that deploys to EC2
+
+- Must make sure that EC2 satisfying Ec2TagFilters is up and running before deploying the template. - CF will wait until the code is deployed to the EC2 in order to complete.
+
+```
+      Ec2TagFilters:
+        - Type: KEY_AND_VALUE
+          Key: "Environment"
+          Value: "Development"
+        - Type: KEY_AND_VALUE
+          Key: "Name"
+          Value: "Webserver"
+```
+
+code-codedeploy
+
+## CodePipeline

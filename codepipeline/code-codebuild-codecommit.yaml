@@ -124,7 +124,7 @@ Resources:
         Name: build.zip
         NamespaceType: BUILD_ID # NONE | BUILD_ID
         Packaging: ZIP # NONE | ZIP
-        OverrideArtifactName: true #Use Name in buidpec or not. false - use name specified here build.zip
+        OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
