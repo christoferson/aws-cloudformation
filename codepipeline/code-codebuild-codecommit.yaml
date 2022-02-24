@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeBuild - CodeCommit Input Source - S3 Output Artifact - Trigger Build On Push
+Description: CodeBuild - CodeCommit Input Source - S3 Output Artifact
 
 Parameters:
 
