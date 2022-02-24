@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeBuild - CodeCommit Input Source - S3 Output Artifact - Trigger Build On Push
+
+Parameters:
+
+  CodeCommitRepositoryName:
+    Description: CodeCommit Repository Name
+    Type: String
+    Default: "code-repository-demo"
+
+Resources:
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    #DeletionPolicy: Retain
+    Properties:
+      RepositoryName: !Ref CodeCommitRepositoryName
+      RepositoryDescription: "Demo Repository"
+      Tags:
+        - Key: environment
+          Value: stg
+
+  CodeBuildOutputBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      #BucketName: !Ref BucketName
+      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  CodeBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      #RoleName: !Sub "code-build-demo-role"
+      Description: !Sub "CodeBuild Role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref CodeBuildRolePolicy
+      Path: /
+      Tags:
+        - Key: 'environment'
+          Value: common
+
+  CodeBuildRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeBuild Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'ecr:GetAuthorizationToken'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::${CodeBuildOutputBucket}/*"
+          - Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+            Effect: Allow
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
+          - Action:
+              - 'ecr:BatchGetImage'
+              - 'ecr:GetDownloadUrlForLayer'
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"
+          - Action:
+              - 'codecommit:GitPull'
+            Effect: Allow
+            Resource: !Sub "${CodeCommitRepository.Arn}"
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      #Name: myProjectName
+      Description: Project Description
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: S3 # NO_ARTIFACTS | S3 | CODEPIPELINE
+        Location: !Sub "${CodeBuildOutputBucket}"
+        Path: /output
+        Name: build.zip
+        NamespaceType: BUILD_ID # NONE | BUILD_ID
+        Packaging: ZIP # NONE | ZIP
+        OverrideArtifactName: true #Use Name in buidpec or not. false - use name specified here build.zip
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        #Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:5.0
+        EnvironmentVariables:
+        - Name: varName
+          Type: PLAINTEXT # PLAINTEXT PARAMETER_STORE SECRETS_MANAGER
+          Value: varValue
+      Source: #buildspec.yaml in zip file
+        Type: CODECOMMIT # BITBUCKET | CODECOMMIT | CODEPIPELINE | GITHUB | GITHUB_ENTERPRISE | NO_SOURCE | S3
+        Location: !Sub "${CodeCommitRepository.CloneUrlHttp}"
+      TimeoutInMinutes: 10
+      Tags:
+        - Key: Key1
+          Value: Value1
+        - Key: Key2
+          Value: Value2
+
+Outputs:
+
+  CodeCommitRepositoryCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  CodeBuildRoleArn:
+    Value: !Ref CodeBuildRole
