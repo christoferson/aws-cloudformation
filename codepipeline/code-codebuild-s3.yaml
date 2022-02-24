@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeBuild - S3 Input Source - No Output Artifact
+Description: CodeBuild - S3 Input Source - S3 Output Artifact
 
 Resources:
 
@@ -97,7 +97,13 @@ Resources:
       Description: Project Description
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
-        Type: no_artifacts
+        Type: S3 # NO_ARTIFACTS | S3 | CODEPIPELINE
+        Location: !Sub "${CodeBuildSourceBucket}"
+        Path: /output
+        Name: build.zip
+        NamespaceType: BUILD_ID # NONE | BUILD_ID
+        Packaging: ZIP # NONE | ZIP
+        OverrideArtifactName: true #Use Name in buidpec or not. false - use name specified here build.zip
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL

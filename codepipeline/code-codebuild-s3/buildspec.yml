@@ -39,3 +39,8 @@ phases:
         commands:
             - echo "we are in the post build phase"
             
+artifacts:
+  files:
+    - '**/*'
+  name: app-$(date +%Y-%m-%d)
+ 
