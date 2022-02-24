@@ -1,12 +1,32 @@
 version: 0.2
 
+#run-as: Linux-user-name
+
+env:
+  #shell: shell-tag
+  variables:
+    BuildKey1: "buildvalue1"
+    BuildKey2: "buildvalue1"
+  #parameter-store:
+  #  key: "value"
+  #  key: "value"
+  #exported-variables:
+  #  - variable
+  #  - variable
+  #secrets-manager:
+  #  key: secret-id:json-key:version-stage:version-id
+  #git-credential-helper: no | yes
+
 phases: 
     install:
         runtime-versions:
             nodejs: latest
             java: latest
         commands:
-            - echo "installing something"
+            - echo "installing something..."
+        finally:
+            - echo "install phase complete"
+            - printenv
     pre_build:
         commands: 
             - echo "we are in the pre build phase"
