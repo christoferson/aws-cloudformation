@@ -69,7 +69,7 @@ code-codebuild-codecommit
 ```
 
 
-## CodeDeploy
+## CodeDeploy - EC2
 
 CodeDeploy example that deploys to EC2
 
@@ -85,6 +85,6 @@ CodeDeploy example that deploys to EC2
           Value: "Webserver"
 ```
 
-code-codedeploy
+code-codedeploy-ec2
 
 ## CodePipeline
