@@ -143,3 +143,46 @@ Resources:
                 Action:
                   - ssm:PutParameter
 
+  CodeDeployAplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      #ApplicationName: "code-codedeploy-demo"
+      ComputePlatform: Server #ComputePlatform: Server
+      Tags:
+        - Key: environment
+          Value: stg
+
+  CodeDeployGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployAplication
+      #DeploymentGroupName: "code-codedeploy-demo-deployment-group"
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+#      Deployment: 
+#        Description: "My Deployment"
+#        IgnoreApplicationStopFailures: true 
+#        Revision: 
+#          RevisionType: S3 
+#          S3Location: 
+#            Bucket: 
+#              Ref: RevisionBucketName 
+#            Key: 
+#              Ref: RevisionObjectKey 
+#            BundleType: Zip 
+            #ETag: 
+              #Ref: ETag 
+            #Version: 
+              #Ref: Version  
+      Ec2TagFilters:
+        - Type: KEY_AND_VALUE
+          Key: "Environment"
+          Value: "Development"
+        - Type: KEY_AND_VALUE
+          Key: "Name"
+          Value: "Webserver"
+      ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
+      #AutoRollbackConfiguration:
+      #  Enabled: true
+      #  Events: # DEPLOYMENT_FAILURE, DEPLOYMENT_STOP_ON_ALARM, or DEPLOYMENT_STOP_ON_REQUEST
+      #    - DEPLOYMENT_FAILURE 
+      #    - DEPLOYMENT_STOP_ON_ALARM
