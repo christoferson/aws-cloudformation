@@ -119,6 +119,13 @@ Remove Deployment in CodeDeploy
 
 ### CodePipeline Input:CodeCommit Stage:Source,Deploy
 
-CodePipeline example with CodeCommit as Source. Has Stage Source,Deploy
+CodePipeline example with CodeCommit as Source. Has Stages Source,Deploy
 
 code-codepipeline-basic.yaml
+
+### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy
+
+CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy
+
+code-codepipeline-3step.yaml
+
