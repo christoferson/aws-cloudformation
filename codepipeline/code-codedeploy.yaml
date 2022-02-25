@@ -46,7 +46,7 @@ Resources:
       #DeploymentGroupName: "code-codedeploy-demo-deployment-group"
       DeploymentConfigName: CodeDeployDefault.OneAtATime
       Deployment: 
-        Description: "First time"
+        Description: "Initial Deployment"
         IgnoreApplicationStopFailures: true 
         Revision: 
           RevisionType: S3 
@@ -68,6 +68,11 @@ Resources:
           Key: "Name"
           Value: "Webserver"
       ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
+      #AutoRollbackConfiguration:
+      #  Enabled: true
+      #  Events: # DEPLOYMENT_FAILURE, DEPLOYMENT_STOP_ON_ALARM, or DEPLOYMENT_STOP_ON_REQUEST
+      #    - DEPLOYMENT_FAILURE 
+      #    - DEPLOYMENT_STOP_ON_ALARM
 
 Outputs:
 
