@@ -148,6 +148,54 @@ Resources:
                 Action:
                   - ssm:PutParameter
 
+  # CodeBuild
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/nodejs:6.3.1
+        Type: LINUX_CONTAINER
+      Name: !Ref AWS::StackName
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      #Name: myProjectName
+      Description: Project Description
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+        #Location: !Sub "${CodeBuildOutputBucket}"
+        #Path: /output
+        #Name: build.zip
+        #NamespaceType: BUILD_ID # NONE | BUILD_ID
+        #Packaging: ZIP # NONE | ZIP
+        #OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        #Image: aws/codebuild/java:openjdk-8
+        Image: aws/codebuild/standard:5.0
+        EnvironmentVariables:
+        - Name: varName
+          Type: PLAINTEXT # PLAINTEXT PARAMETER_STORE SECRETS_MANAGER
+          Value: varValue
+      Source: #buildspec.yaml in zip file
+        Type: CODEPIPELINE # BITBUCKET | CODECOMMIT | CODEPIPELINE | GITHUB | GITHUB_ENTERPRISE | NO_SOURCE | S3
+        #Location: !Sub "${CodeCommitRepository.CloneUrlHttp}"
+      TimeoutInMinutes: 10
+      Tags:
+        - Key: Key1
+          Value: Value1
+        - Key: Key2
+          Value: Value2
+
   CodeDeployAplication:
     Type: AWS::CodeDeploy::Application
     Properties:
@@ -214,21 +262,21 @@ Resources:
               RunOrder: 1
               OutputArtifacts:
                 - Name: App
-#        - Name: Build
-#          Actions:
-#            - Name: Build
-#              ActionTypeId:
-#                Category: Build
-#                Owner: AWS
-#                Version: 1
-#                Provider: CodeBuild
-#              Configuration:
-#                ProjectName: !Ref CodeBuildProject
-#              RunOrder: 1
-#              InputArtifacts:
-#                - Name: App
-#              OutputArtifacts:
-#                - Name: MyApp
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: MyApp
         - Name: Deploy
           Actions:
             - Name: Deploy
@@ -242,5 +290,5 @@ Resources:
                 DeploymentGroupName: !Ref CodeDeployGroup
               RunOrder: 1
               InputArtifacts:
-                - Name: App
+                - Name: MyApp
 
