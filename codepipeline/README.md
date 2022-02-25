@@ -68,6 +68,11 @@ code-codebuild-codecommit
         OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
 ```
 
+### CodeBuild - Input:CodeCommit Output:S3 with Trigger on Commit
+
+CodeBuild example with CodeCommit Input Source and S3 Output Artifact with Trigger on Commit
+
+code-codebuild-codecommit-evt
 
 ## CodeDeploy - EC2
 
