@@ -1,17 +1,17 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeDeploy
+Description: CodeDeploy - Input S3 + Output EC2
 
 Parameters:
 
   RevisionBucketName:
-    Description: Lambda Function Name
+    Description: Bucket containing revision
     Type: String
     Default: "my-bucket"
 
   RevisionObjectKey:
-    Description: Lambda Function Name
+    Description: Name of the revision zip file
     Type: String
-    Default: "xxx/zzz/ddd"
+    Default: "code-codedeploy.zip"
 
 Resources:
 
@@ -19,7 +19,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       Path: /
-      RoleName: !Sub "code-codedeploy-demo-role"
+      #RoleName: !Sub "code-codedeploy-demo-role"
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -33,13 +33,17 @@ Resources:
   CodeDeployAplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: "code-codedeploy-demo"
+      #ApplicationName: "code-codedeploy-demo"
+      ComputePlatform: Server #ComputePlatform: Server
+      Tags:
+        - Key: environment
+          Value: stg
 
   CodeDeployGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
       ApplicationName: !Ref CodeDeployAplication
-      DeploymentGroupName: "code-codedeploy-demo-deployment-group"
+      #DeploymentGroupName: "code-codedeploy-demo-deployment-group"
       DeploymentConfigName: CodeDeployDefault.OneAtATime
       Deployment: 
         Description: "First time"
@@ -65,3 +69,10 @@ Resources:
           Value: "Webserver"
       ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
 
+Outputs:
+
+  CodeDeployAplicationName:
+    Value: !Ref CodeDeployAplication
+
+  CodeDeployGroupName:
+    Value: !Ref CodeDeployGroup

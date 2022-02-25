@@ -74,6 +74,27 @@ CodeBuild example with CodeCommit Input Source and S3 Output Artifact with Trigg
 
 code-codebuild-codecommit-evt
 
+## CodeDeploy
+
+- Deploys application from S3 or GitHub to EC2, Lambda or ECS.
+- CodeDeploy does not provision resources.
+- EC2 must be running the CodeDeploy agent which will process the appsec.yaml
+- EC2 Role must have permissions to pull from S3
+
+## CodeDeploy - Install
+
+Based on [documentation](https://docs.aws.amazon.com/codedeploy/latest/userguide/codedeploy-agent-operations-install-linux.html)
+
+```
+sudo yum update -y
+sudo yum install -y ruby wget
+wget https://aws-codedeploy-eu-west-1.s3.eu-west-1.amazonaws.com/latest/install
+chmod +x ./install
+sudo ./install auto
+sudo service codedeploy-agent status
+```
+
+
 ## CodeDeploy - EC2
 
 CodeDeploy example that deploys to EC2
