@@ -114,3 +114,11 @@ CodeDeploy example that deploys to EC2
 code-codedeploy-ec2
 
 ## CodePipeline
+
+Remove Deployment in CodeDeploy
+
+### CodePipeline Input:CodeCommit Stage:Source,Deploy
+
+CodePipeline example with CodeCommit as Source. Has Stage Source,Deploy
+
+code-codepipeline-basic.yaml

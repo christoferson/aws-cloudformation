@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline
+
+
+Parameters:
+
+  CodePipelineBucketName:
+    Description: CodePipeline Bucket
+    Type: String
+    Default: "my-bucket"
+
+  CodeCommitRepositoryName:
+    Description: CodeCommit Repository Name
+    Type: String
+    Default: "my-repository"
+
+Resources:
+
+  CodeBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      #RoleName: !Sub "code-build-demo-role"
+      Description: !Sub "CodeBuild Role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref CodeBuildRolePolicy
+      Path: /
+      Tags:
+        - Key: 'environment'
+          Value: common
+
+  CodeBuildRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeBuild Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'ecr:GetAuthorizationToken'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+          - Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+            Effect: Allow
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
+          - Action:
+              - 'ecr:BatchGetImage'
+              - 'ecr:GetDownloadUrlForLayer'
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"
+
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      #RoleName: !Sub "code-codedeploy-demo-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub "CodePipeline Role"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource:
+                  - !Sub arn:aws:s3:::${CodePipelineBucketName}/*
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+              - Resource: "*"
+                Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:StopBuild
+                  - codebuild:BatchGet*
+                  - codebuild:Get*
+                  - codebuild:List*
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:ListBranches
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                  - codecommit:CancelUploadArchive
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                  - s3:GetBucketLocation
+                  - s3:ListAllMyBuckets
+                  - iam:PassRole
+              - Resource: "arn:aws:ssm:*:*:parameter/CodeBuild/*"
+                Effect: Allow
+                Action:
+                  - ssm:PutParameter
+
+  CodeDeployAplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      #ApplicationName: "code-codedeploy-demo"
+      ComputePlatform: Server #ComputePlatform: Server
+      Tags:
+        - Key: environment
+          Value: stg
+
+  CodeDeployGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployAplication
+      #DeploymentGroupName: "code-codedeploy-demo-deployment-group"
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+#      Deployment: 
+#        Description: "My Deployment"
+#        IgnoreApplicationStopFailures: true 
+#        Revision: 
+#          RevisionType: S3 
+#          S3Location: 
+#            Bucket: 
+#              Ref: RevisionBucketName 
+#            Key: 
+#              Ref: RevisionObjectKey 
+#            BundleType: Zip 
+            #ETag: 
+              #Ref: ETag 
+            #Version: 
+              #Ref: Version  
+      Ec2TagFilters:
+        - Type: KEY_AND_VALUE
+          Key: "Environment"
+          Value: "Development"
+        - Type: KEY_AND_VALUE
+          Key: "Name"
+          Value: "Webserver"
+      ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
+      #AutoRollbackConfiguration:
+      #  Enabled: true
+      #  Events: # DEPLOYMENT_FAILURE, DEPLOYMENT_STOP_ON_ALARM, or DEPLOYMENT_STOP_ON_REQUEST
+      #    - DEPLOYMENT_FAILURE 
+      #    - DEPLOYMENT_STOP_ON_ALARM
+
+  CodePipelinePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref CodePipelineBucketName
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !Ref CodeCommitRepositoryName
+                BranchName: main
+              RunOrder: 1
+              OutputArtifacts:
+                - Name: App
+#        - Name: Build
+#          Actions:
+#            - Name: Build
+#              ActionTypeId:
+#                Category: Build
+#                Owner: AWS
+#                Version: 1
+#                Provider: CodeBuild
+#              Configuration:
+#                ProjectName: !Ref CodeBuildProject
+#              RunOrder: 1
+#              InputArtifacts:
+#                - Name: App
+#              OutputArtifacts:
+#                - Name: MyApp
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeploy
+              Configuration:
+                ApplicationName: !Ref CodeDeployAplication
+                DeploymentGroupName: !Ref CodeDeployGroup
+              RunOrder: 1
+              InputArtifacts:
+                - Name: App
+
