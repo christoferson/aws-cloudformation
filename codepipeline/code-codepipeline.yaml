@@ -9,6 +9,11 @@ Parameters:
     Type: String
     Default: "my-bucket"
 
+  CodeCommitRepositoryName:
+    Description: CodeCommit Repository Name
+    Type: String
+    Default: "my-repository"
+
 Resources:
 
   CodeBuildRole:
@@ -186,3 +191,56 @@ Resources:
       #  Events: # DEPLOYMENT_FAILURE, DEPLOYMENT_STOP_ON_ALARM, or DEPLOYMENT_STOP_ON_REQUEST
       #    - DEPLOYMENT_FAILURE 
       #    - DEPLOYMENT_STOP_ON_ALARM
+
+  CodePipelinePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref CodePipelineBucketName
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !Ref CodeCommitRepositoryName
+                BranchName: main
+              RunOrder: 1
+              OutputArtifacts:
+                - Name: App
+#        - Name: Build
+#          Actions:
+#            - Name: Build
+#              ActionTypeId:
+#                Category: Build
+#                Owner: AWS
+#                Version: 1
+#                Provider: CodeBuild
+#              Configuration:
+#                ProjectName: !Ref CodeBuildProject
+#              RunOrder: 1
+#              InputArtifacts:
+#                - Name: App
+#              OutputArtifacts:
+#                - Name: MyApp
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeploy
+              Configuration:
+                ApplicationName: !Ref CodeDeployAplication
+                DeploymentGroupName: !Ref CodeDeployGroup
+              RunOrder: 1
+              InputArtifacts:
+                - Name: App
+
