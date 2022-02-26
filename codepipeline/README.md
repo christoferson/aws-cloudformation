@@ -129,3 +129,10 @@ CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy
 
 code-codepipeline-3step.yaml
 
+### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy with Trigger on Push
+
+CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy
+
+- CodePipeline is triggered on CodeCommit push
+
+code-codepipeline-evt
