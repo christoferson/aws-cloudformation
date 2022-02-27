@@ -121,6 +121,19 @@ Resources:
                 "NextState": {
                   "Type": "Task",
                   "Resource": "${lambdaArn}",
+                  "Next": "FinalState",
+                  "Catch": [ {
+                    "ErrorEquals": [ "java.lang.Exception" ],
+                    "ResultPath": "$.error-info",
+                    "Next": "FinalState"
+                  }, {
+                    "ErrorEquals": [ "States.ALL" ],
+                    "Next": "FinalState"
+                  } ]
+                },
+                "FinalState": {
+                  "Type": "Task",
+                  "Resource": "${lambdaArn}",
                   "End": true
                 }
               }
