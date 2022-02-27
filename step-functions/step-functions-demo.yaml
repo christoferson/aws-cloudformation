@@ -68,6 +68,15 @@ Resources:
                   "Resource": "${lambdaArn}",
                   "TimeoutSeconds": 5,
                   "HeartbeatSeconds": 3,
+                  "Next": "PassState"
+                },
+                "PassState": {
+                  "Type": "Pass",
+                  "Result": {
+                    "x-datum": 0.381018,
+                    "y-datum": 622.2269926397355
+                  },
+                  "ResultPath": "$.coords",
                   "Next": "ChoiceState"
                 },
                 "ChoiceState": {
