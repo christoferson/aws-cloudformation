@@ -13,6 +13,9 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
   LambdaFunction:
     Type: "AWS::Lambda::Function"
@@ -26,6 +29,12 @@ Resources:
           };
       Runtime: "nodejs12.x"
       Timeout: "25"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
 
   StateMachineExecutionRole:
     Type: "AWS::IAM::Role"
@@ -48,12 +57,19 @@ Resources:
                 Action:
                   - "lambda:InvokeFunction"
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: "*"
 
   StateMachine:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
       #StateMachineName: StateMachine
+      StateMachineType: STANDARD  # STANDARD |  EXPRESS 
       RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      #Definition: xxx
+      #DefinitionS3Location: xxx
       DefinitionString:
         !Sub
           - |-
@@ -96,6 +112,11 @@ Resources:
                       "Variable": "$.foo",
                       "NumericEquals": 3,
                       "Next": "SuccessState"
+                    },
+                    {
+                      "Variable": "$.foo",
+                      "NumericEquals": 4,
+                      "Next": "RetryState"
                     }
                   ],
                   "Default": "DefaultState"
@@ -131,6 +152,18 @@ Resources:
                     "Next": "FinalState"
                   } ]
                 },
+                "RetryState": {
+                  "Type": "Task",
+                  "Resource": "${lambdaArn}",
+                  "TimeoutSeconds": 1,
+                  "Retry": [ {
+                      "ErrorEquals": ["States.Timeout"],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 2,
+                      "BackoffRate": 2.0
+                  } ],
+                  "Next": "FinalState"
+                },
                 "FinalState": {
                   "Type": "Task",
                   "Resource": "${lambdaArn}",
@@ -139,7 +172,14 @@ Resources:
               }
             }
           - {lambdaArn: !GetAtt [ LambdaFunction, Arn ]}
-      
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt LogGroupStateMachine.Arn
+        IncludeExecutionData: true
+        Level: 'ERROR'
       Tags:
         -
           Key: "Environment"
@@ -148,3 +188,16 @@ Resources:
           Key: "Application"
           Value: "app"
 
+  LogGroupStateMachine:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        #LogGroupName: !Sub "/stepfunctions"
+        RetentionInDays: 1
+
+Outputs:
+
+  StateMachineArn:
+    Value: !Ref StateMachine
+
+  StateMachineName:
+    Value: !GetAtt StateMachine.Name
