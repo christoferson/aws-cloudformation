@@ -22,7 +22,7 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = (event, context, callback) => {
-              callback(null, "Hello World!");
+              callback(null, event);
           };
       Runtime: "nodejs12.x"
       Timeout: "25"
@@ -65,7 +65,9 @@ Resources:
                 "FirstState": {
                   "Type": "Task",
                   "Comment": "State Comment",
-                  "Resource": "arn:aws:lambda:us-east-1:123456789012:function:FUNCTION_NAME",
+                  "Resource": "${lambdaArn}",
+                  "TimeoutSeconds": 5,
+                  "HeartbeatSeconds": 3,
                   "Next": "ChoiceState"
                 },
                 "ChoiceState": {
