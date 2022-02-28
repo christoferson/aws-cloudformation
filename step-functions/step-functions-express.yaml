@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Example template for a Step Functions state machine.
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = (event, context, callback) => {
+              callback(null, event);
+          };
+      Runtime: "nodejs12.x"
+      Timeout: "25"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+  StateMachineExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: "*"
+
+  StateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      #StateMachineName: StateMachine
+      StateMachineType: EXPRESS  # STANDARD |  EXPRESS 
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      #Definition: xxx
+      #DefinitionS3Location: xxx
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "An example of the Amazon States Language using a choice state.",
+              "StartAt": "FirstState",
+              "TimeoutSeconds": 30,
+              "States": {
+                "FirstState": {
+                  "Type": "Task",
+                  "Comment": "State Comment",
+                  "Resource": "${lambdaArn}",
+                  "TimeoutSeconds": 5,
+                  "HeartbeatSeconds": 3,
+                  "Next": "PassState"
+                },
+                "PassState": {
+                  "Type": "Pass",
+                  "Result": {
+                    "x-datum": 0.381018,
+                    "y-datum": 622.2269926397355
+                  },
+                  "ResultPath": "$.coords",
+                  "Next": "ChoiceState"
+                },
+                "ChoiceState": {
+                  "Type" : "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.foo",
+                      "NumericEquals": 1,
+                      "Next": "FirstMatchState"
+                    },
+                    {
+                      "Variable": "$.foo",
+                      "NumericEquals": 2,
+                      "Next": "SecondMatchState"
+                    },
+                    {
+                      "Variable": "$.foo",
+                      "NumericEquals": 3,
+                      "Next": "SuccessState"
+                    },
+                    {
+                      "Variable": "$.foo",
+                      "NumericEquals": 4,
+                      "Next": "RetryState"
+                    }
+                  ],
+                  "Default": "DefaultState"
+                },
+                "FirstMatchState": {
+                  "Type" : "Task",
+                  "Resource": "${lambdaArn}",
+                  "Next": "NextState"
+                },
+                "SecondMatchState": {
+                  "Type" : "Task",
+                  "Resource": "${lambdaArn}",
+                  "Next": "NextState"
+                },
+                "DefaultState": {
+                  "Type": "Fail",
+                  "Error": "DefaultStateError",
+                  "Cause": "No Matches!"
+                },
+                "SuccessState": {
+                  "Type": "Succeed"
+                },
+                "NextState": {
+                  "Type": "Task",
+                  "Resource": "${lambdaArn}",
+                  "Next": "FinalState",
+                  "Catch": [ {
+                    "ErrorEquals": [ "java.lang.Exception" ],
+                    "ResultPath": "$.error-info",
+                    "Next": "FinalState"
+                  }, {
+                    "ErrorEquals": [ "States.ALL" ],
+                    "Next": "FinalState"
+                  } ]
+                },
+                "RetryState": {
+                  "Type": "Task",
+                  "Resource": "${lambdaArn}",
+                  "TimeoutSeconds": 1,
+                  "Retry": [ {
+                      "ErrorEquals": ["States.Timeout"],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 2,
+                      "BackoffRate": 2.0
+                  } ],
+                  "Next": "FinalState"
+                },
+                "FinalState": {
+                  "Type": "Task",
+                  "Resource": "${lambdaArn}",
+                  "End": true
+                }
+              }
+            }
+          - {lambdaArn: !GetAtt [ LambdaFunction, Arn ]}
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt LogGroupStateMachine.Arn
+        IncludeExecutionData: true
+        Level: 'ALL'
+      Tags:
+        -
+          Key: "Environment"
+          Value: "dev"
+        -
+          Key: "Application"
+          Value: "app"
+
+  LogGroupStateMachine:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        #LogGroupName: !Sub "/stepfunctions"
+        RetentionInDays: 1
+
+Outputs:
+
+  StateMachineArn:
+    Value: !Ref StateMachine
+
+  StateMachineName:
+    Value: !GetAtt StateMachine.Name
