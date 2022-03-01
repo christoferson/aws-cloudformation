@@ -18,3 +18,17 @@ Example using various State types
 
 step-functions-demo
 
+### Step Functions Type=Express
+
+Example of Express Step Functions
+
+```yaml
+  StateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      ...
+      StateMachineType: EXPRESS  # STANDARD |  EXPRESS 
+      ...
+```
+
+step-functions-express
