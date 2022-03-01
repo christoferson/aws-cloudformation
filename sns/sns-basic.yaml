@@ -7,10 +7,12 @@ Parameters:
     Type: String
     Default: myapp
     Description: Application Name
+
   Environment:
     Type: String
     Default: stg
     Description: Environment
+
   TopicName:
     Type: String
     Default: sample-topic
@@ -22,6 +24,16 @@ Resources:
     Type: "AWS::SNS::Topic"
     Properties:
       TopicName: !Sub "${Application}-${Environment}-${TopicName}"
+      DisplayName: "My Topic"
+      FifoTopic: false
+      #ContentBasedDeduplication: false
+      Tags:
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+        -
+          Key: "Application"
+          Value: !Ref Application
 
   Subscription:
     Type: AWS::SNS::Subscription
@@ -29,6 +41,7 @@ Resources:
       Endpoint: test@example.com
       Protocol: email
       TopicArn: !Ref SNSTopic
+
 
 Outputs:
 
