@@ -2,6 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: SNS
 
 Parameters:
+
   Application:
     Type: String
     Default: myapp
