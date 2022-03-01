@@ -4,17 +4,40 @@ Description: CodePipeline
 
 Parameters:
 
-  CodePipelineBucketName:
+  CodePipelineBucketName: #Todo Provision S3 here
     Description: CodePipeline Bucket
     Type: String
     Default: "my-bucket"
 
-  CodeCommitRepositoryName:
+  CodeCommitRepositoryName: #Todo Add Branch Name
     Description: CodeCommit Repository Name
     Type: String
     Default: "my-repository"
 
 Resources:
+
+  CodePipelineBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      #BucketName: !Ref BucketName
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "environment"
+          Value: "dev"
 
   CodeBuildRole:
     Type: 'AWS::IAM::Role'
