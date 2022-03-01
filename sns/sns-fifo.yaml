@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SNS - FIFO
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
+  TopicName:
+    Type: String
+    Default: sample-topic.fifo
+    Description: Topic Name    
+
+Resources:
+  
+  SNSTopicFifo:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      TopicName: !Sub "${Application}-${Environment}-${TopicName}"
+      DisplayName: "My Topic"
+      FifoTopic: true
+      ContentBasedDeduplication: true
+      Tags:
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+        -
+          Key: "Application"
+          Value: !Ref Application
+
+  QueueFifo:
+    Type: AWS::SQS::Queue
+    Properties:
+      #QueueName: !Sub "${Application}-${Environment}-queue.fifo"
+      FifoQueue: true
+
+  Subscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt QueueFifo.Arn
+      Protocol: sqs
+      TopicArn: !Ref SNSTopicFifo
+      RawMessageDelivery: 'true'
+
+Outputs:
+
+  SNSTopicArn:
+    Description: SNSTopicFifo Arn
+    Value: !Ref SNSTopicFifo
+
