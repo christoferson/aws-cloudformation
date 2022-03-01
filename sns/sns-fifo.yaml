@@ -40,6 +40,36 @@ Resources:
     Properties:
       #QueueName: !Sub "${Application}-${Environment}-queue.fifo"
       FifoQueue: true
+      ContentBasedDeduplication: true
+      Tags:
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+        -
+          Key: "Application"
+          Value: !Ref Application
+
+  QueueFifoPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: 
+        - !Ref QueueFifo
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                #- "events.amazonaws.com"
+                #- "sqs.amazonaws.com"
+                - "sns.amazonaws.com"
+            Action:
+              - "sqs:SendMessage"
+              #- "sqs:ReceiveMessage"
+            Resource: !GetAtt QueueFifo.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref SNSTopicFifo
 
   Subscription:
     Type: AWS::SNS::Subscription
