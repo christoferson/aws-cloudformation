@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SQS Standard Queue with Dead Letter Queue
+
+Resources:
+
+  FifoQueue: 
+    Type: AWS::SQS::Queue
+    Properties:
+       FifoQueue: true
+       #QueueName: sqs-queue-deadletter
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
+       ContentBasedDeduplication: true # For first-in-first-out (FIFO) queues, specifies whether to enable content-based deduplication.
+       DeduplicationScope: messageGroup # messageGroup | queue # whether message deduplication occurs at the message group or queue level
+       FifoThroughputLimit: perMessageGroupId # perMessageGroupId | perQueue # whether the FIFO queue throughput quota applies to the entire queue or per message group 
+       RedrivePolicy: 
+         deadLetterTargetArn: !GetAtt FifoQueueDeadLetter.Arn
+         maxReceiveCount: 2
+       Tags:
+         -
+            Key: env
+            Value: test
+
+  FifoQueueDeadLetter: 
+    Type: AWS::SQS::Queue
+    Properties:
+       FifoQueue: true
+       #QueueName: sqs-queue-deadletter-dlq
+       Tags:
+         -
+            Key: env
+            Value: test
+
+Outputs:
+
+  FifoQueueArn: 
+    Description: "ARN of queue"
+    Value: !GetAtt FifoQueue.Arn
+
+  FifoQueueDeadLetterArn: 
+    Description: "ARN of dead-letter queue"
+    Value: !GetAtt FifoQueueDeadLetter.Arn

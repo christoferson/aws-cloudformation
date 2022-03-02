@@ -15,3 +15,12 @@ Example FIFO Queue
 - High throughput for a FIFO queue enabled. 
 
 sqs-queue-fifo
+
+
+## SQS Encryption | [link](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html#sqs-encryption-what-does-sse-encrypt)
+
+Moving a message to a dead-letter queue doesn't affect its encryption:
+
+  - When Amazon SQS moves a message from an encrypted source queue to an unencrypted dead-letter queue, the message remains encrypted.
+
+  - When Amazon SQS moves a message from an unencrypted source queue to an encrypted dead-letter queue, the message remains unencrypted.
