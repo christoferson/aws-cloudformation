@@ -35,7 +35,14 @@ Resources:
             Key: env
             Value: test
 
-
+  DeadLetterQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       #QueueName: deadletter-lambda-dlq-queue
+       Tags:
+         -
+            Key: env
+            Value: test
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -71,7 +78,11 @@ Resources:
               Resource: 
                 #- !GetAtt DestinationSuccessQueue.Arn
                 - !GetAtt DestinationFailureQueue.Arn
-                #- !GetAtt DeadLetterQueue.Arn
+                - !GetAtt DeadLetterQueue.Arn
+            - Action:
+                - "kms:Decrypt"
+              Effect: Allow
+              Resource: "*"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -96,6 +107,8 @@ Resources:
               };
               return response;
           };
+      DeadLetterConfig:
+        TargetArn: !GetAtt DeadLetterQueue.Arn
 
   DestinationFailureQueue: 
     Type: AWS::SQS::Queue
