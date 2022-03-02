@@ -6,8 +6,12 @@ Resources:
   StandardQueue: 
     Type: AWS::SQS::Queue
     Properties: 
+       #FifoQueue: false
        QueueName: sqs-queue-standard
        VisibilityTimeout: 30
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
        Tags:
          -
             Key: env
