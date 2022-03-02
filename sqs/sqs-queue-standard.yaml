@@ -7,7 +7,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties: 
        #FifoQueue: false
-       QueueName: sqs-queue-standard
+       #QueueName: sqs-queue-standard
        VisibilityTimeout: 30
        #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
        #DelaySeconds: 0
@@ -35,14 +35,22 @@ Resources:
             Action: 
               - "SQS:SendMessage" 
               - "SQS:ReceiveMessage"
+              - "SQS:*"
             Effect: "Allow"
             Resource: !GetAtt StandardQueue.Arn
             Principal:  
               AWS: 
-                - !Sub "${AWS::AccountId}"
-            Condition:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:user/admin"
+          - 
+            Action: 
+              - "SQS:*" 
+            Effect: "Deny"
+            Resource: !GetAtt StandardQueue.Arn
+            Principal: "*"
+            Condition: # Require HTTTPS to access queue
               Bool:
-                aws:SecureTransport: true
+                aws:SecureTransport: false
+
 Outputs:
 
   StandardQueueArn: 
