@@ -1,19 +1,23 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: SQS FIFO Queue
 
-Resources: 
+Resources:
 
   FifoQueue: 
     Type: AWS::SQS::Queue
     Properties: 
-       QueueName: sqs-queue-fifo.fifo
        FifoQueue: true
-       ContentBasedDeduplication: true
-       DelaySeconds: 0
-       MaximumMessageSize: 262144
+       QueueName: sqs-queue-fifo.fifo
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144
+       #DelaySeconds: 0
        MessageRetentionPeriod: 345600
        ReceiveMessageWaitTimeSeconds: 20
-       VisibilityTimeout: 30
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
+       RedriveAllowPolicy:
+         redrivePermission: allowAll
+       ContentBasedDeduplication: true
        Tags:
          -
             Key: env
