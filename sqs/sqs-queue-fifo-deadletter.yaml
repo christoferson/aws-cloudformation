@@ -18,6 +18,8 @@ Resources:
        ContentBasedDeduplication: true # For first-in-first-out (FIFO) queues, specifies whether to enable content-based deduplication.
        DeduplicationScope: messageGroup # messageGroup | queue # whether message deduplication occurs at the message group or queue level
        FifoThroughputLimit: perMessageGroupId # perMessageGroupId | perQueue # whether the FIFO queue throughput quota applies to the entire queue or per message group 
+       RedriveAllowPolicy:
+         redrivePermission: denyAll # allowAll | denyAll | byQueue
        RedrivePolicy: 
          deadLetterTargetArn: !GetAtt FifoQueueDeadLetter.Arn
          maxReceiveCount: 2
@@ -31,8 +33,13 @@ Resources:
     Properties:
        FifoQueue: true
        #QueueName: sqs-queue-deadletter-dlq
+       MessageRetentionPeriod: 86400 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20
        KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
        KmsDataKeyReusePeriodSeconds: 7200 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
+       ContentBasedDeduplication: true # For first-in-first-out (FIFO) queues, specifies whether to enable content-based deduplication.
+       DeduplicationScope: messageGroup # messageGroup | queue # whether message deduplication occurs at the message group or queue level
+       FifoThroughputLimit: perMessageGroupId # perMessageGroupId | perQueue # whether the FIFO queue throughput quota applies to the entire queue or per message group 
        Tags:
          -
             Key: env
