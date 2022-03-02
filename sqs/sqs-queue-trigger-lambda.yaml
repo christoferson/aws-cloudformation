@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SQS Standard Queue - Triggers Lambda
+
+Resources:
+
+  StandardQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       #FifoQueue: false
+       #QueueName: sqs-queue-standard
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
+       RedriveAllowPolicy:
+         redrivePermission: denyAll # allowAll | denyAll | byQueue
+         #sourceQueueArns:
+       RedrivePolicy: 
+         deadLetterTargetArn: !GetAtt StandardQueueDeadLetter.Arn
+         maxReceiveCount: 2
+       Tags:
+         -
+            Key: env
+            Value: test
+
+  StandardQueueDeadLetter: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       #QueueName: sqs-queue-deadletter-dlq
+       Tags:
+         -
+            Key: env
+            Value: test
+
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "lambda-trigger-sqs-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+      Policies:
+        - PolicyName: sqs-integration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Action:
+                - "sqs:ReceiveMessage"
+                - "sqs:DeleteMessage"
+                - "sqs:GetQueueAttributes"
+                - "sqs:ChangeMessageVisibility"
+              Effect: Allow
+              Resource: 
+                - !GetAtt StandardQueue.Arn
+            - Action:
+                - "sqs:SendMessage"
+              Effect: Allow
+              Resource: 
+                #- !GetAtt DestinationSuccessQueue.Arn
+                - !GetAtt DestinationFailureQueue.Arn
+                #- !GetAtt DeadLetterQueue.Arn
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "lambda-trigger-sqs-lambda"
+      Description: "Lambda Triggered by SQS"
+      Runtime: nodejs12.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+
+  DestinationFailureQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       #QueueName: dst-lambda-failure-queue
+       Tags:
+         -
+            Key: env
+            Value: test
+
+  LambdaFunctionEventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      MaximumEventAgeInSeconds: 300
+      MaximumRetryAttempts: 1
+      Qualifier: "$LATEST"
+#      Qualifier: !GetAtt version.Version
+      DestinationConfig:
+          #OnSuccess:
+          #  Destination: !GetAtt DestinationSuccessQueue.Arn
+          OnFailure:
+            Destination: !GetAtt DestinationFailureQueue.Arn
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt StandardQueue.Arn
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Enabled: true
+      BatchSize: 3
+      #MaximumBatchingWindowInSeconds: 1
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
+      FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+
+Outputs:
+
+  StandardQueueArn: 
+    Description: "ARN of queue"
+    Value: !GetAtt StandardQueue.Arn
+
+  StandardQueueUrl: 
+    Description: "URL of queue"
+    Value: !Ref StandardQueue
