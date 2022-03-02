@@ -31,6 +31,8 @@ Resources:
     Properties:
        FifoQueue: true
        #QueueName: sqs-queue-deadletter-dlq
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 7200 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
        Tags:
          -
             Key: env
@@ -41,6 +43,10 @@ Outputs:
   FifoQueueArn: 
     Description: "ARN of queue"
     Value: !GetAtt FifoQueue.Arn
+
+  FifoQueueUrl: 
+    Description: "URL of queue"
+    Value: !Ref FifoQueue
 
   FifoQueueDeadLetterArn: 
     Description: "ARN of dead-letter queue"

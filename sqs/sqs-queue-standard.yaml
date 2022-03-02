@@ -40,7 +40,9 @@ Resources:
             Principal:  
               AWS: 
                 - !Sub "${AWS::AccountId}"
-
+            Condition:
+              Bool:
+                aws:SecureTransport: true
 Outputs:
 
   StandardQueueArn: 
