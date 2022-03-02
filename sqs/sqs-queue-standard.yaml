@@ -12,8 +12,31 @@ Resources:
          -
             Key: env
             Value: test
+  
+  # Required if you need to permit other accounts to access the queue
+  StandardQueuePolicy: 
+    Type: AWS::SQS::QueuePolicy
+    Properties: 
+      Queues: 
+        - !Ref StandardQueue
+      PolicyDocument: 
+        Statement: 
+          - 
+            Action: 
+              - "SQS:SendMessage" 
+              - "SQS:ReceiveMessage"
+            Effect: "Allow"
+            Resource: !GetAtt StandardQueue.Arn
+            Principal:  
+              AWS: 
+                - !Sub "${AWS::AccountId}"
+
 Outputs:
 
-  StandardQueueARN: 
+  StandardQueueArn: 
     Description: "ARN of queue"
     Value: !GetAtt StandardQueue.Arn
+
+  StandardQueueUrl: 
+    Description: "URL of queue"
+    Value: !Ref StandardQueue
