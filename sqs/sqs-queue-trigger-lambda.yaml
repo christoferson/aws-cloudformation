@@ -143,6 +143,12 @@ Resources:
           OnFailure:
             Destination: !GetAtt DestinationFailureQueue.Arn
 
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
   # Lambda polls the queue and invokes your Lambda function synchronously. StandardQueue -> LambdaFunction
   LambdaEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
@@ -164,5 +170,5 @@ Outputs:
     Description: "URL of queue"
     Value: !Ref StandardQueue
 
-# Todo: loggroup retention
+
 # Enable Encryption on DLQ
