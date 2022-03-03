@@ -8,7 +8,7 @@ Resources:
     Properties: 
        #FifoQueue: false
        #QueueName: sqs-queue-standard
-       VisibilityTimeout: 30
+       VisibilityTimeout: 20
        #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
        #DelaySeconds: 0
        MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
@@ -26,14 +26,15 @@ Resources:
             Key: env
             Value: test
 
+  # Message Goes Here if Lambda Trigger Fails
   StandardQueueDeadLetter: 
     Type: AWS::SQS::Queue
     Properties: 
        #QueueName: sqs-queue-deadletter-dlq
        Tags:
          -
-            Key: env
-            Value: test
+            Key: name
+            Value: standard-queue-dead-letter
 
   DeadLetterQueue: 
     Type: AWS::SQS::Queue
@@ -43,10 +44,11 @@ Resources:
          -
             Key: env
             Value: test
+
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "lambda-trigger-sqs-role"
+      #RoleName: "lambda-trigger-sqs-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -139,10 +141,9 @@ Resources:
       EventSourceArn: !GetAtt StandardQueue.Arn
       FunctionName: !GetAtt LambdaFunction.Arn
       Enabled: true
-      BatchSize: 3
+      BatchSize: 2
       #MaximumBatchingWindowInSeconds: 1
-      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
-      FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
 
 Outputs:
 
