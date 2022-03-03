@@ -61,6 +61,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         #- arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
       Policies:
         - PolicyName: sqs-integration  # Allow receiving message from the source Queue
           PolicyDocument:
@@ -116,6 +117,8 @@ Resources:
           };
       DeadLetterConfig:
         TargetArn: !GetAtt LambdaDeadLetterQueue.Arn
+      TracingConfig:
+        Mode: Active
 
   DestinationFailureQueue: 
     Type: AWS::SQS::Queue
