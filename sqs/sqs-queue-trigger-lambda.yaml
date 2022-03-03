@@ -128,7 +128,7 @@ Resources:
       TracingConfig:
         Mode: Active
 
-  DestinationFailureQueue: 
+  DestinationFailureQueue:
     Type: AWS::SQS::Queue
     Properties: 
        #QueueName: dst-lambda-failure-queue

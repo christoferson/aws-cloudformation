@@ -16,8 +16,20 @@ Example FIFO Queue
 
 sqs-queue-fifo
 
+## SQS Queue - Synchronous Lambda Trigger
 
-## SQS Encryption | [link](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html#sqs-encryption-what-does-sse-encrypt)
+Example Standard Queue with Lambda Trigger
+
+- Source Queue Encryption enabled with AWS Managed KMS
+- Source Queue Dead Letter Queue Enabled
+- X-ray Active Tracing Enabled
+- Lambda Log Group Retention Configuration
+
+sqs-queue-trigger-lambda
+
+## Resources
+
+### SQS Encryption | [link](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html#sqs-encryption-what-does-sse-encrypt)
 
 Moving a message to a dead-letter queue doesn't affect its encryption:
 
@@ -25,5 +37,6 @@ Moving a message to a dead-letter queue doesn't affect its encryption:
 
   - When Amazon SQS moves a message from an unencrypted source queue to an encrypted dead-letter queue, the message remains unencrypted.
   
-## SQS Require HTTPS | [link] (https://forums.aws.amazon.com/thread.jspa?threadID=285230&tstart=75)
+### SQS Require HTTPS | [link](https://forums.aws.amazon.com/thread.jspa?threadID=285230&tstart=75)
 
+Enforce encryption in transit using require TLS https connection
