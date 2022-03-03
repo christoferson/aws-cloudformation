@@ -60,7 +60,7 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+        #- arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
       Policies:
         - PolicyName: sqs-integration
           PolicyDocument:
@@ -70,7 +70,7 @@ Resources:
                 - "sqs:ReceiveMessage"
                 - "sqs:DeleteMessage"
                 - "sqs:GetQueueAttributes"
-                - "sqs:ChangeMessageVisibility"
+                #- "sqs:ChangeMessageVisibility"
               Effect: Allow
               Resource: 
                 - !GetAtt StandardQueue.Arn
@@ -84,7 +84,7 @@ Resources:
             - Action:
                 - "kms:Decrypt"
               Effect: Allow
-              Resource: "*"
+              Resource: "*" #TODO: Limit resource
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -135,6 +135,7 @@ Resources:
           OnFailure:
             Destination: !GetAtt DestinationFailureQueue.Arn
 
+  # Lambda polls the queue and invokes your Lambda function synchronously.
   LambdaEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -143,7 +144,7 @@ Resources:
       Enabled: true
       BatchSize: 2
       #MaximumBatchingWindowInSeconds: 1
-      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] } #Match message {"foo":"bar"}
 
 Outputs:
 
