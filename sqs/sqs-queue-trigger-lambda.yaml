@@ -36,7 +36,7 @@ Resources:
             Key: name
             Value: standard-queue-dead-letter
 
-  DeadLetterQueue: 
+  LambdaDeadLetterQueue: 
     Type: AWS::SQS::Queue
     Properties: 
        #QueueName: deadletter-lambda-dlq-queue
@@ -62,7 +62,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         #- arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
       Policies:
-        - PolicyName: sqs-integration
+        - PolicyName: sqs-integration  # Allow receiving message from the source Queue
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -79,7 +79,7 @@ Resources:
                 #- "kms:GenerateDataKey*"
               Effect: Allow
               Resource: "*" #alias/aws/sqs
-        - PolicyName: lambda-integration
+        - PolicyName: lambda-integration # Allow sending message to the Destination and DeadLetter Queues
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -89,7 +89,7 @@ Resources:
               Resource: 
                 #- !GetAtt DestinationSuccessQueue.Arn
                 - !GetAtt DestinationFailureQueue.Arn
-                - !GetAtt DeadLetterQueue.Arn
+                - !GetAtt LambdaDeadLetterQueue.Arn
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -115,7 +115,7 @@ Resources:
               return response;
           };
       DeadLetterConfig:
-        TargetArn: !GetAtt DeadLetterQueue.Arn
+        TargetArn: !GetAtt LambdaDeadLetterQueue.Arn
 
   DestinationFailureQueue: 
     Type: AWS::SQS::Queue
@@ -140,7 +140,7 @@ Resources:
           OnFailure:
             Destination: !GetAtt DestinationFailureQueue.Arn
 
-  # Lambda polls the queue and invokes your Lambda function synchronously.
+  # Lambda polls the queue and invokes your Lambda function synchronously. StandardQueue -> LambdaFunction
   LambdaEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -160,3 +160,6 @@ Outputs:
   StandardQueueUrl: 
     Description: "URL of queue"
     Value: !Ref StandardQueue
+
+# Todo: loggroup retention
+# Enable Encryption on DLQ
