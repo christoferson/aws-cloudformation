@@ -3,6 +3,7 @@ Description: SQS Standard Queue - Triggers Lambda
 
 Resources:
 
+  # Source Queue that will trigger Lambda
   StandardQueue: 
     Type: AWS::SQS::Queue
     Properties: 
@@ -31,6 +32,13 @@ Resources:
     Type: AWS::SQS::Queue
     Properties: 
        #QueueName: sqs-queue-deadletter-dlq
+       VisibilityTimeout: 20
+       #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
        Tags:
          -
             Key: name
@@ -42,8 +50,8 @@ Resources:
        #QueueName: deadletter-lambda-dlq-queue
        Tags:
          -
-            Key: env
-            Value: test
+            Key: name
+            Value: lambda-deadletter-queue
 
   FunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -169,6 +177,3 @@ Outputs:
   StandardQueueUrl: 
     Description: "URL of queue"
     Value: !Ref StandardQueue
-
-
-# Enable Encryption on DLQ
