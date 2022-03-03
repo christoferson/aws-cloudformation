@@ -53,7 +53,7 @@ Resources:
             Key: name
             Value: lambda-deadletter-queue
 
-  FunctionExecutionRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       #RoleName: "lambda-trigger-sqs-role"
@@ -106,7 +106,7 @@ Resources:
       #FunctionName : "lambda-trigger-sqs-lambda"
       Description: "Lambda Triggered by SQS"
       Runtime: nodejs12.x
-      Role: !GetAtt FunctionExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
         Variables:
