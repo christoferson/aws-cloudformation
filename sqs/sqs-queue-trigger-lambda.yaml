@@ -75,16 +75,21 @@ Resources:
               Resource: 
                 - !GetAtt StandardQueue.Arn
             - Action:
+                - "kms:Decrypt"
+                #- "kms:GenerateDataKey*"
+              Effect: Allow
+              Resource: "*" #alias/aws/sqs
+        - PolicyName: lambda-integration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Action:
                 - "sqs:SendMessage"
               Effect: Allow
               Resource: 
                 #- !GetAtt DestinationSuccessQueue.Arn
                 - !GetAtt DestinationFailureQueue.Arn
                 - !GetAtt DeadLetterQueue.Arn
-            - Action:
-                - "kms:Decrypt"
-              Effect: Allow
-              Resource: "*" #TODO: Limit resource
 
   LambdaFunction:
     Type: AWS::Lambda::Function
