@@ -31,7 +31,7 @@ Parameters:
     Type: AWS::EC2::VPC::Id
 
   VpcSubnetCidr:
-    Description: VPC subnet CIDR
+    Description: VPC CIDR
     Type: String
     Default: 10.0.0.0/16
 
@@ -164,3 +164,8 @@ Resources:
       #Tags:
       #  - Key: Name
       #    Value: !Sub "${PJPrefix}-${EC2InstanceName}-01"
+
+Outputs:
+
+  EC2InstancePublicIp:
+    Value: !GetAtt EC2Instance.PublicIp
