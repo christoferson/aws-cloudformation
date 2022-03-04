@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EC2
+Description: EC2 - Basic HTTP Server
 
 Metadata:
 
@@ -13,16 +13,14 @@ Metadata:
           default: "Network Configuration"
         Parameters:
           - VpcId
-          - VpcSubnetCidr
           - VpcEc2Subnet
-          - StaticIPforSSH
+
       -
         Label:
           default: "Instance Configuration"
         Parameters:
           - Ec2ImageId
           - Ec2InstanceType
-          - Ec2InstanceKeyName
 
 Parameters:
 
@@ -30,34 +28,19 @@ Parameters:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
 
-  VpcSubnetCidr:
-    Description: VPC CIDR
-    Type: String
-    Default: 10.0.0.0/16
-
   VpcEc2Subnet:
     Description: EC2 subnet
     Type: AWS::EC2::Subnet::Id
 
-  StaticIPforSSH:
-    Description: Static IP for SSH access
-    Type: String
-    Default: 127.0.0.1/32
-
   Ec2ImageId:
-    Description: AMI ID
-    Type: String
-    Default: ami-01efa4023f0f3a042
+    Description: EC2 AMI ID
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
   Ec2InstanceType:
     Description: EC2 InstanceType
     Type: String
     Default: t2.micro
-
-  Ec2InstanceKeyName:
-    Description: EC2 SSH KEY
-    Type: AWS::EC2::KeyPair::KeyName
-    Default: SSHKey
 
 Resources:
 
@@ -116,32 +99,18 @@ Resources:
       VpcId: !Ref 'VpcId'
       GroupDescription: allow ICMP via same VPC
       SecurityGroupIngress:
-      - IpProtocol: icmp
-        FromPort: -1
-        ToPort: -1
-        CidrIp: !Ref 'VpcSubnetCidr'
       - IpProtocol: tcp
         FromPort: 80
         ToPort: 80
         CidrIp: "0.0.0.0/0"
 
-  Ec2SecurityGroupSSH:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      VpcId: !Ref 'VpcId'
-      GroupDescription: allow SSH via static IP
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: !Ref 'StaticIPforSSH'
 
   EC2Instance:
     Type: "AWS::EC2::Instance"
     Properties:
       ImageId: !Ref Ec2ImageId
       InstanceType: !Ref Ec2InstanceType
-      KeyName: !Ref Ec2InstanceKeyName
+      #KeyName: !Ref Ec2InstanceKeyName
       IamInstanceProfile: !Ref Ec2IAMProfile
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -151,7 +120,6 @@ Resources:
             VolumeSize: "8"
       SecurityGroupIds:
         - !Ref Ec2SecurityGroup
-        - !Ref Ec2SecurityGroupSSH
       SubnetId: !Ref VpcEc2Subnet
       UserData:
         Fn::Base64: |
@@ -160,10 +128,10 @@ Resources:
           yum install -y httpd
           systemctl start httpd
           systemctl enable httpd
-          echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
-      #Tags:
-      #  - Key: Name
-      #    Value: !Sub "${PJPrefix}-${EC2InstanceName}-01"
+          echo "<h1>Hello from $(hostname -f)</h1>" > /var/www/html/index.html
+      Tags:
+        - Key: Environment
+          Value: "dev"
 
 Outputs:
 

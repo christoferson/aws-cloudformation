@@ -13,7 +13,20 @@ Launch an ec2 instance inside a the specified public subnet.
 - Creates a Security Group for HTTP Access
 - Enables SSM to connect to instance
 
-[ec2-basic](ec2/ec2-basic.yaml)
+[ec2-basic](./ec2-basic.yaml)
+
+### EC2 Basic with Options
+
+Launch an ec2 instance inside a the specified public subnet. 
+
+- Creates IAM Role and Instance Profile
+- Creates a Security Group for SSH Access. 
+    - Need to provide allowed IP Range
+    - Need to provide SSH Key
+- Creates a Security Group for HTTP Access
+- Enables SSM to connect to instance
+
+[ec2-basic-options](./ec2-basic-options.yaml)
 
 ### User Data
 
