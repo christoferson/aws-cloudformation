@@ -1,6 +1,9 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: S3 VPC Endpoint Gateway. Access Polcicy will be managed in the S3GatewayEndpoint. S3 BucketPolicy will Deny access unless accessed from Endpoint.
 
+# For ease of management, it is a best practice to manage permissions using the endpoint policy and then set the S3 bucket 
+# to only accept connections from the appropriate access point. 
+
 Metadata:
   'AWS::CloudFormation::Interface':
     ParameterGroups:
