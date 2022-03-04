@@ -13,7 +13,7 @@ Launch an ec2 instance inside a the specified public subnet.
 - Creates a Security Group for HTTP Access
 - Enables SSM to connect to instance
 
-ec2-basic
+[ec2-basic](ec2/ec2-basic.yaml)
 
 ### User Data
 
@@ -57,6 +57,8 @@ ec2-alb
 - [AWS::EC2::Instance](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-instance.html)
 
 
+### Resources
 
+- https://aws.amazon.com/jp/blogs/compute/query-for-the-latest-amazon-linux-ami-ids-using-aws-systems-manager-parameter-store/
 
 
