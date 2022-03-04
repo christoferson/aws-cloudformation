@@ -1,9 +1,9 @@
 # aws-cloudformation
 Aws Cloudformation Templates
 
-## CLI Commands
+## EC2
 
-aws cloudformation validate-template --template-body file://C:\xxx\yyy\zzz\lambda-trigger-sqs.yaml
+[readme](/ec2/README.md)
 
 ## Lambda
 
@@ -27,3 +27,7 @@ TODO
 ### Lambda triggered by Kinesis
 
 ### Lambda triggered by DynamoDB Streams
+
+## CLI Commands
+
+aws cloudformation validate-template --template-body file://C:\xxx\yyy\zzz\lambda-trigger-sqs.yaml
