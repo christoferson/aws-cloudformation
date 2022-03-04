@@ -27,7 +27,22 @@ Example Standard Queue with Lambda Trigger
 
 sqs-queue-trigger-lambda
 
+## SQS FIFO Queue - Synchronous Lambda Trigger
+
+Example Standard Queue with Lambda Trigger
+
+TODO: Work in progress
+
+sqs-queue-fifo-trigger-lambda
+
 ## Resources
+
+### AWS CLI Send Message to Queue
+
+aws --region eu-west-1 sqs send-message --queue-url https://sqs.eu-west-1.amazonaws.com/0000000000/sqs-queue-trigger-lambda-StandardQueue-zzz --message-body "{\"foo\": \"bar\", \"type\":\"error\"}
+
+aws --region eu-west-1 sqs send-message --queue-url https://sqs.eu-west-1.amazonaws.com/0000000000/sqs-queue-fifo-trigger-lambda-FifoQueue-zzz.fifo --message-group-id mgrp1 --message-body "{\"foo\": \"bar\", \"type\":\"error\"} 
+
 
 ### SQS Encryption | [link](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html#sqs-encryption-what-does-sse-encrypt)
 
