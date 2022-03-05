@@ -41,6 +41,7 @@ Resources:
       AuthorizationType:  NONE
       #AuthorizerId: 
       #OperationName
+      #Target: !Sub "integrations/${Integration}"
       Target: !Join
         - /
         - - integrations
@@ -61,17 +62,26 @@ Resources:
         #DataTraceEnabled: false
         ThrottlingBurstLimit: 2 # Number of requests your API can handle concurrently.
         ThrottlingRateLimit: 2 # Number of allowed requests per second
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
       Tags:
         Environment: test
         Application: demo
 
-  APIInvokeLambdaPermission:
+  ApiInvokeLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "${HttpApi}-access-logs"
+      RetentionInDays: 1
 
 Outputs:
 

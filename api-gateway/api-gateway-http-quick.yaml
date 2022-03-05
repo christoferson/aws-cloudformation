@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - HTTP - Quick Integrate with Existing Lambda Function"
+
+Parameters:
+
+  LambdaFunctionName:
+    Description: Lambda Function Name
+    Type: String
+    Default: "my-lambda"
+
+Resources:
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: demo-lambda-proxy-quick
+      Description: Lambda Proxy using Quick Create
+      ProtocolType: HTTP
+      Target: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}
+      #RouteKey: "GET /ping"
+      Version: 1
+
+  HttpApiInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/$default
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/ping
+
+Outputs:
+
+  InvokeURL:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+
+  HttpApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint

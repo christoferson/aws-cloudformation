@@ -1,3 +1,5 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - HTTP - Integrate with Lambda Function"
 # Lambda for GET /demo
 # HTTP API Gateway
 # Staging Stage
@@ -6,9 +8,7 @@
 
 Resources:
 
- # Lambda
-
-  FunctionExecutionRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -22,22 +22,25 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaFunctionGetDemo:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: nodejs12.x
-      Role: !GetAtt FunctionExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Code:
         ZipFile: |
           exports.handler = async (event) => {
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hello from the ' + event.routeKey + ' route!'),
+                  body: JSON.stringify('Hello!' + Date.now()),
               };
               return response;
           };
+      TracingConfig:
+        Mode: Active
 
   # API Gateway
 
@@ -47,36 +50,55 @@ Resources:
       Name: demo-lambda-proxy
       Description: Lambda Proxy / Uses  resource-based permissions
       ProtocolType: HTTP
+      Tags:
+        Environment: test
+        Application: demo
 
   IntegrationGetDemo:
     Type: 'AWS::ApiGatewayV2::Integration'
     Properties:
       ApiId: !Ref HttpApi
       Description: Lambda Integration GET /demo
+      ConnectionType: INTERNET # INTERNET |  VPC_LINK 
       IntegrationType: AWS_PROXY
       IntegrationUri: !GetAtt LambdaFunctionGetDemo.Arn
       IntegrationMethod: POST
       PayloadFormatVersion: '2.0'
+      #TimeoutInMillis: 30000  # Custom timeout between 50 and 30,000 milliseconds
 
   RouteGetDemo:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: 'GET /demo'
+      AuthorizationType:  NONE
+      #AuthorizerId: 
+      #OperationName
       Target: !Sub "integrations/${IntegrationGetDemo}"
 
   StageStg:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       ApiId: !Ref HttpApi
+      AutoDeploy: true
       StageName: 'stg'
       Description: "Staging"
-      AutoDeploy: true
+      StageVariables:
+         VariableX: variable-x
+      DefaultRouteSettings:
+        #DetailedMetricsEnabled: true
+        #LoggingLevel: INFO
+        #DataTraceEnabled: false
+        ThrottlingBurstLimit: 2 # Number of requests your API can handle concurrently.
+        ThrottlingRateLimit: 2 # Number of allowed requests per second
       AccessLogSettings:
-        DestinationArn: !GetAtt MyLogGroup.Arn
+        DestinationArn: !GetAtt ApiLogGroup.Arn
         Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
+      Tags:
+        Environment: test
+        Application: demo
 
-  InvokeLambdaPermissionGetDemo:
+  ApiInvokeLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref LambdaFunctionGetDemo
@@ -84,20 +106,25 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
 
-   # Logs
-
-  MyLogGroup:
+  ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "${HttpApi}-access-logs"
+      RetentionInDays: 1
 
 
 Outputs:
+
   InvokeURL:
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+
+  HttpApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint
+
   LambdaFunctionGetDemoName:
     Value: !Ref LambdaFunctionGetDemo
-  FunctionExecutionRoleName:
-    Value: !Ref FunctionExecutionRole
+
+  LambdaExecutionRoleName:
+    Value: !Ref LambdaExecutionRole
 
 
