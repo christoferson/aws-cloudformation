@@ -38,6 +38,9 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: 'GET /demo'
+      AuthorizationType:  NONE
+      #AuthorizerId: 
+      #OperationName
       Target: !Join
         - /
         - - integrations
@@ -49,7 +52,18 @@ Resources:
       ApiId: !Ref HttpApi
       AutoDeploy: true
       StageName: 'stg'
-
+      Description: "Staging"
+      StageVariables:
+         VariableX: variable-x
+      DefaultRouteSettings:
+        #DetailedMetricsEnabled: true
+        #LoggingLevel: INFO
+        #DataTraceEnabled: false
+        ThrottlingBurstLimit: 2 # Number of requests your API can handle concurrently.
+        ThrottlingRateLimit: 2 # Number of allowed requests per second
+      Tags:
+        Environment: test
+        Application: demo
 
   APIInvokeLambdaPermission:
     Type: AWS::Lambda::Permission
