@@ -45,7 +45,7 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ApiGatewayResource
-      ApiKeyRequired: True
+      ApiKeyRequired: False
       HttpMethod: "POST"
       AuthorizationType: "NONE"
       Integration:
@@ -59,44 +59,6 @@ Resources:
           - StatusCode: 200
             ResponseModels:
               application/json: Empty
-
-  ApiGatewayKey:
-    Type: "AWS::ApiGateway::ApiKey"
-    DependsOn: ApiGatewayDeployment
-    Properties:
-      Name: !Sub "${ResourceName}ApiKey"
-      Enabled: True
-      StageKeys:
-        - RestApiId: !Ref ApiGatewayRestApi
-          StageName: !Ref ApiGatewayStage
-
-  ApiGatewayUsagePlan:
-    Type: "AWS::ApiGateway::UsagePlan"
-    Properties:
-      ApiStages:
-        - ApiId: !Ref ApiGatewayRestApi
-          Stage: !Ref ApiGatewayStage
-      Quota:
-        Limit: 100
-        Period: DAY
-      Throttle:
-        BurstLimit: 10
-        RateLimit: 2
-      UsagePlanName: !Sub "${ResourceName}UsagePlan"
-
-  UsagePlanKey:
-    Type: AWS::ApiGateway::UsagePlanKey
-    Properties: 
-      KeyId: !Ref ApiGatewayKey
-      KeyType: "API_KEY"
-      UsagePlanId: !Ref ApiGatewayUsagePlan
-
-#  LambdaPermission:
-#    Type: "AWS::Lambda::Permission"
-#    Properties:
-#      FunctionName: !GetAtt Function.Arn
-#      Action: "lambda:InvokeFunction"
-#      Principal: "apigateway.amazonaws.com"
 
   ApiInvokeLambdaPermission:
     Type: AWS::Lambda::Permission
