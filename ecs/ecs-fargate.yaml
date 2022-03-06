@@ -309,11 +309,10 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
-
-#ContainerDefinitions
       ContainerDefinitions:
         - Name: !Sub "${ProjectName}-${ECSContainerName}"
           Image: !Ref ECSImageName
+          Essential: true
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -325,6 +324,13 @@ Resources:
             - HostPort: 80
               Protocol: tcp
               ContainerPort: 80
+          #HealthCheck
+          #Secrets
+      #TaskRoleArn
+      #PlacementConstraints
+      Tags:
+        - Key: "keyname1"
+          Value: "value1"
 
 # ------------------------------------------------------------#
 #  ECS Service
