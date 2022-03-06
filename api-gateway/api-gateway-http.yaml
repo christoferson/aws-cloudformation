@@ -17,6 +17,18 @@ Resources:
       Name: demo-lambda-proxy
       Description: Lambda Proxy / Uses resource-based permissions
       ProtocolType: HTTP
+      CorsConfiguration:
+        #AllowCredentials: false
+        #AllowHeaders:
+        AllowMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          - POST
+        AllowOrigins:
+          - '*'
+        #ExposeHeaders
+        #MaxAge
       Tags:
         Environment: test
         Application: demo
