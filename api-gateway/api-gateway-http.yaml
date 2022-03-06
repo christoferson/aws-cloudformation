@@ -26,9 +26,9 @@ Resources:
           - OPTIONS
           - POST
         AllowOrigins:
-          - '*'
+          - 'https://*'
         #ExposeHeaders
-        #MaxAge
+        MaxAge: 300
       Tags:
         Environment: test
         Application: demo
