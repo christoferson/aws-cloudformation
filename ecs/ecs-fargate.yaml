@@ -273,6 +273,26 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - 'ssm:GetParameters'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 'secretsmanager:GetSecretValue' 
+                Effect: Allow
+                Resource: '*' #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Action:
+                  - 'kms:Decrypt'
+                Effect: Allow
+                Resource: '*' #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      Tags: 
+        - Key: "keyname1"
+          Value: "value1"
 
 # ------------------------------------------------------------#
 #  ECS TaskDefinition
