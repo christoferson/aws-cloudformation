@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description:
-  Fargate and ALB Create
+Description: ECS Fargate with Application Load Balancer
 
 Metadata:
+
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label:
@@ -10,12 +10,12 @@ Metadata:
         Parameters:
           - ProjectName
       - Label:
-          default: "InternetALB Configuration"
+          default: "Load Balancer Configuration"
         Parameters:
           - InternetALBName
           - TargetGroupName
       - Label:
-          default: "Fargate for ECS Configuration"
+          default: "ECS Fargate Configuration"
         Parameters:
           - ECSClusterName
           - ECSTaskName
@@ -33,7 +33,6 @@ Metadata:
           - ALBSubnetId2
           - ECSSubnetId1
           - ECSSubnetId2
-
 
     ParameterLabels:
       InternetALBName:
@@ -258,6 +257,24 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
 # ------------------------------------------------------------#
+#  ECS Task Role
+# ------------------------------------------------------------#
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-ECSTaskRole"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+# ------------------------------------------------------------#
 #  ECS TaskDefinition
 # ------------------------------------------------------------#
   ECSTaskDefinition:
@@ -265,7 +282,7 @@ Resources:
     Properties:
       Cpu: !Ref ECSTaskCPUUnit
       ExecutionRoleArn: !Ref ECSTaskExecutionRole
-      #TaskRoleArn: !Ref ECSTaskRole
+      TaskRoleArn: !Ref ECSTaskRole
       Family: !Sub "${ProjectName}-${ECSTaskName}"
       Memory: !Ref ECSTaskMemory
       NetworkMode: awsvpc
