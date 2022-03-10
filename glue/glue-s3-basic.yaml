@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Glue - Source S3
+
+Parameters:
+
+  Environment:
+    Type: String
+    Description: Environment
+    Default: dev
+
+Resources:
+
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      #BucketName: !Sub ${AWS::AccountId}-${AWS::Region}-${Environment}
+      AccessControl: "Private"
+      VersioningConfiguration:
+         Status: Suspended
+      Tags:
+        - Key: "name"
+          Value: "source-bucket"
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId  
+      DatabaseInput:
+        Name: !Sub glue-database-${Environment}
+
+  GlueTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: !Sub glue-table-${Environment}
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          skip.header.line.count: 1
+          has_encrypted_data: false
+          serialization.encoding: utf-8
+          EXTERNAL: true
+        StorageDescriptor:
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Columns:
+            - Name: rank
+              Type: int
+            - Name: name
+              Type: string
+            - Name: type
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub s3://${RawDataBucket}/data
+          SerdeInfo:
+            Parameters:
+              field.delim: ","
+              serialization.format: ","
+            SerializationLibrary: org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe
+
+  AthenaQueryResultBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      #BucketName: !Sub query-result-${AWS::AccountId}-${AWS::Region}-${Environment}
+      AccessControl: "Private"
+      VersioningConfiguration:
+         Status: Suspended
+      Tags:
+        - Key: "name"
+          Value: "query-result-bucket"
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Sub athena-work-group-${Environment}
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${AthenaQueryResultBucket}/data
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
