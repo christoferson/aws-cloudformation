@@ -24,17 +24,19 @@ Resources:
   GlueDatabase:
     Type: AWS::Glue::Database
     Properties: 
-      CatalogId: !Ref AWS::AccountId  
+      CatalogId: !Ref AWS::AccountId  # The AWS account ID for the account in which to create the catalog object
       DatabaseInput:
         Name: !Sub glue-database-${Environment}
+        Description: "Glue Database Description" 
 
   GlueTable:
     Type: AWS::Glue::Table
     Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseName: !Ref GlueDatabase
+      CatalogId: !Ref AWS::AccountId #The ID of the Data Catalog in which to create the Table. If none is supplied, the AWS account ID is used by default.
+      DatabaseName: !Ref GlueDatabase # The name of the database where the table metadata resides. For Hive compatibility, this must be all lowercase.
       TableInput:
         Name: !Sub glue-table-${Environment}
+        Description: "Glue Table"
         TableType: EXTERNAL_TABLE
         Parameters:
           skip.header.line.count: 1
