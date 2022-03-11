@@ -15,8 +15,20 @@ Resources:
     Properties: 
       #BucketName: !Sub ${AWS::AccountId}-${AWS::Region}-${Environment}
       AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       Tags:
         - Key: "name"
           Value: "source-bucket"
@@ -65,8 +77,20 @@ Resources:
     Properties: 
       #BucketName: !Sub query-result-${AWS::AccountId}-${AWS::Region}-${Environment}
       AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       Tags:
         - Key: "name"
           Value: "query-result-bucket"
