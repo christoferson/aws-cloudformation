@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description:  ECS Fargate with Application Load Balancer + Step Scaling
+Description:  ECS Fargate with Application Load Balancer + Target Tacking Scaling
 
 Metadata:
 
@@ -36,9 +36,6 @@ Metadata:
       - Label:
           default: "Scaling Configuration"
         Parameters:
-          - ServiceScaleEvaluationPeriods
-          - ServiceCpuScaleOutThreshold
-          - ServiceCpuScaleInThreshold
           - TaskMinContainerCount
           - TaskMaxContainerCount
 
@@ -148,29 +145,6 @@ Parameters:
   ECSTaskDesiredCount:
     Type: Number
     Default: 1
-
-# Scaling params
-  ServiceScaleEvaluationPeriods:
-    Description: The number of periods over which data is compared to the specified threshold
-    Type: Number
-    Default: 2
-    MinValue: 2
-
-  ServiceCpuScaleOutThreshold:
-    Type: Number
-    Description: Average CPU value to trigger auto scaling out
-    Default: 50
-    MinValue: 0
-    MaxValue: 100
-    ConstraintDescription: Value must be between 0 and 100
-
-  ServiceCpuScaleInThreshold:
-    Type: Number
-    Description: Average CPU value to trigger auto scaling in
-    Default: 25
-    MinValue: 0
-    MaxValue: 100
-    ConstraintDescription: Value must be between 0 and 100
 
   TaskMinContainerCount:
     Type: Number
@@ -432,12 +406,12 @@ Resources:
       PolicyType: TargetTrackingScaling
       ScalingTargetId: !Ref ServiceScalingTarget
       TargetTrackingScalingPolicyConfiguration:
-        #DisableScaleIn: true # disable scale in for this policy to give ALBRequestPolicy the priority on scale in decisions
+        DisableScaleIn: false
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
         ScaleInCooldown: 300
         ScaleOutCooldown: 30
-        TargetValue: 70 # Average 50% CPU utilization
+        TargetValue: 75 # Average 50% CPU utilization
     DependsOn: ServiceScalingTarget
 
 Outputs:
