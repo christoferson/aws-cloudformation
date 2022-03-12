@@ -1,18 +1,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CodePipeline
 
+#Todo Change Pipeline Artifact Names
 
 Parameters:
-
-  CodePipelineBucketName: #Todo Provision S3 here
-    Description: CodePipeline Bucket
-    Type: String
-    Default: "my-bucket"
 
   CodeCommitRepositoryName: #Todo Add Branch Name
     Description: CodeCommit Repository Name
     Type: String
-    Default: "my-repository"
+    Default: "my-repository-name"
 
 Resources:
 
@@ -36,6 +32,8 @@ Resources:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
       Tags:
+        - Key: "application"
+          Value: "app"
         - Key: "environment"
           Value: "dev"
 
@@ -85,7 +83,8 @@ Resources:
               - 's3:PutObject'
               - 's3:GetObjectVersion'
             Effect: Allow
-            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+            Resource: 
+              - !Sub arn:aws:s3:::${CodePipelineBucket}/*
           - Action:
               - 'ecr:GetDownloadUrlForLayer'
               - 'ecr:BatchGetImage'
@@ -136,7 +135,7 @@ Resources:
             Version: 2012-10-17
             Statement:
               - Resource:
-                  - !Sub arn:aws:s3:::${CodePipelineBucketName}/*
+                  - !Sub arn:aws:s3:::${CodePipelineBucket}/*
                 Effect: Allow
                 Action:
                   - s3:PutObject
@@ -254,7 +253,7 @@ Resources:
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
-        Location: !Ref CodePipelineBucketName
+        Location: !Ref CodePipelineBucket
       Stages:
         - Name: Source
           Actions:
@@ -301,7 +300,6 @@ Resources:
                 - Name: MyApp
 
 ## Trigger CodePipeline on Push
-
 
   EventBridgeCodePipelineTriggerPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -369,8 +367,11 @@ Resources:
           Arn: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipelinePipeline}" #TODO
           Id: "TriggerCodePipeline"
           RoleArn: !GetAtt EventBridgeCodePipelineTriggerRole.Arn
-#
+
 Outputs:
 
   CodeBuildRoleArn:
     Value: !Ref CodeBuildRole
+
+  CodePipelineBucketName:
+    Value: !Ref CodePipelineBucket
