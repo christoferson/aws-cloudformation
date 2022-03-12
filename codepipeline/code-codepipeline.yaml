@@ -1,8 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CodePipeline
 
-#Todo Change Pipeline Artifact Names
-
 Parameters:
 
   CodeCommitRepositoryName: #Todo Add Branch Name
@@ -38,11 +36,13 @@ Resources:
           Value: "dev"
 
   CodeBuildRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "code-build-demo-role"
       Description: !Sub "CodeBuild Role"
+      Path: /
       AssumeRolePolicyDocument:
+        Version: "2012-10-17"
         Statement:
           - Action:
               - 'sts:AssumeRole'
@@ -51,7 +51,6 @@ Resources:
               Service: codebuild.amazonaws.com
       ManagedPolicyArns:
         - !Ref CodeBuildRolePolicy
-      Path: /
       Tags:
         - Key: 'environment'
           Value: common
@@ -94,13 +93,13 @@ Resources:
               - 'ecr:UploadLayerPart'
               - 'ecr:CompleteLayerUpload'
             Effect: Allow
-            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo" #TODO: RepositoryName
           - Action:
               - 'ecr:BatchGetImage'
               - 'ecr:GetDownloadUrlForLayer'
             Effect: Allow
             Resource: 
-              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"  #TODO: RepositoryName
 
   CodeDeployServiceRole:
     Type: AWS::IAM::Role
@@ -158,6 +157,7 @@ Resources:
                   - codecommit:UploadArchive
                   - codecommit:CancelUploadArchive
                   - codedeploy:CreateDeployment
+                  - codedeploy:GetApplication
                   - codedeploy:GetApplicationRevision
                   - codedeploy:GetDeployment
                   - codedeploy:GetDeploymentConfig
@@ -186,6 +186,7 @@ Resources:
         #OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
       Environment:
         Type: LINUX_CONTAINER
+        #PrivilegedMode: true
         ComputeType: BUILD_GENERAL1_SMALL
         #Image: aws/codebuild/java:openjdk-8
         Image: aws/codebuild/standard:5.0
@@ -251,6 +252,7 @@ Resources:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      #Name
       ArtifactStore:
         Type: S3
         Location: !Ref CodePipelineBucket
@@ -265,10 +267,11 @@ Resources:
                 Provider: CodeCommit
               Configuration:
                 RepositoryName: !Ref CodeCommitRepositoryName
-                BranchName: main
+                PollForSourceChanges: false
+                BranchName: main #master
               RunOrder: 1
               OutputArtifacts:
-                - Name: App
+                - Name: AppSrc
         - Name: Build
           Actions:
             - Name: Build
@@ -281,9 +284,9 @@ Resources:
                 ProjectName: !Ref CodeBuildProject
               RunOrder: 1
               InputArtifacts:
-                - Name: App
+                - Name: AppSrc
               OutputArtifacts:
-                - Name: MyApp
+                - Name: AppBuild
         - Name: Deploy
           Actions:
             - Name: Deploy
@@ -297,7 +300,7 @@ Resources:
                 DeploymentGroupName: !Ref CodeDeployGroup
               RunOrder: 1
               InputArtifacts:
-                - Name: MyApp
+                - Name: AppBuild
 
 ## Trigger CodePipeline on Push
 
@@ -335,7 +338,6 @@ Resources:
         - Key: owner
           Value: xxx
 
-
   EventBridgeRuleCodeCommitOnPush: 
     Type: AWS::Events::Rule
     Properties: 
@@ -354,6 +356,7 @@ Resources:
           referenceType:
             - branch
           referenceName:
+            - master
             - main
             - staging
         resources:
