@@ -288,6 +288,75 @@ Resources:
               InputArtifacts:
                 - Name: BuildOutput
 
+## Trigger CodePipeline on Push
+
+  EventBridgeCodePipelineTriggerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: "Trigger CodeBuild"
+      #ManagedPolicyName:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - codepipeline:StartPipelineExecution
+            Effect: Allow
+            Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipelinePipeline}" #TODO #Resource: !Sub "${CodePipelinePipeline.Arn}"
+
+  EventBridgeCodePipelineTriggerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Path: /
+      #RoleName:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+      Description: "EventBridgeCodePipelineTriggerRole"
+      ManagedPolicyArns:
+        - !Ref EventBridgeCodePipelineTriggerPolicy
+      Tags:
+        - Key: 'environment'
+          Value: common
+        - Key: owner
+          Value: xxx
+
+  EventBridgeRuleCodeCommitOnPush: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-codecommit-on-push-sns
+      Description: "CodeCommit OnPush Trigger"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Repository State Change"
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - master
+            - main
+            - staging
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}" #TODO
+          # - !Sub "${CodeCommitRepository.Arn}" 
+          # arn:aws:codecommit:eu-west-1:916902469227:code-repository-981
+      State: "ENABLED"
+      Targets:
+        -
+          #Arn: !GetAtt CodePipelinePipeline.Arn
+          Arn: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipelinePipeline}" #TODO
+          Id: "TriggerCodePipeline"
+          RoleArn: !GetAtt EventBridgeCodePipelineTriggerRole.Arn
+
 Outputs:
 
   CodeBuildRoleArn:
