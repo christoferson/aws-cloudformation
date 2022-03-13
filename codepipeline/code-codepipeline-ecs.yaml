@@ -204,7 +204,6 @@ Resources:
             Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ContainerRepositoryName}
           - Name: ContainerName
             Value: !Ref ContainerName
-
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -232,6 +231,11 @@ Resources:
                 - echo "[{\"name\":\"${ContainerName}\",\"imageUri\":\"${REPOSITORY_URI}:${IMAGE_TAG}\"}]" > imagedefinitions.json
           artifacts:
             files: imagedefinitions.json
+      Tags:
+        - Key: "application"
+          Value: "app"
+        - Key: "environment"
+          Value: "dev"
 
   CodePipelinePipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -287,6 +291,17 @@ Resources:
               RunOrder: 1
               InputArtifacts:
                 - Name: BuildOutput
+      Tags:
+        - Key: "application"
+          Value: "app"
+        - Key: "environment"
+          Value: "dev"
+
+  LogGroupCodeBuildProject:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/codebuild/${CodeBuildProject}"
+      RetentionInDays: 1
 
 ## Trigger CodePipeline on Push
 
