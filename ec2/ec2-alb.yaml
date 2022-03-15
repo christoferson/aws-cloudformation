@@ -74,8 +74,8 @@ Parameters:
 
   Ec2ImageId:
     Description: AMI ID
-    Type: String
-    Default: ami-01efa4023f0f3a042
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
   Ec2InstanceType:
     Description: EC2 InstanceType
@@ -150,7 +150,7 @@ Resources:
     Properties:
       Path: /
       Roles:
-      - !Ref 'Ec2IAMRole'
+      - !Ref Ec2IAMRole
 
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -206,7 +206,14 @@ Resources:
         - !Ref 'Ec2SecurityGroup'
         - !Ref 'Ec2SecurityGroupSSH'
         InstanceInitiatedShutdownBehavior: terminate
-        Monitoring:
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        InstanceMarketOptions:
+          SpotOptions:
+            SpotInstanceType: one-time # one-time | persistent If you are using Spot Instances with an Auto Scaling group, use one-time requests
+            InstanceInterruptionBehavior: terminate #hibernate | stop | terminate
+          MarketType: spot
+        Monitoring: #Detailed CloudWatch monitoring
           Enabled: false
         BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -221,8 +228,8 @@ Resources:
             yum install -y httpd
             systemctl start httpd
             systemctl enable httpd
-            echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
-        TagSpecifications:
+            echo "<h1>Hi from $(hostname -f)</h1>" > /var/www/html/index.html
+        TagSpecifications: #The specified tags are applied to all instances or volumes that are created during launch.
         - ResourceType: instance
           Tags:
           - Key: Env
@@ -314,4 +321,7 @@ Resources:
       TargetGroupARNs:
         - !Ref TargetGroup
 
+Outputs:
 
+  LoadBalancerDomainName:
+    Value: !GetAtt LoadBalancer.DNSName
