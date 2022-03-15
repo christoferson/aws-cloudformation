@@ -208,11 +208,11 @@ Resources:
         InstanceInitiatedShutdownBehavior: terminate
         CreditSpecification: 
           CpuCredits: Unlimited
-        InstanceMarketOptions:
-          SpotOptions:
-            SpotInstanceType: one-time # one-time | persistent If you are using Spot Instances with an Auto Scaling group, use one-time requests
-            InstanceInterruptionBehavior: terminate #hibernate | stop | terminate
-          MarketType: spot
+        #InstanceMarketOptions:
+        #  SpotOptions:
+        #    SpotInstanceType: one-time # one-time | persistent If you are using Spot Instances with an Auto Scaling group, use one-time requests
+        #    InstanceInterruptionBehavior: terminate #hibernate | stop | terminate
+        #  MarketType: spot
         Monitoring: #Detailed CloudWatch monitoring
           Enabled: false
         BlockDeviceMappings:
@@ -317,9 +317,17 @@ Resources:
       MinSize: !Ref 'Ec2AutoscaleMinSize'
       MaxSize: !Ref 'Ec2AutoscaleMaxSize'
       DesiredCapacity: !Ref 'Ec2AutoscaleDesiredCapacity'
-      #HealthCheckGracePeriod: 300
+      HealthCheckType: ELB #EC2 (default) and ELB
+      HealthCheckGracePeriod: 60 #  amount of time, in seconds, that Amazon EC2 Auto Scaling waits before checking the health status
       TargetGroupARNs:
         - !Ref TargetGroup
+      Tags:
+        - Key: Environment
+          Value: Production
+          PropagateAtLaunch: "false"
+        - Key: Purpose
+          Value: WebServerGroup
+          PropagateAtLaunch: "true"
 
 Outputs:
 
