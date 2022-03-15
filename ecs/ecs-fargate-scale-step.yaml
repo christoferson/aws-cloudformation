@@ -22,6 +22,7 @@ Metadata:
           - ECSTaskCPUUnit
           - ECSTaskMemory
           - ECSContainerName
+          - ECSContainerPort
           - ECSImageName
           - ECSServiceName
           - ECSTaskDesiredCount
@@ -57,6 +58,8 @@ Metadata:
         default: "ECSTaskMemory"
       ECSContainerName:
         default: "ECSContainerName"
+      ECSContainerPort:
+        default: "ECSContainerPort"
       ECSImageName:
         default: "ECSImageName"
       ECSServiceName:
@@ -133,6 +136,10 @@ Parameters:
   ECSContainerName:
     Type: String
     Default: "container"
+
+  ECSContainerPort:
+    Type: Number
+    Default: 80
 
 #ECSImageName
   ECSImageName:
@@ -221,10 +228,13 @@ Resources:
     Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
     Properties:
       VpcId: !Ref VpcId
-      Name: !Sub "${ProjectName}-${TargetGroupName}"
+      #Name: !Sub "${ProjectName}-${TargetGroupName}"
       Protocol: HTTP
-      Port: 80
+      Port: !Ref ECSContainerPort
       TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthyThresholdCount: 5
 
 # ------------------------------------------------------------#
 #  Internet ALB
@@ -341,9 +351,9 @@ Resources:
               awslogs-stream-prefix: !Ref ProjectName
           MemoryReservation: 128
           PortMappings:
-            - HostPort: 80
-              Protocol: tcp
-              ContainerPort: 80
+            - Protocol: tcp
+              #HostPort: !Ref ECSContainerPort
+              ContainerPort: !Ref ECSContainerPort
           #HealthCheck
           #Secrets
       #PlacementConstraints
@@ -364,7 +374,7 @@ Resources:
       LoadBalancers:
         -
           TargetGroupArn: !Ref TargetGroup
-          ContainerPort: 80
+          ContainerPort: !Ref ECSContainerPort
           ContainerName: !Sub "${ProjectName}-${ECSContainerName}"
       NetworkConfiguration:
        AwsvpcConfiguration:

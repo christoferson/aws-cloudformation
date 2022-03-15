@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description:  ECS Fargate with Application Load Balancer + Target Tacking Scaling
+Description: ECS Fargate with Application Load Balancer + Target Tacking Scaling
 
 Metadata:
 
