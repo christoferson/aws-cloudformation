@@ -18,6 +18,14 @@ Provision HTTP API that integrates with newly provisioned Lambda.
 
 [api-gateway-http-lambda](api-gateway-http-lambda.yaml)
 
+
+### API Gateway - Integrate with existing Lambda - Multiple Stages
+
+Provision HTTP API that integrates with specified Lambda.
+Exposes 2 stages staging and production.
+
+[api-gateway-http-staged](api-gateway-http-staged.yaml)
+
 ## API Gateway - REST
 
 Provision REST API that integrates with specified Lambda.
