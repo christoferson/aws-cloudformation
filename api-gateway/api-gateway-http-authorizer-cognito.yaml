@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - HTTP - Integrate with Existing Lambda Function"
+
+Parameters:
+
+  LambdaFunctionName:
+    Description: Lambda Function Name
+    Type: String
+    Default: "my-lambda"
+
+  ResourceName:
+    Description: Resource Name
+    Type: String
+    Default: "demo"
+
+  AuthorizerCognitoUserPool:
+    Description: Cognito User Pool ID
+    Type: String
+    Default: "us-east-2_zgaEXAMPLE"
+
+  AuthorizerCognitoUserPoolClient:
+    Description: Cognito User Pool ID
+    Type: String
+    Default: "1h57kf5cpq17m0eml12EXAMPLE"
+
+Resources:
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Version: 1
+      Name: demo-lambda-proxy
+      Description: Lambda Proxy / Uses resource-based permissions
+      ProtocolType: HTTP # WEBSOCKET | HTTP
+      #DisableExecuteApiEndpoint: false
+      CorsConfiguration:
+        #AllowCredentials: false #Specifies whether credentials are included in the CORS request. 
+        #AllowHeaders:
+        AllowMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          - POST
+        AllowOrigins:
+          - 'https://*'
+        #ExposeHeaders
+        MaxAge: 300 # The number of seconds that the browser should cache preflight request results. 
+      Tags:
+        Environment: test
+        Application: api
+
+  HttpApiAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT #REQUEST | JWT
+      IdentitySource:
+        - "$request.header.Authorization"
+      JwtConfiguration:
+        Audience:
+          - !Ref AuthorizerCognitoUserPoolClient
+        Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${AuthorizerCognitoUserPool}"
+      Name: JwtAuthorizer
+
+  Integration:
+    Type: 'AWS::ApiGatewayV2::Integration'
+    Properties:
+      ApiId: !Ref HttpApi
+      Description: Lambda Integration
+      ConnectionType: INTERNET # INTERNET |  VPC_LINK 
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+      #TimeoutInMillis: 30000  # Custom timeout between 50 and 30,000 milliseconds
+
+  RouteGetDemo:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: !Sub 'GET /${ResourceName}'
+      AuthorizationType:  JWT # NONE | JWT | AWS_IAM | CUSTOM 
+      AuthorizerId: !Ref HttpApiAuthorizer
+      #OperationName
+      #Target: !Sub "integrations/${Integration}"
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref Integration
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      AutoDeploy: true
+      StageName: 'stg'
+      Description: "Staging"
+      StageVariables:
+         VariableX: variable-x
+      DefaultRouteSettings:
+        #DetailedMetricsEnabled: true
+        #LoggingLevel: INFO
+        #DataTraceEnabled: false
+        ThrottlingBurstLimit: 2 # Number of requests your API can handle concurrently.
+        ThrottlingRateLimit: 2 # Number of allowed requests per second
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
+      Tags:
+        Environment: test
+        Application: api
+
+  ApiInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${Stage}/GET/${ResourceName}
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "${HttpApi}-access-logs"
+      RetentionInDays: 1
+
+Outputs:
+
+  InvokeURL:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/${ResourceName}
+
+  HttpApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint
