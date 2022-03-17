@@ -8,6 +8,11 @@ Parameters:
     Type: String
     Default: "my-lambda"
 
+  ResourceName:
+    Description: Resource Name
+    Type: String
+    Default: "demo"
+
 Resources:
 
   HttpApi:
@@ -16,7 +21,8 @@ Resources:
       Version: 1
       Name: demo-lambda-proxy
       Description: Lambda Proxy / Uses resource-based permissions
-      ProtocolType: HTTP
+      ProtocolType: HTTP # WEBSOCKET | HTTP
+      #DisableExecuteApiEndpoint: false
       CorsConfiguration:
         #AllowCredentials: false
         #AllowHeaders:
@@ -31,7 +37,7 @@ Resources:
         MaxAge: 300
       Tags:
         Environment: test
-        Application: demo
+        Application: api
 
   Integration:
     Type: 'AWS::ApiGatewayV2::Integration'
@@ -49,7 +55,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: 'GET /demo'
+      RouteKey: !Sub 'GET /${ResourceName}'
       AuthorizationType:  NONE
       #AuthorizerId: 
       #OperationName
@@ -79,7 +85,7 @@ Resources:
         Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
       Tags:
         Environment: test
-        Application: demo
+        Application: api
 
   ApiInvokeLambdaPermission:
     Type: AWS::Lambda::Permission
@@ -87,7 +93,7 @@ Resources:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${Stage}/GET/${ResourceName}
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
@@ -98,7 +104,7 @@ Resources:
 Outputs:
 
   InvokeURL:
-    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/${ResourceName}
 
   HttpApiEndpoint:
     Value: !GetAtt HttpApi.ApiEndpoint
