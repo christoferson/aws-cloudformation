@@ -1,7 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - HTTP - Integrate with Existing Lambda Function - Authorizer Lambda"
-
-#TODO: Dummy
+Description: "API Gateway - HTTP - Integrate with Existing Lambda Function - Authorizer Lambda - Version 2.0"
 
 Parameters:
 
@@ -35,6 +33,7 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaAuthorizerFunction:
     Type: AWS::Lambda::Function
@@ -51,13 +50,15 @@ Resources:
       Code:
         ZipFile: |
           exports.handler =  async function(event, context, callback) {
-              var token = event.authorizationToken;
+              console.log("ENVIRONMENT VARIABLES\n" + JSON.stringify(process.env, null, 2));
+              console.info("EVENT\n" + JSON.stringify(event, null, 2));
+              var token = event.identitySource[0]; console.log("Token:" + token);
               switch (token) {
                   case 'allow':
-                      callback(null, generatePolicy('user', 'Allow', event.methodArn));
+                      callback(null, generatePolicy('user', 'Allow', event.routeArn));
                       break;
                   case 'deny':
-                      callback(null, generatePolicy('user', 'Deny', event.methodArn));
+                      callback(null, generatePolicy('user', 'Deny', event.routeArn));
                       break;
                   case 'unauthorized':
                       callback("Unauthorized");   // Return a 401 Unauthorized response
@@ -81,15 +82,22 @@ Resources:
                   policyDocument.Statement[0] = statementOne;
                   authResponse.policyDocument = policyDocument;
               }
-              
-              // Optional output with custom properties of the String, Number or Boolean type.
+
               authResponse.context = {
                   "stringKey": "stringval",
                   "numberKey": 123,
                   "booleanKey": true
               };
               return authResponse;
-          }
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaAuthorizerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaAuthorizerFunction}"
+      RetentionInDays: 1
 
 ## HttpAPI
 
@@ -130,21 +138,13 @@ Resources:
       IdentitySource:
         - "$request.header.Authorization"
 
-#  ApiInvokeAuthorizerLambdaPermission:
-#    Type: AWS::Lambda::Permission
-#    Properties:
-#      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunction}"
-#      Action: lambda:InvokeFunction
-#      Principal: apigateway.amazonaws.com
-#      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/authorizers/${HttpApiAuthorizer}
-
   ApiInvokeAuthorizerLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunction}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      #SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/authorizers/${HttpApiAuthorizer}
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/authorizers/${HttpApiAuthorizer}
 
   Integration:
     Type: 'AWS::ApiGatewayV2::Integration'
