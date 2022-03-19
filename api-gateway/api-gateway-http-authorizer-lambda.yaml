@@ -15,17 +15,83 @@ Parameters:
     Type: String
     Default: "demo"
 
-  AuthorizerCognitoUserPool:
-    Description: Cognito User Pool ID
-    Type: String
-    Default: "us-east-2_zgaEXAMPLE"
-
-  AuthorizerCognitoUserPoolClient:
-    Description: Cognito User Pool ID
-    Type: String
-    Default: "1h57kf5cpq17m0eml12EXAMPLE"
-
 Resources:
+
+## Authorizer
+
+  LambdaAuthorizerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "dst-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+              - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaAuthorizerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "dst-lambda"
+      Description: "Lambda with Destination"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaAuthorizerExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler =  async function(event, context, callback) {
+              var token = event.authorizationToken;
+              switch (token) {
+                  case 'allow':
+                      callback(null, generatePolicy('user', 'Allow', event.methodArn));
+                      break;
+                  case 'deny':
+                      callback(null, generatePolicy('user', 'Deny', event.methodArn));
+                      break;
+                  case 'unauthorized':
+                      callback("Unauthorized");   // Return a 401 Unauthorized response
+                      break;
+                  default:
+                      callback("Error: Invalid token"); // Return a 500 Invalid token response
+              }
+          };
+          var generatePolicy = function(principalId, effect, resource) {
+              var authResponse = {};
+              
+              authResponse.principalId = principalId;
+              if (effect && resource) {
+                  var policyDocument = {};
+                  policyDocument.Version = '2012-10-17'; 
+                  policyDocument.Statement = [];
+                  var statementOne = {};
+                  statementOne.Action = 'execute-api:Invoke'; 
+                  statementOne.Effect = effect;
+                  statementOne.Resource = resource;
+                  policyDocument.Statement[0] = statementOne;
+                  authResponse.policyDocument = policyDocument;
+              }
+              
+              // Optional output with custom properties of the String, Number or Boolean type.
+              authResponse.context = {
+                  "stringKey": "stringval",
+                  "numberKey": 123,
+                  "booleanKey": true
+              };
+              return authResponse;
+          }
+
+## HttpAPI
 
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
@@ -54,15 +120,31 @@ Resources:
   HttpApiAuthorizer:
     Type: AWS::ApiGatewayV2::Authorizer
     Properties:
+      Name: LambdaAuthorizer
       ApiId: !Ref HttpApi
-      AuthorizerType: JWT #REQUEST | JWT
+      AuthorizerType: REQUEST
+      #AuthorizerCredentialsArn: Arn
+      AuthorizerPayloadFormatVersion: 2.0
+      AuthorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunction}/invocations
+      AuthorizerResultTtlInSeconds: 500
       IdentitySource:
         - "$request.header.Authorization"
-      JwtConfiguration:
-        Audience:
-          - !Ref AuthorizerCognitoUserPoolClient
-        Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${AuthorizerCognitoUserPool}"
-      Name: JwtAuthorizer
+
+#  ApiInvokeAuthorizerLambdaPermission:
+#    Type: AWS::Lambda::Permission
+#    Properties:
+#      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunction}"
+#      Action: lambda:InvokeFunction
+#      Principal: apigateway.amazonaws.com
+#      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/authorizers/${HttpApiAuthorizer}
+
+  ApiInvokeAuthorizerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaAuthorizerFunction}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      #SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/authorizers/${HttpApiAuthorizer}
 
   Integration:
     Type: 'AWS::ApiGatewayV2::Integration'
@@ -81,7 +163,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: !Sub 'GET /${ResourceName}'
-      AuthorizationType:  JWT # NONE | JWT | AWS_IAM | CUSTOM 
+      AuthorizationType:  CUSTOM # NONE | JWT | AWS_IAM | CUSTOM 
       AuthorizerId: !Ref HttpApiAuthorizer
       #OperationName
       #Target: !Sub "integrations/${Integration}"
