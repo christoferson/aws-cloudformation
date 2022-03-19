@@ -3,8 +3,6 @@ Description: Lambda Basic with Inline Source
 
 Resources:
 
-  # Lambda
-
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -20,6 +18,7 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -38,14 +37,24 @@ Resources:
           exports.handler = async (event) => {
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
               };
               return response;
           };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
 
 Outputs:
+
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
+
   FunctionExecutionRoleArn:
     Value: !GetAtt FunctionExecutionRole.Arn
 
