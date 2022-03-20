@@ -1,3 +1,10 @@
+## Lambda Cloudformation
+
+### Lambda - Basic - Inline
+
+Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
+
+[lambda-basic](lambda-basic.yaml)
 
 
 ### LogGroup
