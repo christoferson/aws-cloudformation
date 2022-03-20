@@ -3,10 +3,10 @@ Description: Lambda Basic with Inline Source
 
 Resources:
 
-  FunctionExecutionRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "basic-lambda-role"
+      #RoleName: "basic-lambda-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -23,10 +23,10 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "basic-lambda"
+      #FunctionName : "basic-lambda"
       Description: "Basic Lambda"
       Runtime: nodejs12.x
-      Role: !GetAtt FunctionExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
         Variables:
@@ -55,7 +55,7 @@ Outputs:
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
 
-  FunctionExecutionRoleArn:
-    Value: !GetAtt FunctionExecutionRole.Arn
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
 
 
