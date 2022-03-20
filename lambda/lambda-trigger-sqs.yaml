@@ -1,17 +1,31 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda triggerd by SQS
-
+Description: Lambda triggered by SQS
+# TODO Handled Failed Message
 Resources:
 
   LambdaTriggerSqsQueue: 
     Type: AWS::SQS::Queue
     Properties: 
-       QueueName: lambda-trigger-sqs-queue
+       #QueueName: lambda-trigger-sqs-queue
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
+       RedriveAllowPolicy:
+         redrivePermission: allowAll # allowAll | denyAll | byQueue
+         #sourceQueueArns:
+       Tags:
+         -
+            Key: env
+            Value: test
       
-  FunctionExecutionRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "lambda-trigger-sqs-role"
+      #RoleName: "lambda-trigger-sqs-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -23,15 +37,16 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
         - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
 
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "lambda-trigger-sqs-lambda"
+      #FunctionName : "lambda-trigger-sqs-lambda"
       Description: "Lambda Triggered by SQS"
       Runtime: nodejs12.x
-      Role: !GetAtt FunctionExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
         Variables:
@@ -44,10 +59,18 @@ Resources:
               if (event.type == 'error') { throw new Error('Authentication Failed'); }
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
               };
               return response;
           };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
 
   LambdaEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
@@ -58,13 +81,16 @@ Resources:
       BatchSize: 10
       #MaximumBatchingWindowInSeconds: 1
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
-      FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
 
 Outputs:
+
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
-  FunctionExecutionRoleArn:
-    Value: !GetAtt FunctionExecutionRole.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
   LambdaTriggerSqsQueueArn:
     Value: !GetAtt LambdaTriggerSqsQueue.Arn
 
