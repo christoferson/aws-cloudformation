@@ -6,6 +6,11 @@ Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
 
 [lambda-basic](lambda-basic.yaml)
 
+### Lambda - Trigger - SQS
+
+Provision a Lambda triggered by SQS
+
+[lambda-trigger-sqs](lambda-trigger-sqs.yaml)
 
 ### LogGroup
 
