@@ -1,14 +1,34 @@
 ## Lambda Cloudformation
 
-### Lambda - Basic - Inline
+### Lambda - Basic - Inline NodeJS
 
 Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
 
 [lambda-basic](lambda-basic.yaml)
 
+### Lambda - Basic - Inline Python
+
+Provision a Lambda and Execution Role with Inline Code. Code in Python.
+
+[lambda-basic-python](lambda-basic-python.yaml)
+
 ### Lambda - Trigger - SQS
 
 Provision a Lambda triggered by SQS
+
+- Amazon SQS is used as a Lambda event source
+- Lambda service manages polling the queue on your behalf
+- Lambda service Retries until Message Retention Period expires or is sent to a dead-letter queue
+
+```
+  LambdaTriggerSqsQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       RedrivePolicy: 
+         deadLetterTargetArn: !GetAtt LambdaTriggerSqsQueueDeadLetter.Arn
+         maxReceiveCount: 2
+```
 
 [lambda-trigger-sqs](lambda-trigger-sqs.yaml)
 
