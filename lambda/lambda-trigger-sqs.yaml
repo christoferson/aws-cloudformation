@@ -1,13 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda triggered by SQS
-# TODO Handled Failed Message
+Description: Lambda triggered by SQS. Retries until Message Retention Period expires or is sent to a dead-letter queue.
+
 Resources:
 
   LambdaTriggerSqsQueue: 
     Type: AWS::SQS::Queue
     Properties: 
        #QueueName: lambda-trigger-sqs-queue
-       VisibilityTimeout: 30
+       VisibilityTimeout: 30 # Best Practice is to set VisibilityTimeout to 6x Lambda Timeout
        #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
        #DelaySeconds: 0
        MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
@@ -71,14 +71,18 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         ZipFile: |
           exports.handler = async (event) => {
               console.log(event);
-              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              console.log(event); 
+              let message = JSON.parse(event.Records[0].body);
+              console.log("EventType: " + message["type"]);
+              if (message["type"] == 'error') { throw new Error('Authentication Failed'); }
               const response = {
-                  statusCode: 200,
-                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
+                statusCode: 200,
+                body: JSON.stringify('Processed ' + message["type"] + '.'),
               };
               return response;
           };
