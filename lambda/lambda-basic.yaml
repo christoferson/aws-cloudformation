@@ -32,6 +32,7 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         ZipFile: |
           exports.handler = async (event) => {

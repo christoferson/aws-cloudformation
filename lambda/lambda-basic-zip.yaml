@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda Basic with Zip Source in S3
+Description: Lambda Basic with Zip Source in S3 - NodeJS
 
 Parameters:
 
@@ -15,12 +15,10 @@ Parameters:
 
 Resources:
 
-  # Lambda
-
-  FunctionExecutionRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "basic-lambda-zip-role"
+      #RoleName: "basic-lambda-zip-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -32,29 +30,40 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "basic-lambda-zip"
+      #FunctionName : "basic-lambda-zip"
       Description: "Basic Lambda Zip File in S3"
       Runtime: nodejs12.x
-      Role: !GetAtt FunctionExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey
         #S3ObjectVersion: 1
+      TracingConfig:
+        Mode: "Active"
 
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
 
 Outputs:
+
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
-  FunctionExecutionRoleArn:
-    Value: !GetAtt FunctionExecutionRole.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
 
 
