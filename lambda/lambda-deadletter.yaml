@@ -6,7 +6,18 @@ Resources:
   DeadLetterQueue: 
     Type: AWS::SQS::Queue
     Properties: 
-       QueueName: deadletter-lambda-dlq-queue
+       #QueueName: deadletter-lambda-dlq-queue
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours).
+       Tags:
+         -
+            Key: name
+            Value: deadLetter-queue
 
 #  DeadLetterQueuePolicy: 
 #    Type: AWS::SQS::QueuePolicy
@@ -24,10 +35,10 @@ Resources:
 #            Principal:
 #              AWS: !Sub "${AWS::AccountId}"
       
-  FunctionExecutionRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "deadletter-lambda-role"
+      #RoleName: "deadletter-lambda-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -39,6 +50,7 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 #        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
       Policies:
         - PolicyName: sqs-integration
@@ -52,28 +64,40 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "deadletter-lambda-function"
+      #FunctionName : "deadletter-lambda-function"
       Description: "Lambda DLQ"
       Runtime: nodejs12.x
-      Role: !GetAtt FunctionExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         ZipFile: |
           exports.handler = async (event) => {
               throw new Error('Authentication Failed');
           };
+      TracingConfig:
+        Mode: "Active"
       DeadLetterConfig:
         TargetArn: !GetAtt DeadLetterQueue.Arn
 
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
 Outputs:
+
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
-  FunctionExecutionRoleArn:
-    Value: !GetAtt FunctionExecutionRole.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
   DeadLetterQueueArn:
     Value: !GetAtt DeadLetterQueue.Arn
 
