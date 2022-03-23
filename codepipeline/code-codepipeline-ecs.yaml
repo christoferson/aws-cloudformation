@@ -364,7 +364,6 @@ Resources:
         resources:
           - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}" #TODO
           # - !Sub "${CodeCommitRepository.Arn}" 
-          # arn:aws:codecommit:eu-west-1:916902469227:code-repository-981
       State: "ENABLED"
       Targets:
         -
