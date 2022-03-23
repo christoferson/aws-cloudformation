@@ -117,22 +117,33 @@ code-codedeploy-ec2
 
 Remove Deployment in CodeDeploy
 
-### CodePipeline Input:CodeCommit Stage:Source,Deploy
+### CodePipeline Input:CodeCommit Stage:Source,Deploy to EC2
 
 CodePipeline example with CodeCommit as Source. Has Stages Source,Deploy
 
 code-codepipeline-basic.yaml
 
-### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy
+### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy to EC2
 
 CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy
 
 code-codepipeline-3step.yaml
 
-### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy with Trigger on Push
+### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy to EC2 with Trigger on Push
 
 CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy
 
 - CodePipeline is triggered on CodeCommit push
 
 code-codepipeline-evt
+
+### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy to ECS with Trigger on Push
+
+CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy. Deploys to ECS
+
+code-codepipeline-ecs
+
+
+## Resources
+
+https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
