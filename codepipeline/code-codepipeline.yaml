@@ -128,6 +128,9 @@ Resources:
             Principal:
               Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref CodePipelineRolePolicy
+      #  - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Policies:
         - PolicyName: root
           PolicyDocument:
@@ -169,6 +172,19 @@ Resources:
                 Effect: Allow
                 Action:
                   - ssm:PutParameter
+
+  CodePipelineRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodePipeli e Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
 
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
