@@ -17,10 +17,11 @@ Parameters:
 Resources:
 
   CodeBuildRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "code-build-demo-role"
       Description: !Sub "CodeBuild Role"
+      Path: /
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -30,7 +31,6 @@ Resources:
               Service: codebuild.amazonaws.com
       ManagedPolicyArns:
         - !Ref CodeBuildRolePolicy
-      Path: /
       Tags:
         - Key: 'environment'
           Value: common
@@ -62,7 +62,7 @@ Resources:
               - 's3:PutObject'
               - 's3:GetObjectVersion'
             Effect: Allow
-            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+            Resource: !Sub "arn:aws:s3:::${CodePipelineBucketName}/*"
           - Action:
               - 'ecr:GetDownloadUrlForLayer'
               - 'ecr:BatchGetImage'
@@ -107,6 +107,9 @@ Resources:
             Principal:
               Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref CodePipelineRolePolicy
+      #  - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Policies:
         - PolicyName: root
           PolicyDocument:
@@ -147,6 +150,19 @@ Resources:
                 Effect: Allow
                 Action:
                   - ssm:PutParameter
+
+  CodePipelineRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodePipeli e Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
 
   CodeDeployAplication:
     Type: AWS::CodeDeploy::Application
