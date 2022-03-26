@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - HTTP - Integrate with SQS Function"
+
+Resources:
+
+  HttpApiQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       #FifoQueue: false
+       #QueueName: sqs-queue-standard
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours). The default is 300 (5 minutes)
+       RedriveAllowPolicy:
+         redrivePermission: allowAll # allowAll | denyAll | byQueue
+         #sourceQueueArns:
+       Tags:
+         -
+            Key: env
+            Value: test
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: demo-sqs-proxy
+      Description: SQS Proxy
+      ProtocolType: HTTP
+      Tags:
+        Environment: test
+        Application: demo
+
+  HttpApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: apig-sqs-send-msg-role
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+      Policies:
+        - PolicyName: api-sqs-send-msg-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action: sqs:SendMessage
+                Effect: Allow
+                Resource: !GetAtt HttpApiQueue.Arn
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: '*'
+          
+
+  IntegrationPostDemo:
+    Type: 'AWS::ApiGatewayV2::Integration'
+    Properties:
+      ApiId: !Ref HttpApi
+      Description: SQS Integration GET /demo
+      #ConnectionType: INTERNET # INTERNET |  VPC_LINK 
+      IntegrationType: AWS_PROXY
+      IntegrationSubtype: SQS-SendMessage
+      #IntegrationUri: !GetAtt LambdaFunctionGetDemo.Arn
+      CredentialsArn: !GetAtt HttpApiRole.Arn
+      #IntegrationMethod: POST
+      PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 15000  # Custom timeout between 50 and 30,000 milliseconds
+      RequestParameters:
+        QueueUrl: !Ref HttpApiQueue
+        MessageBody: $request.body
+        MessageAttributes: >-
+          {
+            "UserAgent": {
+              "DataType": "String",
+              "StringValue": "${request.header.user-agent}"
+            }
+          }
+        #"QueueUrl": "$request.header.queueUrl"
+        #"MessageBody": "$request.body.message"
+        #"DelaySeconds": ""
+#$request.body.MessageDeduplicationId
+#$request.body.MessageGroupId
+#Delay seconds
+
+  RoutePostDemo:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /demo'
+      AuthorizationType:  NONE
+      #AuthorizerId: 
+      #OperationName
+      Target: !Sub "integrations/${IntegrationPostDemo}"
+
+  StageStg:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      AutoDeploy: true
+      StageName: 'stg'
+      Description: "Staging"
+      StageVariables:
+         VariableX: variable-x
+      DefaultRouteSettings:
+        #DetailedMetricsEnabled: true
+        #LoggingLevel: INFO
+        #DataTraceEnabled: false
+        ThrottlingBurstLimit: 2 # Number of requests your API can handle concurrently.
+        ThrottlingRateLimit: 2 # Number of allowed requests per second
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
+      Tags:
+        Environment: test
+        Application: demo
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "${HttpApi}-access-logs"
+      RetentionInDays: 1
+
+Outputs:
+
+  InvokeURL:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+
+  HttpApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint
+
+
