@@ -67,7 +67,7 @@ Resources:
     Type: 'AWS::ApiGatewayV2::Integration'
     Properties:
       ApiId: !Ref HttpApi
-      Description: SQS Integration GET /demo
+      Description: SQS Integration POST /demo
       #ConnectionType: INTERNET # INTERNET |  VPC_LINK 
       IntegrationType: AWS_PROXY
       IntegrationSubtype: SQS-SendMessage
@@ -77,8 +77,9 @@ Resources:
       PayloadFormatVersion: '1.0'
       TimeoutInMillis: 15000  # Custom timeout between 50 and 30,000 milliseconds
       RequestParameters:
-        QueueUrl: !Ref HttpApiQueue
+        QueueUrl: !Ref HttpApiQueue #"$request.header.queueUrl"
         MessageBody: $request.body
+        DelaySeconds: 2
         MessageAttributes: >-
           {
             "UserAgent": {
@@ -86,12 +87,14 @@ Resources:
               "StringValue": "${request.header.user-agent}"
             }
           }
-        #"QueueUrl": "$request.header.queueUrl"
-        #"MessageBody": "$request.body.message"
-        #"DelaySeconds": ""
+      #ResponseParameters:
+      #  "200":
+      #    ResponseParameters:
+      #      - Source: "headerValue"
+      #        Destination: "append:header.header2" 
+        
 #$request.body.MessageDeduplicationId
 #$request.body.MessageGroupId
-#Delay seconds
 
   RoutePostDemo:
     Type: AWS::ApiGatewayV2::Route
