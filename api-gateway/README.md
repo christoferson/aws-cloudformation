@@ -42,6 +42,20 @@ Secured by Lambda Authorizer. Uses Payload format version 2.0.
 
 [api-gateway-http-authorizer-lambda](api-gateway-http-authorizer-lambda.yaml)
 
+### API Gateway - Integrate with SQS Standard Queue
+
+Provision HTTP API that integrates with newly provisioned SQS Standard Queue.
+
+Send HTTP Post to API Gateway
+
+```
+curl -X POST "https://ddd.execute-api.eu-west-1.amazonaws.com/stg/demo" -d "name=linuxize"
+```
+
+- https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-aws-services.html
+
+[api-gateway-http-sqs](api-gateway-http-sqs.yaml)
+
 
 ## API Gateway - REST
 
@@ -55,6 +69,7 @@ Provision REST API that integrates with specified Lambda.
 - [Cloudformation REST API Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigateway-restapi.html)
 - [JWT Authorizer] (https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html)
 - [Lambda Authorizer] (https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-lambda-authorizer.html)
+- [API Integration](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-aws-services.html)
 
 ## Errors
 
