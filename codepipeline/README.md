@@ -147,3 +147,47 @@ code-codepipeline-ecs
 ## Resources
 
 https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
+https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-CodeCommit.html
+https://docs.aws.amazon.com/dtconsole/latest/userguide/security-iam.html
+
+
+## Errors
+
+1. Insufficient permissions Unable to use Connection: arn:aws:codestar-connections:us-east-1:xxx
+
+Solution: Add permission to CodePipeline Service Role.
+
+```
+{
+        "Effect": "Allow",
+        "Action": "codestar-connections:UseConnection",
+        "Resource": "ARN of the CodeStar connection" 
+}
+* arn:aws:codestar-connections:region:account-id:connection/connection-id
+```
+
+2. Source - [GitHub] Upload to S3 failed with the following error: Access Denied
+
+Change the OutputArtifactFormat to CODEBUILD_CLONE_REF from CODE_ZIP
+
+```
+ConnectionArn: !Ref GithubConnectionArn
+FullRepositoryId: !Ref GithubRepositoryName
+BranchName: !Ref GithubBranchName
+OutputArtifactFormat: CODEBUILD_CLONE_REF #OutputArtifactFormat: 'CODE_ZIP'
+RunOrder: 1
+```
+
+
+3. CodeBuild - authorization failed for primary source and source version
+
+Solution: Add permission to CodeBuild Service Role.
+
+```
+{
+        "Effect": "Allow",
+        "Action": "codestar-connections:UseConnection",
+        "Resource": "ARN of the CodeStar connection" 
+}
+* arn:aws:codestar-connections:region:account-id:connection/connection-id
+```
