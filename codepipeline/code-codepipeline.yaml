@@ -268,7 +268,7 @@ Resources:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
-      #Name
+      #Name: "xxx"
       ArtifactStore:
         Type: S3
         Location: !Ref CodePipelineBucket
@@ -283,8 +283,8 @@ Resources:
                 Provider: CodeCommit
               Configuration:
                 RepositoryName: !Ref CodeCommitRepositoryName
-                PollForSourceChanges: false
                 BranchName: main #master
+                PollForSourceChanges: false
               RunOrder: 1
               OutputArtifacts:
                 - Name: AppSrc
