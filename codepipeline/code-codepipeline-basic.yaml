@@ -23,6 +23,7 @@ Resources:
       Description: !Sub "CodeBuild Role"
       Path: /
       AssumeRolePolicyDocument:
+        Version: "2012-10-17"
         Statement:
           - Action:
               - 'sts:AssumeRole'
