@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Batch
+
+Resources:
+
+
+  BatchServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      #RoleName: !Sub ""
+      Description: "Batch Service Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: batch.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+        - !Ref BatchServiceRolePolicy
+      Path: "/service-role/" #/
+      Tags:
+        - Key: 'environment'
+          Value: common
+
+  BatchServiceRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "Batch Service Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+
+Outputs:
+
+  BatchServiceRoleArn:
+    Value: !Ref BatchServiceRole
