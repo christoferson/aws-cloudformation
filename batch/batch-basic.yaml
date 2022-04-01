@@ -1,6 +1,20 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Batch
 
+Parameters:
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  ComputeSubnetId1:
+    Description : "Compute Subnet 1"
+    Type : AWS::EC2::Subnet::Id
+
+  ComputeSubnetId2:
+    Description : "Compute Subnet 2"
+    Type : AWS::EC2::Subnet::Id
+
 Resources:
 
 
@@ -20,7 +34,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
         - !Ref BatchServiceRolePolicy
-      Path: "/service-role/" #/
+      Path: "/" #/
       Tags:
         - Key: 'environment'
           Value: common
@@ -45,6 +59,58 @@ Resources:
               - 's3:GetObjectVersion'
             Effect: Allow
             Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+
+  BatchComputeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: BatchComputeEnvironment
+
+  BatchComputeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AWSCodeCommitFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Path: "/"
+
+  BatchComputeInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref BatchComputeInstanceRole
+
+  BatchComputeEnvironment:
+    Type: "AWS::Batch::ComputeEnvironment"
+    Properties:
+      Type: MANAGED
+      ServiceRole: !GetAtt BatchServiceRole.Arn 
+      #ComputeEnvironmentName: cfn-env
+      ComputeResources:
+        MaxvCpus: 8
+        MinvCpus: 0
+        DesiredvCpus: 0
+        SecurityGroupIds:
+          - !Ref BatchComputeSecurityGroup
+        Type: EC2
+        Subnets:
+          - !Ref ComputeSubnetId1
+          - !Ref ComputeSubnetId2
+        InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn
+        InstanceTypes:
+          - optimal
+        Tags: {"Name": "Batch Instance"}
+      State: ENABLED
 
 Outputs:
 
