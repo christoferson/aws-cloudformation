@@ -151,10 +151,6 @@ Parameters:
 
 Resources:
 
-# ------------------------------------------------------------#
-#  Security Groups
-# ------------------------------------------------------------#
-
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -175,10 +171,6 @@ Resources:
       # Only allow inbound access to ECS from the ELB
       - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
         IpProtocol: -1
-      #- IpProtocol: tcp
-      #  FromPort: 80
-      #  ToPort: 80
-      #  SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
 
 # ------------------------------------------------------------#
 #  Target Group

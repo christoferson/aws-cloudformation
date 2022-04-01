@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description:  ECS Fargate with Application Load Balancer + Step Scaling
+Description: ECS Fargate with Application Load Balancer + Step Scaling
 
 Metadata:
 
@@ -195,7 +195,6 @@ Parameters:
 
 Resources:
 
-
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -216,10 +215,6 @@ Resources:
       # Only allow inbound access to ECS from the ELB
       - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
         IpProtocol: -1
-      #- IpProtocol: tcp
-      #  FromPort: 80
-      #  ToPort: 80
-      #  SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
 
 # ------------------------------------------------------------#
 #  Target Group

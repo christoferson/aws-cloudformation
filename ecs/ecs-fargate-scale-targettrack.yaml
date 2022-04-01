@@ -169,7 +169,6 @@ Parameters:
 
 Resources:
 
-
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -405,7 +404,7 @@ Resources:
       - ECSService
       - ServiceAutoScalingRole
 
-  ServiceScaleOutPolicy:
+  ServiceScalePolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
     Properties:
       PolicyName: !Sub "${ProjectName}-${ECSServiceName}-ScalePolicy"
