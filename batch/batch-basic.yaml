@@ -132,6 +132,9 @@ Resources:
         Command:
           - echo hi
         Memory: 500
+        Privileged: true
+        ReadonlyRootFilesystem: false
+        #JobRoleArn: String
         Vcpus: 1
         Image: busybox
       RetryStrategy:
