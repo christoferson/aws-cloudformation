@@ -198,15 +198,20 @@ Resources:
       #PlatformCapabilities: 
       #  - FARGATE
       ContainerProperties:
-        Command:
-          - echo hi
-        Memory: 500 # This parameter is deprecated, use resourceRequirements to specify the memory requirements for the job definition. 
+        Image: busybox
         Privileged: true
         ReadonlyRootFilesystem: false
         JobRoleArn: !GetAtt BatchJobRole.Arn  # AM role that the container can assume for AWS permissions. 
         ExecutionRoleArn: !GetAtt BatchJobRole.Arn #execution role that AWS Batch can assume.
-        Vcpus: 1
-        Image: busybox
+        #Memory: 1024 # This parameter is deprecated, use resourceRequirements to specify the memory requirements for the job definition.
+        #Vcpus: 2 #Deprecated. For jobs running on EC2 resources, it specifies the number of vCPUs reserved for the job.
+        ResourceRequirements:
+          - Type: VCPU
+            Value: 2
+          - Type: MEMORY
+            Value: 1024
+        Command:
+          - echo hi
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
       RetryStrategy:
