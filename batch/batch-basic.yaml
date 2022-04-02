@@ -123,6 +123,11 @@ Resources:
       #JobQueueName: cfn-queue
       Tags: {"Name": "Batch Job Queue"}
 
+  BatchJobLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/batch/logs/my-batch"
+      RetentionInDays: 1
 
   BatchJobRole:
     Type: 'AWS::IAM::Role'
@@ -214,6 +219,15 @@ Resources:
           - echo hi
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
+        Environment:
+          - Name: APP_ENV
+            Value: "dev"
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref BatchJobLogGroup #/aws/batch/job
+            awslogs-region: !Ref "AWS::Region"
+            awslogs-stream-prefix: "my-batch"
       RetryStrategy:
         Attempts: 1
       Timeout:
