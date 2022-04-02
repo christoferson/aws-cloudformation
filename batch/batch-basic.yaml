@@ -94,15 +94,16 @@ Resources:
     Type: "AWS::Batch::ComputeEnvironment"
     Properties:
       Type: MANAGED
+      State: ENABLED
       ServiceRole: !GetAtt BatchServiceRole.Arn 
       #ComputeEnvironmentName: cfn-env
       ComputeResources:
-        MaxvCpus: 8
+        Type: EC2
         MinvCpus: 0
+        MaxvCpus: 8
         DesiredvCpus: 0
         SecurityGroupIds:
           - !Ref BatchComputeSecurityGroup
-        Type: EC2
         Subnets:
           - !Ref ComputeSubnetId1
           - !Ref ComputeSubnetId2
@@ -110,7 +111,6 @@ Resources:
         InstanceTypes:
           - optimal
         Tags: {"Name": "Batch Compute Environment"}
-      State: ENABLED
 
   BatchJobQueue:
     Type: AWS::Batch::JobQueue
@@ -118,7 +118,7 @@ Resources:
       ComputeEnvironmentOrder:
         - Order: 1
           ComputeEnvironment: !Ref BatchComputeEnvironment
-      State: ENABLED # f the job queue state is DISABLED, new jobs can't be added to the queue, but jobs already in the queue can finish.
+      State: ENABLED # if the job queue state is DISABLED, new jobs can't be added to the queue, but jobs already in the queue can finish.
       Priority: 1 # Job queues with a higher priority (or a higher integer value for the priority parameter) are evaluated first
       #JobQueueName: cfn-queue
       Tags: {"Name": "Batch Job Queue"}
@@ -138,6 +138,8 @@ Resources:
               Service: ecs-tasks.amazonaws.com
       ManagedPolicyArns:
         - !Ref BatchJobRolePolicy
+        #- 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
       Path: /
       Tags:
         - Key: 'environment'
@@ -193,15 +195,20 @@ Resources:
     Properties:
       Type: container # container | multinode
       #JobDefinitionName: cfn-def
+      #PlatformCapabilities: 
+      #  - FARGATE
       ContainerProperties:
         Command:
           - echo hi
-        Memory: 500
+        Memory: 500 # This parameter is deprecated, use resourceRequirements to specify the memory requirements for the job definition. 
         Privileged: true
         ReadonlyRootFilesystem: false
-        JobRoleArn: !GetAtt BatchJobRole.Arn
+        JobRoleArn: !GetAtt BatchJobRole.Arn  # AM role that the container can assume for AWS permissions. 
+        ExecutionRoleArn: !GetAtt BatchJobRole.Arn #execution role that AWS Batch can assume.
         Vcpus: 1
         Image: busybox
+        #NetworkConfiguration:
+        #  AssignPublicIp: ENABLED
       RetryStrategy:
         Attempts: 1
       Timeout:
