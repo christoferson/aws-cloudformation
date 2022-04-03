@@ -123,6 +123,71 @@ Resources:
       #JobQueueName: cfn-queue
       Tags: {"Name": "Batch Job Queue"}
 
+
+  BatchJobRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      #RoleName: !Sub "code-build-demo-role"
+      Description: !Sub "Batch Job Role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref BatchJobRolePolicy
+      Path: /
+      Tags:
+        - Key: 'environment'
+          Value: common
+
+  BatchJobRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "Batch Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'ecr:GetAuthorizationToken'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+          - Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+            Effect: Allow
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
+          - Action:
+              - 'ecr:BatchGetImage'
+              - 'ecr:GetDownloadUrlForLayer'
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"
+
   BatchJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -134,7 +199,7 @@ Resources:
         Memory: 500
         Privileged: true
         ReadonlyRootFilesystem: false
-        #JobRoleArn: String
+        JobRoleArn: !GetAtt BatchJobRole.Arn
         Vcpus: 1
         Image: busybox
       RetryStrategy:
