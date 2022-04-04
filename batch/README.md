@@ -18,3 +18,11 @@ Must match memory cpu [combination](https://docs.aws.amazon.com/AWSCloudFormatio
 ## Fargate requires that the ?privileged? setting be ?false? at the container level.
 Privileged: false # Must be false for Fargate
 
+## Exception : desiredvCpus is not applicable for Fargate.,
+Compute environment  desiredvCpus minvCpus
+
+## Error executing request, Exception : tags is not applicable for Fargate.
+
+### Resources
+
+[fargate](https://docs.aws.amazon.com/batch/latest/userguide/fargate.html#fargate-job-queues)
