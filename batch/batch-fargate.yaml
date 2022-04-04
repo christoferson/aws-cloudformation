@@ -17,7 +17,6 @@ Parameters:
 
 Resources:
 
-
   BatchServiceRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -65,30 +64,6 @@ Resources:
     Properties:
       VpcId: !Ref VpcId
       GroupDescription: BatchComputeEnvironment
-
-  BatchComputeInstanceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - ec2.amazonaws.com
-          Action:
-          - sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
-        - arn:aws:iam::aws:policy/AWSCodeCommitFullAccess
-        - arn:aws:iam::aws:policy/AmazonS3FullAccess
-      Path: "/"
-
-  BatchComputeInstanceProfile:
-    Type: "AWS::IAM::InstanceProfile"
-    Properties:
-      Roles:
-        - !Ref BatchComputeInstanceRole
 
   BatchComputeEnvironment:
     Type: "AWS::Batch::ComputeEnvironment"
