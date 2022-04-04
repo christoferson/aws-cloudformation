@@ -98,19 +98,19 @@ Resources:
       ServiceRole: !GetAtt BatchServiceRole.Arn 
       #ComputeEnvironmentName: cfn-env
       ComputeResources:
-        Type: EC2
-        MinvCpus: 0
+        Type: FARGATE #FARGATE or FARGATE_SPOT
+        #MinvCpus: 0
         MaxvCpus: 8
-        DesiredvCpus: 0
+        #DesiredvCpus: 0
         SecurityGroupIds:
           - !Ref BatchComputeSecurityGroup
         Subnets:
           - !Ref ComputeSubnetId1
           - !Ref ComputeSubnetId2
-        InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn
-        InstanceTypes:
-          - optimal
-        Tags: {"Name": "Batch Compute Environment"}
+        #InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn
+        #InstanceTypes:
+        #  - optimal
+        #Tags: {"Name": "Batch (Fargate) Compute Environment"}
 
   BatchJobQueue:
     Type: AWS::Batch::JobQueue
@@ -126,7 +126,7 @@ Resources:
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Sub "/batch/logs/my-batch"
+      LogGroupName: !Sub "/batch/logs/my-batch-fargate"
       RetentionInDays: 1
 
   BatchJobRole:
@@ -144,6 +144,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref BatchJobRolePolicy
         #- 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
         #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
       Path: /
       Tags:
@@ -207,11 +208,13 @@ Resources:
     Properties:
       Type: container # container | multinode
       #JobDefinitionName: cfn-def
-      #PlatformCapabilities: 
-      #  - FARGATE
+      PlatformCapabilities: 
+        - FARGATE
       ContainerProperties:
+        FargatePlatformConfiguration:
+          PlatformVersion: LATEST
         Image: busybox
-        Privileged: true
+        Privileged: false # Must be false for Fargate
         ReadonlyRootFilesystem: false
         JobRoleArn: !GetAtt BatchJobRole.Arn  # AM role that the container can assume for AWS permissions. 
         ExecutionRoleArn: !GetAtt BatchJobRole.Arn #execution role that AWS Batch can assume.
@@ -219,9 +222,9 @@ Resources:
         #Vcpus: 2 #Deprecated. For jobs running on EC2 resources, it specifies the number of vCPUs reserved for the job.
         ResourceRequirements:
           - Type: VCPU
-            Value: 2
+            Value: 0.25
           - Type: MEMORY
-            Value: 1024
+            Value: 512
         Command:
           - echo hi
         #NetworkConfiguration:
