@@ -15,6 +15,16 @@ Parameters:
     Description : "Compute Subnet 2"
     Type : AWS::EC2::Subnet::Id
 
+  EfsFileSystemId:
+    Description : "EFS FileSystemID"
+    Type: String
+    Default: "fs-xxxx"
+
+  EfsAccessPointId:
+    Description : "EFS AccessPointID"
+    Type: String
+    Default: "fsap-xxx"
+
 Resources:
 
   BatchServiceRole:
@@ -187,7 +197,7 @@ Resources:
         - FARGATE
       ContainerProperties:
         FargatePlatformConfiguration:
-          PlatformVersion: LATEST
+          PlatformVersion:  1.4.0 #LATEST
         Image: busybox
         Privileged: false # Must be false for Fargate
         ReadonlyRootFilesystem: false
@@ -216,6 +226,18 @@ Resources:
             awslogs-group: !Ref BatchJobLogGroup #/aws/batch/job
             awslogs-region: !Ref "AWS::Region"
             awslogs-stream-prefix: "my-batch"
+        Volumes:
+          - EfsVolumeConfiguration:
+              FileSystemId: !Ref EfsFileSystemId
+              AuthorizationConfig:
+                AccessPointId: !Ref EfsAccessPointId
+                Iam: "ENABLED"
+              RootDirectory: "/"
+              TransitEncryption: "ENABLED"
+            Name: "efs-volume"
+        MountPoints:
+          - ContainerPath: "/mnt/efs"
+            SourceVolume: "efs-volume"
       RetryStrategy:
         Attempts: 1
       Timeout:
