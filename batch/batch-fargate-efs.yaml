@@ -1,5 +1,30 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Batch
+Description: Batch Fargate with EFS
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          Default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - ComputeSubnetId1
+          - ComputeSubnetId2
+      -
+        Label:
+          Default: "EFS Configuration"
+        Parameters:
+          - EfsFileSystemId
+          - EfsAccessPointId
+
+    ParameterLabels:
+      EfsFileSystemId:
+        default: "FileSystemID"
+      EfsAccessPointId:
+        default: "AccessPointID"
 
 Parameters:
 
@@ -211,7 +236,7 @@ Resources:
           - Type: MEMORY
             Value: 512
         Command:
-          - echo hi
+          - sh -c 'echo hello; cat /mnt/efs/efs.txt; ls -Alh /mnt/efs/'
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
         Environment:
