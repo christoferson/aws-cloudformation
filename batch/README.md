@@ -6,6 +6,15 @@ Provision a Compute Environment, Job Queue, Definition
 
 [batch-ec2](batch-ec2.yaml)
 
+
+### Batch - Fargate
+
+### Batch - Fargate with EFS
+
+- Note: Your Amazon EFS file system, Amazon ECS cluster, and Fargate tasks must all be in the same VPC.
+
+https://aws.amazon.com/premiumsupport/knowledge-center/ecs-fargate-mount-efs-containers-tasks/?nc1=h_ls
+
 ### Errors
 
 ## ECS Instance Role should be an ECS Instance Profile ARN
@@ -22,6 +31,10 @@ Privileged: false # Must be false for Fargate
 Compute environment  desiredvCpus minvCpus
 
 ## Error executing request, Exception : tags is not applicable for Fargate.
+
+## Exception : EFS is supported for Fargate platform version 1.4.0
+
+Set PlatformVersion: 1.4.0. Error occurs if set to LATEST
 
 ### Resources
 
