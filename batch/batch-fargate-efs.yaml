@@ -8,14 +8,14 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          Default: "Network Configuration"
+          default: "Network Configuration"
         Parameters:
           - VpcId
           - ComputeSubnetId1
           - ComputeSubnetId2
       -
         Label:
-          Default: "EFS Configuration"
+          default: "EFS Configuration"
         Parameters:
           - EfsFileSystemId
           - EfsAccessPointId
@@ -222,7 +222,7 @@ Resources:
         - FARGATE
       ContainerProperties:
         FargatePlatformConfiguration:
-          PlatformVersion:  1.4.0 #LATEST
+          PlatformVersion: 1.4.0 #LATEST
         Image: busybox
         Privileged: false # Must be false for Fargate
         ReadonlyRootFilesystem: false
