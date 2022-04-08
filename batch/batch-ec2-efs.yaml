@@ -1,5 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Batch
+Description: Batch - EC2 - EFS
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - ComputeSubnetId1
+          - ComputeSubnetId2
 
 Parameters:
 
@@ -16,7 +29,6 @@ Parameters:
     Type : AWS::EC2::Subnet::Id
 
 Resources:
-
 
   BatchServiceRole:
     Type: 'AWS::IAM::Role'
@@ -110,7 +122,7 @@ Resources:
         InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn
         InstanceTypes:
           - optimal
-        Tags: {"Name": "Batch Compute Environment"}
+        Tags: {"Name": "Batch (EC2) Compute Environment"}
 
   BatchJobQueue:
     Type: AWS::Batch::JobQueue
@@ -126,7 +138,7 @@ Resources:
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Sub "/batch/logs/my-batch"
+      LogGroupName: !Sub "/batch/logs/my-batch-ec2"
       RetentionInDays: 1
 
   BatchJobRole:
@@ -223,7 +235,7 @@ Resources:
           - Type: MEMORY
             Value: 1024
         Command:
-          - echo hi
+          - sh -c 'echo ec2; cat /mnt/efs/efs-ec2.txt; ls -Alh /mnt/efs/'
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
         Environment:

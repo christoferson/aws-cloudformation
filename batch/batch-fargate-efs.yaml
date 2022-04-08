@@ -155,7 +155,6 @@ Resources:
         - !Ref BatchJobRolePolicy
         #- 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
         #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
-        #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
       Path: /
       Tags:
         - Key: 'environment'
@@ -236,7 +235,7 @@ Resources:
           - Type: MEMORY
             Value: 512
         Command:
-          - sh -c 'echo hello; cat /mnt/efs/efs.txt; ls -Alh /mnt/efs/'
+          - sh -c 'echo fargate; cat /mnt/efs/efs-fargate.txt; ls -Alh /mnt/efs/'
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
         Environment:
