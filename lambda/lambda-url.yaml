@@ -38,7 +38,7 @@ Resources:
           exports.handler = async (event) => {
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
+                  body: JSON.stringify('Hi!'),
               };
               return response;
           };
@@ -73,5 +73,8 @@ Outputs:
 
   LambdaExecutionRoleArn:
     Value: !GetAtt LambdaExecutionRole.Arn
+
+  LambdaFunctionUrl:
+    Value: !GetAtt LambdaUrl.FunctionUrl
 
 
