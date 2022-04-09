@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda Basic with Inline Source
+Description: Lambda URL HTTPS Endpoint
 
 Resources:
 
@@ -44,6 +44,12 @@ Resources:
           };
       TracingConfig:
         Mode: "Active"
+
+  LambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref LambdaFunction
+      AuthType: NONE
 
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
