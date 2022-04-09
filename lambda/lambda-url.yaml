@@ -51,6 +51,15 @@ Resources:
       TargetFunctionArn: !Ref LambdaFunction
       AuthType: NONE
 
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      #FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionUrlAuthType: NONE
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
