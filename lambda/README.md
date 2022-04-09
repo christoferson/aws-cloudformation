@@ -38,6 +38,13 @@ Provision a Lambda triggered by SQS
 
 [lambda-trigger-sqs](lambda-trigger-sqs.yaml)
 
+### Lambda - URL
+
+Provision a Lambda with HTTPS URL (Public Access)
+
+[lambda-url](lambda-url.yaml)
+
+
 ### LogGroup
 
   LambdaLogGroup:
@@ -63,4 +70,12 @@ Provision a Lambda triggered by SQS
       ...
       TracingConfig:
         Mode: "Active" 
-```       
+```
+
+
+### Resources
+
+- [Lambda URL](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html)
+- [Lambda URL CFN](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-url.html)
+
+
