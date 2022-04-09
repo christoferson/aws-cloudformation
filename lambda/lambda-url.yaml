@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Basic with Inline Source
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+
