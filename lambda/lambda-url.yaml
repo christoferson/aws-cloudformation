@@ -49,7 +49,11 @@ Resources:
     Type: AWS::Lambda::Url
     Properties:
       TargetFunctionArn: !Ref LambdaFunction
+      #Qualifier: dev # The alias name.
       AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "https://*"
 
   LambdaPermission:
     Type: AWS::Lambda::Permission
