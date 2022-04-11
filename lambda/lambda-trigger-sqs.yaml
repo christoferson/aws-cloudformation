@@ -87,6 +87,9 @@ Resources:
           };
       TracingConfig:
         Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-trigger-sqs-lambda"
 
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
@@ -102,7 +105,8 @@ Resources:
       Enabled: true
       BatchSize: 10
       MaximumBatchingWindowInSeconds: 1
-      #FunctionResponseTypes: "ReportBatchItemFailures"
+      FunctionResponseTypes: 
+        - ReportBatchItemFailures #Allow your function to return a partial successful response for a batch of records.
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
 
