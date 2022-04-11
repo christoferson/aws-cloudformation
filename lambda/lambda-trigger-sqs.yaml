@@ -69,17 +69,19 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          databaseName: lambdadb
-          databaseUser: admin
+          DatabaseName: lambdadb
+          DatabaseUser: admin
       Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         ZipFile: |
           exports.handler = async (event) => {
               console.log(event);
-              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              let message = JSON.parse(event.Records[0].body);
+              console.log("EventType: " + message["type"]);
+              if (message["type"] == 'error') { throw new Error('Authentication Failed'); }
               const response = {
-                  statusCode: 200,
-                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
+                statusCode: 200,
+                body: JSON.stringify('Processed ' + message["type"] + '.'),
               };
               return response;
           };
@@ -100,6 +102,7 @@ Resources:
       Enabled: true
       BatchSize: 10
       MaximumBatchingWindowInSeconds: 1
+      #FunctionResponseTypes: "ReportBatchItemFailures"
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
 
