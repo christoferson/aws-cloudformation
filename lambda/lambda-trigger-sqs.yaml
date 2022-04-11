@@ -78,7 +78,7 @@ Resources:
               console.log(event);
               let message = JSON.parse(event.Records[0].body);
               console.log("EventType: " + message["type"]);
-              if (message["type"] == 'error') { throw new Error('Authentication Failed'); }
+              if (message["type"] == 'error') { throw new Error('Authentication Failed: ' + event.Records[0].messageId); }
               const response = {
                 statusCode: 200,
                 body: JSON.stringify('Processed ' + message["type"] + '.'),
