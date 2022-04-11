@@ -97,10 +97,12 @@ Resources:
         ZipFile: |
           exports.handler = async (event) => {
               console.log(event);
+              let record = event.Records[0];
+              let eventID = record.eventID;
               if (event.type == 'error') { throw new Error('Authentication Failed'); }
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+                  body: JSON.stringify(`EventID: ${eventID}`),
               };
               return response;
           };
@@ -123,10 +125,20 @@ Resources:
       FunctionName: !GetAtt LambdaFunction.Arn
       Enabled: true
       BatchSize: 10
-      #MaximumBatchingWindowInSeconds: 1
+      BisectBatchOnFunctionError: true
+      MaximumBatchingWindowInSeconds: 1
+      MaximumRecordAgeInSeconds: 60
+      MaximumRetryAttempts: 2
+      TumblingWindowInSeconds: 1
+      ParallelizationFactor: 1
+      FunctionResponseTypes: 
+        - ReportBatchItemFailures #Allow your function to return a partial successful response for a batch of records.
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
       StartingPosition: LATEST
+      #DestinationConfig:
+      #  OnFailure:
+      #    Destination: arn:aws:sqs:us-east-2:123456789012:dlq
 
 Outputs:
 
