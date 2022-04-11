@@ -1,5 +1,24 @@
 ## Lambda Cloudformation
 
+### Concepts
+
+#### IAM Resource Policy / Function Policy 
+
+- Defines what can invoke the function
+- Defined using AWS::Lambda::Permission
+- Policy associated with a "push" event source
+- Created when you add a trigger to a Lambda function
+- Allows the event source to take the lambda:InvokeFunction action
+
+#### IAM Execution Role 
+
+- Defines the resources that the Lambda can access or what it is permitted to do
+- Defined using AWS::IAM::Role
+- Selected or created when you create a Lambda function
+- IAM policy includes actions that can be taken with the resource
+- Trust policy that allows Lambda to AssumeRole
+- Creator must have permission for iam:PassRole
+
 ### Lambda - Basic - Inline NodeJS
 
 Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
@@ -44,6 +63,14 @@ Provision a Lambda with HTTPS URL (Public Access)
 
 [lambda-url](lambda-url.yaml)
 
+### Lambda - VPC
+
+- Provide additional VPC-specific configuration information, which includes VPC subnet IDs and security group IDs
+
+- Execution role with permissions to create, describe, and delete elastic network interfaces. e.g. AWSLambdaVPCAccessExecutionRole
+
+[todo](xxx)
+
 
 ### LogGroup
 
@@ -75,6 +102,8 @@ Provision a Lambda with HTTPS URL (Public Access)
 
 ### Resources
 
+- [Lambda Resource Policy](https://docs.aws.amazon.com/lambda/latest/dg/access-control-resource-based.html)
+- [Lambda VPC](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)
 - [Lambda URL](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html)
 - [Lambda URL CFN](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-url.html)
 
