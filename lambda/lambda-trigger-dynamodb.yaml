@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Lambda triggered by Dynamo DB Streams"
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      #TableName: "Character5"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+        - 
+          AttributeName: "Race"
+          AttributeType: "S"
+        - 
+          AttributeName: "Profession"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      LocalSecondaryIndexes: 
+        - 
+          IndexName: "region-race"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Race"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Profession"
+            ProjectionType: "INCLUDE"
+        - 
+          IndexName: "region-profession"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Profession"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Race"
+            ProjectionType: "INCLUDE"
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "lambda-trigger-dynamodb-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "lambda-trigger-dynamodb-lambda"
+      Description: "Lambda Triggered by DynamoDB"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          DatabaseName: lambdadb
+          DatabaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-trigger-dynamodb"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DynamoTable.StreamArn
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Enabled: true
+      BatchSize: 10
+      #MaximumBatchingWindowInSeconds: 1
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+      StartingPosition: LATEST
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
+
+  DynamoTableStreamArn:
+    Value: !GetAtt DynamoTable.StreamArn
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
