@@ -57,6 +57,16 @@ Provision a Lambda triggered by SQS
 
 [lambda-trigger-sqs](lambda-trigger-sqs.yaml)
 
+### Lambda - Trigger - DynamoDB
+
+Provision a Lambda triggered by DynamoDB streams
+
+- DynamoDB Streams is used as a Lambda event source
+- Lambda service manages polling the queue on your behalf
+
+[lambda-trigger-dynamodb](lambda-trigger-dynamodb.yaml)
+
+
 ### Lambda - URL
 
 Provision a Lambda with HTTPS URL (Public Access)
