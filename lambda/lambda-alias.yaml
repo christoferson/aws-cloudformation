@@ -30,7 +30,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          DatabaseName: lambdadbv4
+          DatabaseName: lambdadbv32
           DatabaseUser: admin
       EphemeralStorage: # The size of the functionÅfs /tmp directory in MB
         Size: 512
@@ -44,7 +44,7 @@ Resources:
               console.log(`DatabaseName: ${envDatabaseName}`);
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Version-4'),
+                  body: JSON.stringify('Version-3.2'),
               };
               return response;
           };
@@ -65,6 +65,7 @@ Resources:
     Properties:
       FunctionName: !Ref LambdaFunction
       Description: v1
+      #DeletionPolicy: RETAIN
 
   LambdaVersion2:
     Type: AWS::Lambda::Version
@@ -93,6 +94,10 @@ Resources:
       FunctionVersion: !GetAtt LambdaVersion2.Version
       Name: stg
       Description: Staging
+      RoutingConfig:
+        AdditionalVersionWeights:
+          - FunctionVersion: !GetAtt LambdaVersion3.Version
+            FunctionWeight: 0.1
 
   LambdaAliasPrd:
     Type: AWS::Lambda::Alias
@@ -104,7 +109,7 @@ Resources:
       RoutingConfig:
         AdditionalVersionWeights:
           - FunctionVersion: !GetAtt LambdaVersion2.Version
-            FunctionWeight: 0.5
+            FunctionWeight: 0.6
 
 Outputs:
 
