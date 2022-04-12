@@ -30,7 +30,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          DatabaseName: lambdadbv3
+          DatabaseName: lambdadbv4
           DatabaseUser: admin
       EphemeralStorage: # The size of the functionÅfs /tmp directory in MB
         Size: 512
@@ -44,7 +44,7 @@ Resources:
               console.log(`DatabaseName: ${envDatabaseName}`);
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Version-3'),
+                  body: JSON.stringify('Version-4'),
               };
               return response;
           };
