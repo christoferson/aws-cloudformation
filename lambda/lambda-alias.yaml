@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda with Version and Alias
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          DatabaseName: lambdadbv1
+          DatabaseUser: admin
+      EphemeralStorage: # The size of the functionfs /tmp directory in MB
+        Size: 512
+      MemorySize: 128 #Maximum: 10240
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      #ReservedConcurrentExecutions: 0
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context, callback) => {
+              let envDatabaseName = process.env.DatabaseName;
+              console.log(`DatabaseName: ${envDatabaseName}`);
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Version-1'),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-basic"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
