@@ -60,6 +60,20 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
 
+  LambdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Description: v1
+
+  LambdaAliasDev:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      FunctionVersion: !GetAtt LambdaVersion1.Version
+      Name: dev
+      Description: Dev
+
 Outputs:
 
   LambdaFunctionArn:
@@ -68,3 +82,5 @@ Outputs:
   LambdaExecutionRoleArn:
     Value: !GetAtt LambdaExecutionRole.Arn
 
+  LambdaAliasDevArn:
+    Value: !Ref LambdaAliasDev
