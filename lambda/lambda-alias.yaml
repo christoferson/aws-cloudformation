@@ -30,7 +30,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          DatabaseName: lambdadbv1
+          DatabaseName: lambdadbv2
           DatabaseUser: admin
       EphemeralStorage: # The size of the functionÅfs /tmp directory in MB
         Size: 512
@@ -44,7 +44,7 @@ Resources:
               console.log(`DatabaseName: ${envDatabaseName}`);
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Version-1'),
+                  body: JSON.stringify('Version-2'),
               };
               return response;
           };
@@ -66,13 +66,27 @@ Resources:
       FunctionName: !Ref LambdaFunction
       Description: v1
 
+  LambdaVersion2:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Description: v2
+
   LambdaAliasDev:
     Type: AWS::Lambda::Alias
     Properties:
       FunctionName: !Ref LambdaFunction
-      FunctionVersion: !GetAtt LambdaVersion1.Version
+      FunctionVersion: !GetAtt LambdaVersion2.Version
       Name: dev
       Description: Dev
+
+  LambdaAliasStg:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      FunctionVersion: !GetAtt LambdaVersion1.Version
+      Name: stg
+      Description: Staging
 
 Outputs:
 
@@ -84,3 +98,6 @@ Outputs:
 
   LambdaAliasDevArn:
     Value: !Ref LambdaAliasDev
+
+  LambdaAliasStgArn:
+    Value: !Ref LambdaAliasStg
