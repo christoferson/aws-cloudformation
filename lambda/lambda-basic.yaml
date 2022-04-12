@@ -30,20 +30,29 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          databaseName: lambdadb
-          databaseUser: admin
+          DatabaseName: lambdadb
+          DatabaseUser: admin
+      EphemeralStorage: # The size of the functionfs /tmp directory in MB
+        Size: 512
+      MemorySize: 128 #Maximum: 10240
       Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      #ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
-          exports.handler = async (event) => {
+          exports.handler = async (event, context, callback) => {
+              let envDatabaseName = process.env.DatabaseName;
+              console.log(`DatabaseName: ${envDatabaseName}`);
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hi ' + event.routeKey + ' route!'),
+                  body: JSON.stringify('Hi'),
               };
               return response;
           };
       TracingConfig:
         Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-basic"
 
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
