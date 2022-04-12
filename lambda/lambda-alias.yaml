@@ -101,10 +101,10 @@ Resources:
       FunctionVersion: !GetAtt LambdaVersion1.Version
       Name: prd
       Description: Production
-      #RoutingConfig:
-      #  AdditionalVersionWeights:
-      #    - FunctionVersion: !GetAtt version.Version
-      #      FunctionWeight: 0.5
+      RoutingConfig:
+        AdditionalVersionWeights:
+          - FunctionVersion: !GetAtt LambdaVersion2.Version
+            FunctionWeight: 0.5
 
 Outputs:
 
