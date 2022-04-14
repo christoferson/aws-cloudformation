@@ -62,6 +62,22 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
 
+  LambdaTriggerSqsQueueDestinationOnFailure: 
+    Type: AWS::SQS::Queue
+    Properties: 
+       #QueueName: sqs-queue-deadletter-dlq
+       VisibilityTimeout: 30
+       #MaximumMessageSize: 262144 # 1,024 bytes (1 KiB) to 262,144 bytes (256 KiB)
+       #DelaySeconds: 0
+       MessageRetentionPeriod: 43200 #60 seconds (1 minute) to 1,209,600 seconds (14 days), default value is 345,600 seconds (4 days)
+       ReceiveMessageWaitTimeSeconds: 20 # Long Polling
+       KmsMasterKeyId: alias/aws/sqs # AWS managed CMK for Amazon SQS
+       KmsDataKeyReusePeriodSeconds: 3600 # 60 (1 minute) and 86,400 (24 hours).
+       Tags:
+         -
+            Key: name
+            Value: lambda-trigger-dynamodb-deadLetter
+
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -79,6 +95,16 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
         - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource:
+                  - !GetAtt LambdaTriggerSqsQueueDestinationOnFailure.Arn
+                Effect: Allow
+                Action:
+                  - sqs:SendMessage
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -95,10 +121,13 @@ Resources:
       Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         ZipFile: |
-          exports.handler = async (event) => {
+          exports.handler = async (event, context, callback) => {
               console.log(event);
+              if (!event.Records) { return callback(null, `Failed processing records. No records present.`); }
               let record = event.Records[0];
-              let eventID = record.eventID;
+              let eventID = record.eventID; console.log(`EventID: ${eventID}`);
+              if (record.dynamodb.NewImage.Profession) { console.log("Profession: " + JSON.stringify(record.dynamodb.NewImage.Profession.S)); }
+              //let what = JSON.stringify(record.dynamodb.NewImage.CharacterName.S); console.log(what);
               if (event.type == 'error') { throw new Error('Authentication Failed'); }
               const response = {
                   statusCode: 200,
@@ -106,6 +135,7 @@ Resources:
               };
               return response;
           };
+
       TracingConfig:
         Mode: "Active"
       Tags:
@@ -136,9 +166,9 @@ Resources:
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
       #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
       StartingPosition: LATEST
-      #DestinationConfig:
-      #  OnFailure:
-      #    Destination: arn:aws:sqs:us-east-2:123456789012:dlq
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt LambdaTriggerSqsQueueDestinationOnFailure.Arn
 
 Outputs:
 
