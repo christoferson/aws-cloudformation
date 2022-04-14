@@ -32,24 +32,43 @@ Parameters:
     AllowedValues: 
       - dev
       - prd
-    ConstraintDescription: must be a prod or test
+    ConstraintDescription: must be a dev or prd
       
   InstanceTypeParameter:
+    Description: Instance Type. Default is t2.micro.  
     Type: String
     Default: t2.micro
     AllowedValues:
       - t2.micro
       - m1.small
       - m1.large
-    Description: Enter t2.micro, m1.small, or m1.large. Default is t2.micro.
+    ConstraintDescription: must be t2.micro, m1.small, m1.large
+    
+  BucketName: 
+    Description: (Optional) Bucket Name
+    Type: String
+    
+Conditions:
+
+  IsProduction: !Equals 
+    - !Ref EnvironmentType
+    - prd
+
+  CreateBucket: !Not 
+    - !Equals 
+      - !Ref BucketName
+      - ''
+
+  CreateBucketPolicy: !And 
+    - !Condition IsProduction
+    - !Condition CreateBucket
     
 Resources:
 
   ResourceExample:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: !Sub "code-build-demo-role"
-      Description: !Sub "CodeBuild Role"
+      Description: !Sub "Example Resource Role"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -66,6 +85,10 @@ Resources:
         - Key: "MappingsValue"
           Value: !FindInMap [RegionMap, !Ref "AWS::Region", HVM64]
 
+  Bucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateBucket
+
 Outputs:
 
   ResourceExampleRef:
@@ -74,3 +97,5 @@ Outputs:
   RegionEnvironmentTypeAmiMapResult: 
     Description: Return the name of the AMI ID that matches the region and environment type keys
     Value: !FindInMap [RegionEnvironmentTypeAmiMap, !Ref "AWS::Region", !Ref EnvironmentType]
+  
+
