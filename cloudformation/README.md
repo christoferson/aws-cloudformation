@@ -1,6 +1,11 @@
 
 ## Cloudformation
 
+## Sections
+
+### Parameters
+
+### Mappings
 
 
 ### Errors
@@ -26,3 +31,7 @@ SSM Parameters are supported only for selected resources.
 - AWS::RDS::DBCluster
 - AWS::RDS::DBInstance
 - AWS::Redshift::Cluster
+
+## Template error: Unable to get mapping for RegionEnvironmentTypeAmiMap::eu-west-1::dev
+
+Cause: FindInMap did not resolve any value. No defaulting.
