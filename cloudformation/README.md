@@ -35,3 +35,9 @@ SSM Parameters are supported only for selected resources.
 ## Template error: Unable to get mapping for RegionEnvironmentTypeAmiMap::eu-west-1::dev
 
 Cause: FindInMap did not resolve any value. No defaulting.
+
+
+
+## Links
+
+- [Sample Templates](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-sample-templates.html)
