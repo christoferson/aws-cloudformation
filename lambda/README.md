@@ -73,6 +73,15 @@ Provision a Lambda with HTTPS URL (Public Access)
 
 [lambda-url](lambda-url.yaml)
 
+### Lambda - Version and Alias
+
+Provision a Lambda with Versions and Alias.
+
+- Add 1 AWS::Lambda::Version at a time. Update the Alias to point to the correct Version.
+- Remove AWS::Lambda::Version to delete the version.
+
+[lambda-alias](lambda-alias.yaml)
+
 ### Lambda - VPC
 
 - Provide additional VPC-specific configuration information, which includes VPC subnet IDs and security group IDs
@@ -84,12 +93,14 @@ Provision a Lambda with HTTPS URL (Public Access)
 
 ### LogGroup
 
+ ```
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
-      
+ ```
+   
 ### Enable Xray
 
  ```
