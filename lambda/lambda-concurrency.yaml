@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Lambda Concurrency
 
+Parameters:
+
+  LambdaReservedConcurrentExecutions:
+    Description: Lambda Reserved Concurrency
+    Type: Number
+    Default: 2
+
 Resources:
 
   LambdaExecutionRole:
@@ -36,7 +43,7 @@ Resources:
         Size: 512
       MemorySize: 128 #Maximum: 10240
       Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
-      #ReservedConcurrentExecutions: 0
+      ReservedConcurrentExecutions: !Ref LambdaReservedConcurrentExecutions
       Code:
         ZipFile: |
           exports.handler = async (event, context, callback) => {
