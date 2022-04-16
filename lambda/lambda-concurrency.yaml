@@ -8,6 +8,16 @@ Parameters:
     Type: Number
     Default: 2
 
+  LambdaVersionProvisionedConcurrentExecutions:
+    Description: Lambda Version - Provisioned Concurrency
+    Type: Number
+    Default: 1
+
+  LambdaAliasProvisionedConcurrentExecutions:
+    Description: Lambda Alias - Provisioned Concurrency
+    Type: Number
+    Default: 1
+
 Resources:
 
   LambdaExecutionRole:
@@ -51,7 +61,7 @@ Resources:
               console.log(`DatabaseName: ${envDatabaseName}`);
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hi'),
+                  body: JSON.stringify('Version-1'),
               };
               return response;
           };
@@ -66,6 +76,24 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
+
+  LambdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Description: v1
+#      ProvisionedConcurrencyConfig:
+#        ProvisionedConcurrentExecutions: !Ref LambdaVersionProvisionedConcurrentExecutions
+
+  LambdaAliasDev:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      FunctionVersion: !GetAtt LambdaVersion1.Version
+      Name: dev
+      Description: Dev
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: !Ref LambdaAliasProvisionedConcurrentExecutions
 
 Outputs:
 
