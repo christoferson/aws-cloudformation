@@ -102,6 +102,16 @@ Provision a Lambda with Versions and Alias.
 
 Provision lambda with Reserved Concurrency.
 
+```
+  LambdaAliasDev:
+    Type: AWS::Lambda::Alias
+    Properties:
+      ...
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 5
+```
+
+
 [lambda-concurrency](lambda-concurrency.yaml)
 
 ### Lambda - VPC
@@ -142,6 +152,11 @@ Provision lambda with Reserved Concurrency.
         Mode: "Active" 
 ```
 
+### Errors
+
+1. Alias can't be used for Provisioned Concurrency configuration on an already Provisioned version
+
+Cannot configure provisioned concurrency on both alias and version
 
 ### Resources
 
@@ -149,5 +164,6 @@ Provision lambda with Reserved Concurrency.
 - [Lambda VPC](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)
 - [Lambda URL](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html)
 - [Lambda URL CFN](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-url.html)
+- [AutoScale Concurrency](https://aws.amazon.com/jp/blogs/compute/scheduling-aws-lambda-provisioned-concurrency-for-recurring-peak-usage/)
 
 
