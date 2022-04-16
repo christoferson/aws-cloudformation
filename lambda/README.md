@@ -19,6 +19,22 @@
 - Trust policy that allows Lambda to AssumeRole
 - Creator must have permission for iam:PassRole
 
+### Concurrency
+
+- Concurrency is the number of requests that your function is serving at any given time. 
+- Default regional concurrency quota starts at 1,000 instances
+- throttling error (429 status code)
+    - When requests come in faster than your function can scale
+    - When your function is at maximum concurrency
+
+### Reserved Concurrency
+
+- Guarantees the maximum number of concurrent instances for the function. 
+
+### Provisioned Concurrency
+
+- Initializes a requested number of execution environments so that they are prepared to respond immediately to your function's invocations. 
+
 ### Lambda - Basic - Inline NodeJS
 
 Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
@@ -81,6 +97,12 @@ Provision a Lambda with Versions and Alias.
 - Remove AWS::Lambda::Version to delete the version.
 
 [lambda-alias](lambda-alias.yaml)
+
+### Lambda - Concurrency
+
+Provision lambda with Reserved Concurrency.
+
+[lambda-concurrency](lambda-concurrency.yaml)
 
 ### Lambda - VPC
 
