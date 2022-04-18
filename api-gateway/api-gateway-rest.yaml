@@ -9,7 +9,7 @@ Parameters:
     Default: "my-lambda"
 
   ResourceName:
-    Description: Lambda Function Name
+    Description: Resource Name
     Type: String
     Default: "demo"
 
