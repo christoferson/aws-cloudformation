@@ -1,5 +1,11 @@
 ## API Gateway - HTTP
 
+### API Gateway - Account Settings
+
+Account Settings e.g. IAM role that Amazon API Gateway uses to write API logs to Amazon CloudWatch Logs.
+
+[api-gateway-account](api-gateway-account.yaml)
+
 ### API Gateway - Quick Integrate with existing Lambda
 
 Provision HTTP API that integrates with specified Lambda using Quick Create
@@ -74,3 +80,4 @@ Provision REST API that integrates with specified Lambda.
 ## Errors
 
 - Internal Server Error if no permission to Invoke Lambda
+- CloudWatch Logs role ARN must be set in account settings to enable logging 
