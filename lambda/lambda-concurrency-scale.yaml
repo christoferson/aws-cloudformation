@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Concurrency with AutoScale
+
+Parameters:
+
+  LambdaReservedConcurrentExecutions:
+    Description: Lambda Reserved Concurrency
+    Type: Number
+    Default: 2
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          DatabaseName: lambdadb
+          DatabaseUser: admin
+      EphemeralStorage: # The size of the functionfs /tmp directory in MB
+        Size: 512
+      MemorySize: 128 #Maximum: 10240
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      ReservedConcurrentExecutions: !Ref LambdaReservedConcurrentExecutions
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context, callback) => {
+              let envDatabaseName = process.env.DatabaseName;
+              console.log(`DatabaseName: ${envDatabaseName}`);
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Version-1'),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-basic"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+  LambdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Description: v1
+
+  LambdaAliasDev:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      FunctionVersion: !GetAtt LambdaVersion1.Version
+      Name: dev
+      Description: Dev
+
+  LambdaAliasDevAutoScale:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 2
+      MinCapacity: 0
+      ResourceId: !Sub function:${LambdaFunction}:dev
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/lambda.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_LambdaConcurrency
+      ScalableDimension: lambda:function:ProvisionedConcurrency
+      ServiceNamespace: lambda
+      ScheduledActions:
+        - ScalableTargetAction:
+            MinCapacity: 2
+          Schedule: 'cron(45 11 * * ? *)'
+          ScheduledActionName: scale-out
+        - ScalableTargetAction:
+            MinCapacity: 0
+            MaxCapacity: 0
+          Schedule: 'cron(15 13 * * ? *)'
+          ScheduledActionName: scale-in 
+    DependsOn: LambdaAliasDev
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+
