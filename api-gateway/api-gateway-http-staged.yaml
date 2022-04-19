@@ -45,7 +45,7 @@ Resources:
       Description: Stage - Staging
       AutoDeploy: true
       StageVariables:
-         FunctionName: my-function-name
+         FunctionName: my-function-name-stg
       DefaultRouteSettings:
         #DetailedMetricsEnabled: true
         #LoggingLevel: INFO
@@ -60,6 +60,8 @@ Resources:
       StageName: 'prd'
       Description: Stage - Production
       AutoDeploy: true
+      StageVariables:
+         FunctionName: my-function-name-prd
 
   InvokeLambdaPermissionStaging:
     Type: AWS::Lambda::Permission
