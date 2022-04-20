@@ -13,6 +13,18 @@ Metadata:
           - VpcId
           - ComputeSubnetId1
           - ComputeSubnetId2
+      -
+        Label:
+          default: "EFS Configuration"
+        Parameters:
+          - EfsFileSystemId
+          - EfsAccessPointId
+
+    ParameterLabels:
+      EfsFileSystemId:
+        default: "FileSystemID"
+      EfsAccessPointId:
+        default: "AccessPointID"
 
 Parameters:
 
@@ -245,7 +257,8 @@ Resources:
           - Type: MEMORY
             Value: 1024
         Command:
-          - sh -c 'echo ec2; cat /mnt/efs/efs-ec2.txt; ls -Alh /mnt/efs/'
+          #- sh -c 'echo ec2; cat /mnt/efs/efs-ec2.txt; ls -Alh /mnt/efs/'
+          - sh -c 'echo ec2; echo ec2 >> /mnt/efs/efs-ec2.txt; cat /mnt/efs/efs-ec2.txt; ls -Alh /mnt/efs/'
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
         Environment:
