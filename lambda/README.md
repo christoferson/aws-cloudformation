@@ -100,7 +100,7 @@ Provision a Lambda with Versions and Alias.
 
 ### Lambda - Concurrency
 
-Provision lambda with Reserved Concurrency.
+Provision lambda with Reserved Concurrency & Provisioned Concurrency on Alias.
 
 ```
   LambdaAliasDev:
@@ -113,6 +113,14 @@ Provision lambda with Reserved Concurrency.
 
 
 [lambda-concurrency](lambda-concurrency.yaml)
+
+### Lambda - Concurrency - AutoScale
+
+Provision lambda with Provisioned Concurrency on Scheduled AutoScaling
+
+aws application-autoscaling describe-scalable-targets --service-namespace lambda
+
+[lambda-concurrency-scale](lambda-concurrency-scale.yaml)
 
 ### Lambda - VPC
 
