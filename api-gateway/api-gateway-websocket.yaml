@@ -1,130 +1,168 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - HTTP - Integrate with Lambda Function"
-# Lambda for GET /demo
-# HTTP API Gateway
-# Staging Stage
-# Integration GET /demo with Lambda
-# Resource based policy on Lamda to permit access from API Gateway
+Description: "API Gateway - WebSocket"
 
 Resources:
 
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-              - lambda.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
-
-  LambdaFunctionGetDemo:
-    Type: AWS::Lambda::Function
-    Properties:
-      Runtime: nodejs12.x
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Handler: index.handler
-      Code:
-        ZipFile: |
-          exports.handler = async (event) => {
-              const response = {
-                  statusCode: 200,
-                  body: JSON.stringify('Hello!' + Date.now()),
-              };
-              return response;
-          };
-      TracingConfig:
-        Mode: Active
-
-  # API Gateway
-
-  HttpApi:
+  WebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: demo-lambda-proxy
-      Description: Lambda Proxy / Uses  resource-based permissions
-      ProtocolType: HTTP
+      Name: web-socket-mock
+      Description: Mock WebSocket API Gateway
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.message"
       Tags:
         Environment: test
         Application: demo
 
-  IntegrationGetDemo:
-    Type: 'AWS::ApiGatewayV2::Integration'
-    Properties:
-      ApiId: !Ref HttpApi
-      Description: Lambda Integration GET /demo
-      ConnectionType: INTERNET # INTERNET |  VPC_LINK 
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt LambdaFunctionGetDemo.Arn
-      IntegrationMethod: POST
-      PayloadFormatVersion: '2.0'
-      #TimeoutInMillis: 30000  # Custom timeout between 50 and 30,000 milliseconds
-
-  RouteGetDemo:
+  WebSocketConnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
-      ApiId: !Ref HttpApi
-      RouteKey: 'GET /demo'
-      AuthorizationType:  NONE
-      #AuthorizerId: 
-      #OperationName
-      Target: !Sub "integrations/${IntegrationGetDemo}"
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      OperationName: WebSocketConnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketConnectIntegration
+  
+  WebSocketConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Connect Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+      PassthroughBehavior: 'WHEN_NO_MATCH'
+  
+  WebSocketConnectIntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref WebSocketConnectIntegration
+      IntegrationResponseKey: '$default'
+      ResponseTemplates:
+        "200" : '{"statusCode" : 200}'
+  
+  WebSocketConnectRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketConnectRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
 
-  StageStg:
+  WebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      OperationName: WebSocketDisconnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref DisconnectInteg
+  
+  DisconnectInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Disconnect Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+      PassthroughBehavior: 'WHEN_NO_MATCH'
+
+  DisconnectIntegResp:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref DisconnectInteg
+      IntegrationResponseKey: '$default'
+      ResponseTemplates:
+        "200" : '{"statusCode" : 200}'
+  
+  DisconnectRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketDisconnectRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
+  
+  WebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      OperationName: WebSocketDefaultRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref DefaultInteg
+  
+  DefaultInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Default Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+
+  DefaultIntegResp:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref DefaultInteg
+      IntegrationResponseKey: $default
+      ResponseTemplates: 
+        "200" : '{"statusCode" : 200, "connectionId" : "$context.connectionId"}'
+      TemplateSelectionExpression: '200'
+  
+  DefaultRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketDefaultRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
+
+  WebSocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - WebSocketConnectRoute
+    - WebSocketDisconnectRoute
+    - WebSocketDefaultRoute
+    Properties:
+      ApiId: !Ref WebSocketApi
+
+  WebSocketStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
-      ApiId: !Ref HttpApi
-      AutoDeploy: true
-      StageName: 'stg'
-      Description: "Staging"
-      StageVariables:
-         VariableX: variable-x
+      StageName: LATEST
+      Description: Web Socket Stage
+      DeploymentId: !Ref WebSocketDeployment
+      ApiId: !Ref WebSocketApi
       DefaultRouteSettings:
-        #DetailedMetricsEnabled: true
-        #LoggingLevel: INFO
-        #DataTraceEnabled: false
-        ThrottlingBurstLimit: 2 # Number of requests your API can handle concurrently.
-        ThrottlingRateLimit: 2 # Number of allowed requests per second
-      AccessLogSettings:
-        DestinationArn: !GetAtt ApiLogGroup.Arn
-        Format: $context.identity.sourceIp - - [$context.requestTime] "$context.httpMethod $context.routeKey $context.protocol" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage
-      Tags:
-        Environment: test
-        Application: demo
-
-  ApiInvokeLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref LambdaFunctionGetDemo
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
-
-  ApiLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "${HttpApi}-access-logs"
-      RetentionInDays: 1
+        DetailedMetricsEnabled: true
+        LoggingLevel: INFO
 
 
 Outputs:
 
   InvokeURL:
-    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/LATEST
 
-  HttpApiEndpoint:
-    Value: !GetAtt HttpApi.ApiEndpoint
+  WebSocketApiEndpoint:
+    Value: !GetAtt WebSocketApi.ApiEndpoint
 
-  LambdaFunctionGetDemoName:
-    Value: !Ref LambdaFunctionGetDemo
-
-  LambdaExecutionRoleName:
-    Value: !Ref LambdaExecutionRole
 
 
