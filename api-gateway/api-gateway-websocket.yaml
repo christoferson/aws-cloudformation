@@ -66,9 +66,9 @@ Resources:
       Target: !Join
         - '/'
         - - 'integrations'
-          - !Ref DisconnectInteg
+          - !Ref WebSocketDisconnectIntegration
   
-  DisconnectInteg:
+  WebSocketDisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
@@ -79,16 +79,16 @@ Resources:
       TemplateSelectionExpression: '200'
       PassthroughBehavior: 'WHEN_NO_MATCH'
 
-  DisconnectIntegResp:
+  WebSocketDisconnectIntegrationResponse:
     Type: AWS::ApiGatewayV2::IntegrationResponse
     Properties:
       ApiId: !Ref WebSocketApi
-      IntegrationId: !Ref DisconnectInteg
+      IntegrationId: !Ref WebSocketDisconnectIntegration
       IntegrationResponseKey: '$default'
       ResponseTemplates:
         "200" : '{"statusCode" : 200}'
   
-  DisconnectRouteResponse:
+  WebSocketDisconnectRouteResponse:
     Type: AWS::ApiGatewayV2::RouteResponse
     Properties:
       RouteId: !Ref WebSocketDisconnectRoute
