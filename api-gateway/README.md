@@ -69,6 +69,15 @@ Provision REST API that integrates with specified Lambda.
 
 [api-gateway-rest](api-gateway-rest.yaml)
 
+## API Gateway - WebSocket
+
+Provision WebSocket Endpoint.
+
+wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
+- Log: /aws/apigateway/zzz/LATEST
+
+[api-gateway-websocket](api-gateway-websocket.yaml)
+
 ## Resources
 
 - [Cloudformation API Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html)
