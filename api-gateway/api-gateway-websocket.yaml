@@ -106,9 +106,9 @@ Resources:
       Target: !Join
         - '/'
         - - 'integrations'
-          - !Ref DefaultInteg
+          - !Ref WebSocketDefaultIntegration
   
-  DefaultInteg:
+  WebSocketDefaultIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
@@ -118,17 +118,17 @@ Resources:
         "200" : '{"statusCode" : 200}'
       TemplateSelectionExpression: '200'
 
-  DefaultIntegResp:
+  WebSocketDefaultIntegrationResponse:
     Type: AWS::ApiGatewayV2::IntegrationResponse
     Properties:
       ApiId: !Ref WebSocketApi
-      IntegrationId: !Ref DefaultInteg
+      IntegrationId: !Ref WebSocketDefaultIntegration
       IntegrationResponseKey: $default
       ResponseTemplates: 
         "200" : '{"statusCode" : 200, "connectionId" : "$context.connectionId"}'
       TemplateSelectionExpression: '200'
   
-  DefaultRouteResponse:
+  WebSocketDefaultRouteResponse:
     Type: AWS::ApiGatewayV2::RouteResponse
     Properties:
       RouteId: !Ref WebSocketDefaultRoute
