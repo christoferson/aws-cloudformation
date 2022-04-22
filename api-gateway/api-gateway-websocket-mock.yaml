@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - WebSocket"
+
+Resources:
+
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: web-socket-mock
+      Description: Mock WebSocket API Gateway
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.message"
+      Tags:
+        Environment: test
+        Application: demo
+
+  WebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      OperationName: WebSocketConnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketConnectIntegration
+  
+  WebSocketConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Connect Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+      PassthroughBehavior: 'WHEN_NO_MATCH'
+  
+  WebSocketConnectIntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref WebSocketConnectIntegration
+      IntegrationResponseKey: '$default'
+      ResponseTemplates:
+        "200" : '{"statusCode" : 200}'
+  
+  WebSocketConnectRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketConnectRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
+
+  WebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      OperationName: WebSocketDisconnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketDisconnectIntegration
+  
+  WebSocketDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Disconnect Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+      PassthroughBehavior: 'WHEN_NO_MATCH'
+
+  WebSocketDisconnectIntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref WebSocketDisconnectIntegration
+      IntegrationResponseKey: '$default'
+      ResponseTemplates:
+        "200" : '{"statusCode" : 200}'
+  
+  WebSocketDisconnectRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketDisconnectRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
+  
+  WebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      OperationName: WebSocketDefaultRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketDefaultIntegration
+  
+  WebSocketDefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Default Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+
+  WebSocketDefaultIntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref WebSocketDefaultIntegration
+      IntegrationResponseKey: $default
+      ResponseTemplates: 
+        "200" : '{"statusCode" : 200, "connectionId" : "$context.connectionId"}'
+      TemplateSelectionExpression: '200'
+  
+  WebSocketDefaultRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketDefaultRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
+
+  WebSocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - WebSocketConnectRoute
+    - WebSocketDisconnectRoute
+    - WebSocketDefaultRoute
+    Properties:
+      ApiId: !Ref WebSocketApi
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: LATEST
+      Description: Web Socket Stage
+      DeploymentId: !Ref WebSocketDeployment
+      ApiId: !Ref WebSocketApi
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: true
+        LoggingLevel: INFO
+
+
+Outputs:
+
+  InvokeURL:
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/LATEST
+
+  WebSocketApiEndpoint:
+    Value: !GetAtt WebSocketApi.ApiEndpoint
+
+
+
