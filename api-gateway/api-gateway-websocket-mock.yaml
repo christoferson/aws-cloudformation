@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - WebSocket"
+Description: "API Gateway - WebSocket - Mock"
 
 Resources:
 
@@ -8,37 +8,49 @@ Resources:
     Properties:
       Name: web-socket-mock
       Description: Mock WebSocket API Gateway
-      ProtocolType: WEBSOCKET
+      ProtocolType: WEBSOCKET # WEBSOCKET | HTTP
       RouteSelectionExpression: "$request.body.message"
+      #ApiKeySelectionExpression: $request.header.x-api-key
       Tags:
         Environment: test
         Application: demo
 
+  # Configure how clients will be authorized to access this WebSocket API. 
+  # Only the $connect route contains auth settings. 
+  # After the WebSocket connection is established, each message sent from the client will use the same authorization strategy.
   WebSocketConnectRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref WebSocketApi
       RouteKey: $connect
       RouteResponseSelectionExpression: '$default'
-      AuthorizationType: NONE
-      ApiKeyRequired: false
+      AuthorizationType: NONE # NONE, AWS_IAM, CUSTOM(Lambda)
+      ApiKeyRequired: false # Specifies whether an API key is required for the route. Supported only for WebSocket APIs.
       OperationName: WebSocketConnectRoute
+      #RequestModels
+      #RequestParameters
       Target: !Join
         - '/'
         - - 'integrations'
           - !Ref WebSocketConnectIntegration
-  
+
+  # Provide information about the target backend that this route will call and whether the incoming payload should be modified.
+  # Request Templates allow you to transform the incoming message's payload before sending it through to the backend integration. 
+  # The template is chosen by the template key found in the message after the template selection expression has been evaluated.
   WebSocketConnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
       Description: Connect Integration
-      IntegrationType: MOCK
+      IntegrationType: MOCK # for integrating the route or method request with API Gateway as a "loopback" endpoint without invoking any backend. Supported only for WebSocket APIs.
       RequestTemplates: 
         "200" : '{"statusCode" : 200}'
       TemplateSelectionExpression: '200'
-      PassthroughBehavior: 'WHEN_NO_MATCH'
-  
+      PassthroughBehavior: 'WHEN_NO_MATCH' #passes the request body for unmapped content types through to the integration backend without transformation.
+      TimeoutInMillis: 5000 # Custom timeout between 50 and 29,000 milliseconds. Default timeout is 29 seconds for WebSocket APIs
+
+  # Integration responses allow you to configure transformations on the outgoing message's payload using response template definitions. 
+  # The response chosen is based on the response key found in the outgoing message after evaluating the response selection expression.
   WebSocketConnectIntegrationResponse:
     Type: AWS::ApiGatewayV2::IntegrationResponse
     Properties:
