@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - WebSocket - Lambda"
+
+Parameters:
+
+  CodeBucketName:
+    Type: String
+    Default: xxx
+    Description: Bucket containing lambda code
+
+  CodeObjectKeyOnConnect:
+    Type: String
+    Default: api-gateway-websocket-lambda/onconnect.zip
+    Description: Object Key of the zipped code
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaOnConnectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "xxx"
+      Description: "WebSocket OnConnect Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: app.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+          #TABLE_NAME: !Ref TableName
+      Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKeyOnConnect
+        #S3ObjectVersion: 1
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaOnConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaOnConnectFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "apigateway.amazonaws.com"
+
+  LambdaOnConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaOnConnectFunction}"
+      RetentionInDays: 1
