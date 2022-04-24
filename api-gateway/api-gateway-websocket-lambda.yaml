@@ -13,6 +13,11 @@ Parameters:
     Default: api-gateway-websocket-lambda/onconnect.zip
     Description: Object Key of the zipped code
 
+  CodeObjectKeyOnDisconnect:
+    Type: String
+    Default: api-gateway-websocket-lambda/ondisconnect.zip
+    Description: Object Key of the zipped code
+
 Resources:
 
   LambdaExecutionRole:
@@ -64,4 +69,38 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnConnectFunction}"
+      RetentionInDays: 1
+
+  LambdaOnDisconnectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "xxx"
+      Description: "WebSocket OnDisconnect Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: app.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+          #TABLE_NAME: !Ref TableName
+      Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKeyOnDisconnect
+        #S3ObjectVersion: 1
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaOnDisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaOnDisconnectFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "apigateway.amazonaws.com"
+
+  LambdaOnDisconnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaOnDisconnectFunction}"
       RetentionInDays: 1
