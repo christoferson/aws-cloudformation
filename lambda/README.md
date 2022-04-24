@@ -35,6 +35,14 @@
 
 - Initializes a requested number of execution environments so that they are prepared to respond immediately to your function's invocations. 
 
+### Managed Policy
+
+- arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+- arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+- arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+- arn:aws:iam::aws:policy/service-role/AWSLambdaKinesisExecutionRole
+- arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+
 ### Lambda - Basic - Inline NodeJS
 
 Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
