@@ -18,6 +18,11 @@ Parameters:
     Default: api-gateway-websocket-lambda/ondisconnect.zip
     Description: Object Key of the zipped code
 
+  CodeObjectKeyOnMessage:
+    Type: String
+    Default: api-gateway-websocket-lambda/onmessage.zip
+    Description: Object Key of the zipped code
+
 Resources:
 
   LambdaExecutionRole:
@@ -36,6 +41,8 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+# On Connect
 
   LambdaOnConnectFunction:
     Type: AWS::Lambda::Function
@@ -71,6 +78,8 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnConnectFunction}"
       RetentionInDays: 1
 
+# On Disconnect
+
   LambdaOnDisconnectFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -103,4 +112,40 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnDisconnectFunction}"
+      RetentionInDays: 1
+
+# On Message
+
+  LambdaOnMessageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "xxx"
+      Description: "WebSocket OnMessage Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: app.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+          #TABLE_NAME: !Ref TableName
+      Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKeyOnMessage
+        #S3ObjectVersion: 1
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaOnMessagePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaOnMessageFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "apigateway.amazonaws.com"
+
+  LambdaOnMessageLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaOnMessageFunction}"
       RetentionInDays: 1
