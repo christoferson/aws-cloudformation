@@ -11,17 +11,17 @@ Parameters:
   CodeObjectKeyOnConnect:
     Type: String
     Default: api-gateway-websocket-lambda/onconnect.zip
-    Description: Object Key of the zipped code
+    Description: Object Key of the zipped code for OnConnect
 
   CodeObjectKeyOnDisconnect:
     Type: String
     Default: api-gateway-websocket-lambda/ondisconnect.zip
-    Description: Object Key of the zipped code
+    Description: Object Key of the zipped code for OnDisconnect
 
   CodeObjectKeyOnMessage:
     Type: String
     Default: api-gateway-websocket-lambda/onmessage.zip
-    Description: Object Key of the zipped code
+    Description: Object Key of the zipped code for OnMessage
 
 Resources:
 
