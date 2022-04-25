@@ -8,6 +8,10 @@ Parameters:
     Default: xxx
     Description: Bucket containing lambda code
 
+  LambdaOnDisconnectFunctionName:
+    Type: String
+    Default: xxx
+    Description: Bucket containing lambda code
 
 Resources:
 
@@ -38,12 +42,35 @@ Resources:
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaOnConnectFunctionName}/invocations
 
+
+  WebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      OperationName: WebSocketDisconnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketDisconnectIntegration
+
+  WebSocketDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Disconnect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaOnDisconnectFunctionName}/invocations
+
+# Deployments
+
   WebSocketDeployment:
     Type: AWS::ApiGatewayV2::Deployment
     DependsOn:
     - WebSocketConnectRoute
     #- SendRoute
-    #- DisconnectRoute
+    - WebSocketDisconnectRoute
     Properties:
       ApiId: !Ref WebSocketApi
 
@@ -58,7 +85,7 @@ Resources:
 Outputs:
 
   InvokeURL:
-    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/LATEST
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
 
   WebSocketApiEndpoint:
     Value: !GetAtt WebSocketApi.ApiEndpoint
