@@ -11,17 +11,17 @@ Parameters:
   CodeObjectKeyOnConnect:
     Type: String
     Default: api-gateway-websocket-lambda/onconnect.zip
-    Description: Object Key of the zipped code for OnConnect
+    Description: Object Key of the zipped code
 
   CodeObjectKeyOnDisconnect:
     Type: String
     Default: api-gateway-websocket-lambda/ondisconnect.zip
-    Description: Object Key of the zipped code for OnDisconnect
+    Description: Object Key of the zipped code
 
   CodeObjectKeyOnMessage:
     Type: String
     Default: api-gateway-websocket-lambda/onmessage.zip
-    Description: Object Key of the zipped code for OnMessage
+    Description: Object Key of the zipped code
 
 Resources:
 
@@ -42,7 +42,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
-# On Connect
+#--
 
   LambdaOnConnectFunction:
     Type: AWS::Lambda::Function
@@ -78,7 +78,7 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnConnectFunction}"
       RetentionInDays: 1
 
-# On Disconnect
+#--
 
   LambdaOnDisconnectFunction:
     Type: AWS::Lambda::Function
@@ -114,7 +114,7 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnDisconnectFunction}"
       RetentionInDays: 1
 
-# On Message
+#--
 
   LambdaOnMessageFunction:
     Type: AWS::Lambda::Function
