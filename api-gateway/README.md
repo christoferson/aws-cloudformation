@@ -69,14 +69,14 @@ Provision REST API that integrates with specified Lambda.
 
 [api-gateway-rest](api-gateway-rest.yaml)
 
-## API Gateway - WebSocket
+## API Gateway - WebSocket - Mock
 
-Provision WebSocket Endpoint.
+Provision WebSocket Endpoint with Mock Backends.
 
 wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 - Log: /aws/apigateway/zzz/LATEST
 
-[api-gateway-websocket](api-gateway-websocket.yaml)
+[api-gateway-websocket-mock](api-gateway-websocket-mock.yaml)
 
 ## Resources
 
