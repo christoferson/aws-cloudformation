@@ -5,12 +5,17 @@ Parameters:
 
   LambdaOnConnectFunctionName:
     Type: String
-    Default: xxx
+    Default: onconnect
     Description: Bucket containing lambda code
 
   LambdaOnDisconnectFunctionName:
     Type: String
-    Default: xxx
+    Default: ondisconnect
+    Description: Bucket containing lambda code
+
+  LambdaOnMessageFunctionName:
+    Type: String
+    Default: onmessage
     Description: Bucket containing lambda code
 
 Resources:
@@ -63,13 +68,34 @@ Resources:
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaOnDisconnectFunctionName}/invocations
 
+  WebSocketMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      OperationName: WebSocketMessageRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketMessageIntegration
+
+  WebSocketMessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Message Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaOnMessageFunctionName}/invocations
+
+
 # Deployments
 
   WebSocketDeployment:
     Type: AWS::ApiGatewayV2::Deployment
     DependsOn:
     - WebSocketConnectRoute
-    #- SendRoute
+    - WebSocketMessageRoute
     - WebSocketDisconnectRoute
     Properties:
       ApiId: !Ref WebSocketApi
@@ -77,15 +103,15 @@ Resources:
   WebSocketStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
-      StageName: Prod
-      Description: Prod Stage
+      StageName: LATEST
+      Description: Web Socket Stage
       DeploymentId: !Ref WebSocketDeployment
       ApiId: !Ref WebSocketApi
 
 Outputs:
 
   InvokeURL:
-    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/LATEST
 
   WebSocketApiEndpoint:
     Value: !GetAtt WebSocketApi.ApiEndpoint
