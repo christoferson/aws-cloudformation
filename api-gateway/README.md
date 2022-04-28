@@ -78,6 +78,13 @@ wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 
 [api-gateway-websocket-mock](api-gateway-websocket-mock.yaml)
 
+## API Gateway - WebSocket - Lambda
+
+Provision WebSocket Endpoint with Lambda Backends. State Managed in DynamoDB.
+
+[api-gateway-websocket-lambda](api-gateway-websocket-lambda.yaml)
+[api-gateway-websocket-lambda-api](api-gateway-websocket-lambda-api.yaml)
+
 ## Resources
 
 - [Cloudformation API Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html)
