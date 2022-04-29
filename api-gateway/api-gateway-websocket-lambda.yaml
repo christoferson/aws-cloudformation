@@ -23,7 +23,32 @@ Parameters:
     Default: api-gateway-websocket-lambda/onmessage.zip
     Description: Object Key of the zipped code for OnMessage
 
+  WebSocketConnectionsTableName:
+    Type: String
+    Default: 'WebSocketConnections'
+    Description: (Required) The name of the new DynamoDB to store connection identifiers for each connected clients. Minimum 3 characters
+    MinLength: 3
+    MaxLength: 50
+    AllowedPattern: ^[A-Za-z_]+$
+    ConstraintDescription: 'Required. Can be characters and underscore only. No numbers or special characters allowed.'
+
 Resources:
+
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: "connectionId"
+        AttributeType: "S"
+      KeySchema:
+      - AttributeName: "connectionId"
+        KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      SSESpecification:
+        SSEEnabled: True
+      TableName: !Ref WebSocketConnectionsTableName
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -41,6 +66,21 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: dynamodb
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                Resource: "*" #  !GetAtt WebSocketConnectionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*'
 
 # On Connect
 
@@ -56,7 +96,7 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
-          #TABLE_NAME: !Ref TableName
+          TABLE_NAME: !Ref WebSocketConnectionsTableName
       Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         S3Bucket: !Ref CodeBucketName
@@ -92,7 +132,7 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
-          #TABLE_NAME: !Ref TableName
+          TABLE_NAME: !Ref WebSocketConnectionsTableName
       Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         S3Bucket: !Ref CodeBucketName
@@ -128,7 +168,7 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
-          #TABLE_NAME: !Ref TableName
+          TABLE_NAME: !Ref WebSocketConnectionsTableName
       Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         S3Bucket: !Ref CodeBucketName
