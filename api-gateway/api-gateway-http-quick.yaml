@@ -17,7 +17,7 @@ Resources:
       Description: Lambda Proxy using Quick Create
       ProtocolType: HTTP
       Target: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}
-      #RouteKey: "GET /ping"
+      #RouteKey: "GET /ping" # If you don't specify a routeKey, a default route of $default is created
       Version: 1
 
   HttpApiInvokeLambdaPermission:
