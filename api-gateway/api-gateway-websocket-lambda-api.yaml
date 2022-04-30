@@ -108,6 +108,12 @@ Resources:
       DeploymentId: !Ref WebSocketDeployment
       ApiId: !Ref WebSocketApi
 
+  WebSocketApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${WebSocketApi}/LATEST"
+      RetentionInDays: 1
+
 Outputs:
 
   InvokeURL:
