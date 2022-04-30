@@ -13,19 +13,7 @@ exports.handler = async event => {
      return { statusCode: 200, body: 'noop' };
   }
   
-  try {
-    connectionData = await ddb.scan({ TableName: TABLE_NAME, ProjectionExpression: 'connectionId' }).promise();
-  } catch (e) {
-    console.log(e);
-    return { statusCode: 500, body: e.stack };
-  }
-  
-  const apigwManagementApi = new AWS.ApiGatewayManagementApi({
-    apiVersion: '2018-11-29',
-    endpoint: event.requestContext.domainName + '/' + event.requestContext.stage
-  });
-  
-  let postData = "invalid";
+ let postData = "invalid";
   try {
       console.log(event.body);
       let o = JSON.parse(event.body);
@@ -40,6 +28,19 @@ exports.handler = async event => {
     console.log(e);
     return { statusCode: 500, body: 'input must be json with data attribute' };
   }
+  
+  
+  try {
+    connectionData = await ddb.scan({ TableName: TABLE_NAME, ProjectionExpression: 'connectionId' }).promise();
+  } catch (e) {
+    console.log(e);
+    return { statusCode: 500, body: e.stack };
+  }
+  
+  const apigwManagementApi = new AWS.ApiGatewayManagementApi({
+    apiVersion: '2018-11-29',
+    endpoint: event.requestContext.domainName + '/' + event.requestContext.stage
+  });
 
   const postCalls = connectionData.Items.map(async ({ connectionId }) => {
     try {
