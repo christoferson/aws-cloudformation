@@ -13,6 +13,7 @@ exports.handler = async event => {
   try {
     await ddb.put(putParams).promise();
   } catch (err) {
+	console.log(err);
     return { statusCode: 500, body: 'Failed to connect: ' + JSON.stringify(err) };
   }
 
