@@ -85,6 +85,8 @@ Resources:
               };
               return response;
           };
+      DeadLetterConfig:
+        TargetArn: !GetAtt DeadLetterQueue.Arn
       TracingConfig:
         Mode: "Active"
       Tags:
