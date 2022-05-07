@@ -125,7 +125,7 @@ Resources:
       IntegrationId: !Ref WebSocketDefaultIntegration
       IntegrationResponseKey: $default
       ResponseTemplates: 
-        "200" : '{"statusCode" : 200, "connectionId" : "$context.connectionId"}'
+        "200" : '{"statusCode" : 200, "connectionId" : "$context.connectionId", "message" : "foo"}'
       TemplateSelectionExpression: '200'
   
   WebSocketDefaultRouteResponse:
@@ -135,12 +135,53 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteResponseKey: $default
 
+  WebSocketCustomListRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: list
+      RouteResponseSelectionExpression: '$default'
+      AuthorizationType: NONE
+      OperationName: WebSocketCustomListRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketCustomListIntegration
+
+  WebSocketCustomListIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: CustomList Integration
+      IntegrationType: MOCK
+      RequestTemplates: 
+        "200" : '{"statusCode" : 200}'
+      TemplateSelectionExpression: '200'
+
+  WebSocketCustomListIntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationId: !Ref WebSocketCustomListIntegration
+      IntegrationResponseKey: $default
+      ResponseTemplates: 
+        "200" : '{"statusCode" : 200, "connectionId" : "$context.connectionId", "message" : "list"}'
+      TemplateSelectionExpression: '200'
+  
+  WebSocketCustomListRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Properties:
+      RouteId: !Ref WebSocketCustomListRoute
+      ApiId: !Ref WebSocketApi
+      RouteResponseKey: $default
+
   WebSocketDeployment:
     Type: AWS::ApiGatewayV2::Deployment
     DependsOn:
     - WebSocketConnectRoute
     - WebSocketDisconnectRoute
     - WebSocketDefaultRoute
+    - WebSocketCustomListRoute
     Properties:
       ApiId: !Ref WebSocketApi
 
