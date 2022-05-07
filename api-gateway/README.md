@@ -24,6 +24,11 @@ Provision HTTP API that integrates with newly provisioned Lambda.
 
 [api-gateway-http-lambda](api-gateway-http-lambda.yaml)
 
+### API Gateway - Integrate with Lambda Alias
+
+Provision HTTP API that integrates with newly provisioned Lambda and Alias.
+
+[api-gateway-http-lambda-alias](api-gateway-http-lambda-alias.yaml)
 
 ### API Gateway - Integrate with existing Lambda - Multiple Stages
 
