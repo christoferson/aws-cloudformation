@@ -189,3 +189,39 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnMessageFunction}"
       RetentionInDays: 1
+
+# On List
+
+  LambdaOnCustomListFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "xxx"
+      Description: "WebSocket OnCustomList Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: app.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb2
+          databaseUser: admin
+          TABLE_NAME: !Ref WebSocketConnectionsTableName
+      Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKeyOnMessage #TODO
+        #S3ObjectVersion: 1
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaOnCustomListPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaOnCustomListFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "apigateway.amazonaws.com"
+
+  LambdaOnCustomListLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaOnCustomListFunction}"
+      RetentionInDays: 1
