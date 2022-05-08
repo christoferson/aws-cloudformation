@@ -74,12 +74,20 @@ Provision REST API that integrates with specified Lambda.
 
 [api-gateway-rest](api-gateway-rest.yaml)
 
+## API Gateway - WebSocket
+
+RouteSelectionExpression
+In your WebSocket API, incoming JSON messages are directed to backend integrations based on routes that you configure. 
+(Non-JSON messages are directed to a $default route that you configure.)
+
+
 ## API Gateway - WebSocket - Mock
 
 Provision WebSocket Endpoint with Mock Backends.
 
 wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 - Log: /aws/apigateway/zzz/LATEST
+> {"action":"message", "data":"foobar", "message": "list"}  
 
 [api-gateway-websocket-mock](api-gateway-websocket-mock.yaml)
 
