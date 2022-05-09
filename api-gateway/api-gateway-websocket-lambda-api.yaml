@@ -18,6 +18,11 @@ Parameters:
     Default: onmessage
     Description: Bucket containing lambda code
 
+  LambdaOnCustomListFunctionName:
+    Type: String
+    Default: onmessage
+    Description: Bucket containing lambda code
+
 Resources:
 
   WebSocketApi:
@@ -88,6 +93,26 @@ Resources:
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaOnMessageFunctionName}/invocations
 
+  WebSocketCustomListRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: "list"
+      AuthorizationType: NONE
+      OperationName: WebSocketCustomListRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref WebSocketCustomListIntegration
+
+  WebSocketCustomListIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: CustomList Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaOnCustomListFunctionName}/invocations
+
 
 # Deployments
 
@@ -97,6 +122,7 @@ Resources:
     - WebSocketConnectRoute
     - WebSocketMessageRoute
     - WebSocketDisconnectRoute
+    - WebSocketCustomListRoute
     Properties:
       ApiId: !Ref WebSocketApi
 
