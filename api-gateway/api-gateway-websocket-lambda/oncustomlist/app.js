@@ -19,7 +19,7 @@ exports.handler = async event => {
       let o = JSON.parse(event.body);
      
         if (o && typeof o === "object") {
-            postData = o.data;
+            postData = "list: " +  o.data;
         } else {
 	          console.log("received non json input");
             return { statusCode: 200, body: 'noop' };
