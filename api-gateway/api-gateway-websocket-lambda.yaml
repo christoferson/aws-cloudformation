@@ -23,6 +23,11 @@ Parameters:
     Default: api-gateway-websocket-lambda/onmessage.zip
     Description: Object Key of the zipped code for OnMessage
 
+  CodeObjectKeyOnCustomList:
+    Type: String
+    Default: api-gateway-websocket-lambda/oncustomlist.zip
+    Description: Object Key of the zipped code for OnCustomList
+
   WebSocketConnectionsTableName:
     Type: String
     Default: 'WebSocketConnections'
@@ -208,7 +213,7 @@ Resources:
       Timeout: 30 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         S3Bucket: !Ref CodeBucketName
-        S3Key: !Ref CodeObjectKeyOnMessage #TODO
+        S3Key: !Ref CodeObjectKeyOnCustomList
         #S3ObjectVersion: 1
       TracingConfig:
         Mode: "Active"
@@ -225,3 +230,8 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaOnCustomListFunction}"
       RetentionInDays: 1
+
+Outputs:
+
+  LambdaOnConnectFunctionName:
+    Value: !Ref LambdaOnConnectFunction
