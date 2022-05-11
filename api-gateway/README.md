@@ -96,7 +96,8 @@ wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 Provision WebSocket Endpoint with Lambda Backends. State Managed in DynamoDB.
 
 wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
-> {"action":"message", "data":"foobar"}  
+> {"action":"message", "data":"foobar"} 
+> {"action":"list", "data":"foobar"}  
 
 [api-gateway-websocket-lambda](api-gateway-websocket-lambda.yaml)
 [api-gateway-websocket-lambda-api](api-gateway-websocket-lambda-api.yaml)
