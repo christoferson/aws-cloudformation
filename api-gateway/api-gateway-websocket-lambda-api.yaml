@@ -6,22 +6,22 @@ Parameters:
   LambdaOnConnectFunctionName:
     Type: String
     Default: onconnect
-    Description: Bucket containing lambda code
+    Description: Name of the lambda function handler for OnConnect
 
   LambdaOnDisconnectFunctionName:
     Type: String
     Default: ondisconnect
-    Description: Bucket containing lambda code
+    Description: Name of the lambda function handler for OnDisconnect
 
   LambdaOnMessageFunctionName:
     Type: String
     Default: onmessage
-    Description: Bucket containing lambda code
+    Description: Name of the lambda function handler for OnMessage
 
   LambdaOnCustomListFunctionName:
     Type: String
     Default: onmessage
-    Description: Bucket containing lambda code
+    Description: Name of the lambda function handler for OnCustomList
 
 Resources:
 
