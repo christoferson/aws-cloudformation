@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Example template for a Step Functions state machine.
+Description: Step Functions - Standard - Basic
 
 Resources:
 
@@ -13,6 +13,9 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
   LambdaFunction:
     Type: "AWS::Lambda::Function"
@@ -26,6 +29,12 @@ Resources:
           };
       Runtime: "nodejs12.x"
       Timeout: "25"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
 
   StateMachineExecutionRole:
     Type: "AWS::IAM::Role"
