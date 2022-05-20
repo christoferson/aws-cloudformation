@@ -57,6 +57,10 @@ Resources:
                 Action:
                   - "lambda:InvokeFunction"
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: "*"
 
   StateMachine:
     Type: "AWS::StepFunctions::StateMachine"
@@ -70,6 +74,7 @@ Resources:
             {
               "Comment": "Call Lambda",
               "StartAt": "Step1",
+              "TimeoutSeconds": 60,
               "States": {
                 "Step1": {
                   "Type": "Task",
@@ -81,7 +86,14 @@ Resources:
               }
             }
           - {lambdaArn: !GetAtt [ LambdaFunction, Arn ]}
-      
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt LogGroupStateMachine.Arn
+        IncludeExecutionData: true
+        Level: 'ERROR'
       Tags:
         -
           Key: "Environment"
@@ -90,3 +102,16 @@ Resources:
           Key: "Application"
           Value: "app"
 
+  LogGroupStateMachine:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        #LogGroupName: !Sub "/stepfunctions"
+        RetentionInDays: 1
+
+Outputs:
+
+  StateMachineArn:
+    Value: !Ref StateMachine
+
+  StateMachineName:
+    Value: !GetAtt StateMachine.Name
