@@ -25,7 +25,7 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = (event, context, callback) => {
-              callback(null, "Hello World!");
+              callback(null, event);
           };
       Runtime: "nodejs12.x"
       Timeout: "25"
@@ -62,6 +62,7 @@ Resources:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
       #StateMachineName: StateMachine
+      StateMachineType: STANDARD  # STANDARD |  EXPRESS
       RoleArn: !GetAtt StateMachineExecutionRole.Arn
       DefinitionString:
         !Sub
