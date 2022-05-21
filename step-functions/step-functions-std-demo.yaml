@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Example template for a Step Functions state machine.
+Description: Step Functions - Standard - Demo
 
 Resources:
 
