@@ -7,11 +7,9 @@ Cloudformation templates for EC2
 Launch an ec2 instance inside a the specified public subnet. 
 
 - Creates IAM Role and Instance Profile
-- Creates a Security Group for SSH Access. 
-    - Need to provide allowed IP Range
-    - Need to provide SSH Key
 - Creates a Security Group for HTTP Access
 - Enables SSM to connect to instance
+- Installs HTTPD on instance
 
 [ec2-basic](./ec2-basic.yaml)
 
@@ -20,11 +18,12 @@ Launch an ec2 instance inside a the specified public subnet.
 Launch an ec2 instance inside a the specified public subnet. 
 
 - Creates IAM Role and Instance Profile
+- Creates a Security Group for HTTP Access
+- Enables SSM to connect to instance
+- Installs HTTPD on instance
 - Creates a Security Group for SSH Access. 
     - Need to provide allowed IP Range
     - Need to provide SSH Key
-- Creates a Security Group for HTTP Access
-- Enables SSM to connect to instance
 
 [ec2-basic-options](./ec2-basic-options.yaml)
 
@@ -59,11 +58,13 @@ Launch instance using launch template
 
 ec2-template
 
-### Load Balancer + Auto Scaling Group
+### EC2 Load Balancer + Auto Scaling Group
 
-Provision Application Load Balancer in the public subnets and delegates traffic to the fleet of instances in the private subnet. The fleet of instances is managed by the auto scaling group.
+Provision Application Load Balancer in the public subnets and delegates traffic to the fleet of instances in the private subnets. The fleet of instances is managed by the auto scaling group.
 
-ec2-alb
+TODO: Add Dynamic Scaling
+
+[ec2-alb](./ec2-alb.yaml)
 
 ### Cloudformation Documentation
 
@@ -74,4 +75,4 @@ ec2-alb
 
 - https://aws.amazon.com/jp/blogs/compute/query-for-the-latest-amazon-linux-ami-ids-using-aws-systems-manager-parameter-store/
 
-
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/quickref-autoscaling.html
