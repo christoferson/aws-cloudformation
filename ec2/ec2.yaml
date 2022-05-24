@@ -58,8 +58,8 @@ Parameters:
 
   Ec2ImageId:
     Description: AMI ID
-    Type: String
-    Default: ami-01efa4023f0f3a042
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
   Ec2InstanceType:
     Description: EC2 InstanceType
@@ -134,7 +134,7 @@ Resources:
     Properties:
       Path: /
       Roles:
-      - !Ref 'Ec2IAMRole'
+      - !Ref Ec2IAMRole
 
 
   Ec2SecurityGroup:
