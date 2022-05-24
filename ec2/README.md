@@ -27,6 +27,37 @@ Launch an ec2 instance inside a the specified public subnet.
 
 [ec2-basic-options](./ec2-basic-options.yaml)
 
+### EC2 with Unified CloudWatch Agent
+
+Launch an ec2 instance inside a the specified public subnet with Unified CloudWatch agent.
+CloudWatch agent will send logs and additional metrics.
+
+- Configure Unified CloudWatch Agent and send HTTP Logs (/var/log/httpd/access_log, /var/log/httpd/error_log) to CloudWatch
+
+- Instance Role must have policy CloudWatchAgentServerPolicy.
+- SSM Parameter Name must start with AmazonCloudWatch- to match policy in CloudWatchAgentServerPolicy.
+
+
+Check the Agent Status
+
+```
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status
+```
+
+Initialize the Agent with the SSM Config if needed
+
+```
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c ssm:AmazonCloudWatch-agent-config -s
+```
+
+Agent Log
+
+```
+/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log
+```
+
+[ec2-cloudwatch](ec2-cloudwatch.yaml)
+
 ### User Data
 
 Launch instance with httpd initialized using user data
