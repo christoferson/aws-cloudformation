@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EC2 - Basic HTTP Server
+Description: EC2 - Unified CloudWatch Agent
 
 Metadata:
 

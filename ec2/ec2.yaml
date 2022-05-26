@@ -10,7 +10,7 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          Default: "Network Configuration"
+          default: "Network Configuration"
         Parameters:
           - VpcId
           - VpcSubnetCidr
@@ -19,14 +19,14 @@ Metadata:
           - StaticIPforSSH
       -
         Label:
-          Default: "Instance Configuration"
+          default: "Instance Configuration"
         Parameters:
           - Ec2ImageId
           - Ec2InstanceType
           - Ec2InstanceKeyName
       -
         Label:
-          Default: "Auto Scaling Configuration"
+          default: "Auto Scaling Configuration"
         Parameters:
           - Ec2AutoscaleMinSize
           - Ec2AutoscaleMaxSize
@@ -191,7 +191,7 @@ Resources:
             yum install -y httpd
             systemctl start httpd
             systemctl enable httpd
-            echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
+            echo "<h1>Hi from $(hostname -f)</h1>" > /var/www/html/index.html
         TagSpecifications:
         - ResourceType: instance
           Tags:
@@ -218,3 +218,8 @@ Resources:
       MinSize: !Ref 'Ec2AutoscaleMinSize'
       MaxSize: !Ref 'Ec2AutoscaleMaxSize'
       DesiredCapacity: !Ref 'Ec2AutoscaleDesiredCapacity'
+
+Outputs:
+
+  EC2InstancePublicIp:
+    Value: !GetAtt EC2Instance.PublicIp
