@@ -112,6 +112,8 @@ Resources:
             yum update -y aws-cfn-bootstrap
             # Start cfn-init
             /opt/aws/bin/cfn-init -s ${AWS::StackId} -r EC2Instance --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
+            # Start up the cfn-hup daemon to listen for changes to the EC2 instance metadata
+            /opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'
             # Start cfn-signal to the wait condition
             /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource Ec2WaitCondition --region ${AWS::Region}
     Metadata:
@@ -125,8 +127,32 @@ Resources:
             "/var/www/html/index.html":
               content: !Sub |
                 <h1>Hi from EC2 instance!</h1>
-                <p>This page was created using cfn-init. ${AWS::Region}</p>
+                <p>This page was created using cfn-init. ${AWS::Region} Version-1</p>
               mode: '000644'
+            # The cfn-hup.conf file stores the name of the stack and the AWS credentials that the cfn-hup daemon targets.
+            "/etc/cfn/cfn-hup.conf":
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                # The interval used to check for changes to the resource metadata in minutes. Default is 15
+                interval=2
+              mode: "000400"
+              owner: "root"
+              group: "root"
+            # The user actions that the cfn-hup daemon calls periodically are defined in the hooks.conf configuration file.
+            # To support composition of several applications deploying change notification hooks, cfn-hup supports a directory named hooks.d that is located in 
+            # the hooks configuration directory. You can place one or more additional hooks configuration files in the hooks.d directory. 
+            # The additional hooks files must use the same layout as the hooks.conf file.
+            "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+              mode: "000400"
+              owner: "root"
+              group: "root"
           commands:
             hello:
               command: "echo 'Hello World'"
