@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: CloudTrail
+Description: CloudTrail Basic Template
 
 Resources:
 
@@ -16,9 +16,9 @@ Resources:
         ServerSideEncryptionConfiguration:
         - ServerSideEncryptionByDefault:
             SSEAlgorithm: AES256
-      #OwnershipControls:
-      #  Rules:
-      #    - ObjectOwnership: BucketOwnerPreferred
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
       LifecycleConfiguration:
         Rules: 
         - Id: lifecycle-rule-expire
