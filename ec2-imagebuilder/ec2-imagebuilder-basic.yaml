@@ -35,8 +35,7 @@ Resources:
           Action:
           - s3:*
           Resource:
-            - !Sub 'arn:aws:s3:::${S3Bucketlog}'
-            - !Sub 'arn:aws:s3:::${S3Bucketlog}/*'
+          - '*'
       Roles:
       - !Ref 'Ec2IAMRole'
 
@@ -47,3 +46,52 @@ Resources:
       Path: /
       Roles:
         - !Ref 'Ec2IAMRole'
+
+  BuildComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: !Sub '${AWS::StackName}-build'
+      Platform: Linux
+      Version: 1.0.0
+      Data: |
+        name: yum_install
+        description: jq_install
+        schemaVersion: 1.0
+        phases:
+          - name: build
+            steps:
+              - name: UpdateOS
+                action: UpdateOS
+              - name: yum_update
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - yum update -y
+              - name: jq_install
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - yum install jq -y
+              - name: kernelng_install
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - amazon-linux-extras install -y kernel-ng
+          - name: validate
+            steps:
+              - name: jq_install
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - rpm -qi jq
+
+
+  ImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Sub '${AWS::StackName}-Recipe'
+      Version: 1.0.0
+      ParentImage: !Sub 'arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2-x86/2020.4.7'
+      Components:
+        - ComponentArn: !Ref 'BuildComponent'
+        #- ComponentArn: !Ref 'TestComponent'
