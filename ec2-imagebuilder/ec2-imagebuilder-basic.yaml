@@ -85,13 +85,32 @@ Resources:
                   commands:
                     - rpm -qi jq
 
+  TestComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: !Sub '${AWS::StackName}-test'
+      Platform: Linux
+      Version: 1.0.0
+      Data: |
+        name: jq_test
+        description: jq_test
+        schemaVersion: 1.0
+        phases:
+          - name: test
+            steps:
+              - name: check_status
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - jq --version
+
 
   ImageRecipe:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
-      Name: !Sub '${AWS::StackName}-Recipe'
+      Name: !Sub '${AWS::StackName}-recipe'
       Version: 1.0.0
       ParentImage: !Sub 'arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2-x86/2020.4.7'
       Components:
         - ComponentArn: !Ref 'BuildComponent'
-        #- ComponentArn: !Ref 'TestComponent'
+        - ComponentArn: !Ref 'TestComponent'
