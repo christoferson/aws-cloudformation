@@ -1,6 +1,16 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: ImageBuilder
 
+Parameters:
+
+#  VpcId:
+#    Description: VPC ID
+#    Type: AWS::EC2::VPC::Id
+
+  VpcSubnet:
+    Description: VpcSubnet
+    Type: AWS::EC2::Subnet::Id
+
 Resources:
 
   Ec2IAMRole:
@@ -114,3 +124,19 @@ Resources:
       Components:
         - ComponentArn: !Ref 'BuildComponent'
         - ComponentArn: !Ref 'TestComponent'
+
+  InfrastructureConfiguration:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: !Sub '${AWS::StackName}-InfrastructureConfiguration'
+      InstanceProfileName: !Ref 'Ec2IAMProfile'
+      InstanceTypes:
+        #- t3.small
+        - t2.micro
+      SubnetId: !Ref VpcSubnet
+      SecurityGroupIds: []
+      TerminateInstanceOnFailure: true
+
+
+#TODO Distribution Settings
+# TODO Image or Image Pipeline
