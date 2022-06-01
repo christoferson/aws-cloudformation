@@ -137,6 +137,19 @@ Resources:
       SecurityGroupIds: []
       TerminateInstanceOnFailure: true
 
+  DistributionConfiguration:
+    Type: 'AWS::ImageBuilder::DistributionConfiguration'
+    Properties:
+      Name: !Sub '${AWS::StackName}-distribution'
+      Description: !Sub '${AWS::StackName}-distribution'
+      Distributions:
+        - Region: 'eu-west-1'
+          AmiDistributionConfiguration:
+            Name: 'ami-dist-config-name-1 {{ imagebuilder:buildDate }}'
+            Description: 'Region.'
+            AmiTags:
+              AmiTagKey: 'ami-tag-key'
+
 
 #TODO Distribution Settings
 # TODO Image or Image Pipeline
