@@ -150,6 +150,16 @@ Resources:
             AmiTags:
               AmiTagKey: 'ami-tag-key'
 
+  Image:
+    Type: AWS::ImageBuilder::Image
+    Properties:
+      ImageRecipeArn: !Ref 'ImageRecipe'
+      InfrastructureConfigurationArn: !Ref 'InfrastructureConfiguration'
+      DistributionConfigurationArn: !Ref DistributionConfiguration
+      ImageTestsConfiguration:
+        ImageTestsEnabled: true
+        TimeoutMinutes: 60
+      Tags:
+        CmBillingGroup: ImageBuilder
 
-#TODO Distribution Settings
 # TODO Image or Image Pipeline
