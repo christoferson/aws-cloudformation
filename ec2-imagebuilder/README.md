@@ -1,3 +1,10 @@
+## EC2 Image Builder
+
+### Image Builder - Basic
+
+TODO
+
+[ec2-imagebuilder-basic](ec2-imagebuilder-basic.yaml)
 
 
 Errors:
