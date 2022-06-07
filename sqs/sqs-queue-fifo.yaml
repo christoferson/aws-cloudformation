@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: SQS FIFO Queue - High Throughput (DeduplicationScope: messageGroup, FifoThroughputLimit: perMessageGroupId)
+Description: SQS FIFO Queue - Normal Throughput (DeduplicationScope=queue, FifoThroughputLimit=perQueue)
 
 Resources:
 
@@ -18,8 +18,8 @@ Resources:
        RedriveAllowPolicy:
          redrivePermission: allowAll
        ContentBasedDeduplication: true # For first-in-first-out (FIFO) queues, specifies whether to enable content-based deduplication.
-       DeduplicationScope: messageGroup # messageGroup | queue # whether message deduplication occurs at the message group or queue level
-       FifoThroughputLimit: perMessageGroupId # perMessageGroupId | perQueue # whether the FIFO queue throughput quota applies to the entire queue or per message group 
+       DeduplicationScope: queue # messageGroup | queue # whether message deduplication occurs at the message group or queue level
+       FifoThroughputLimit: perQueue # perMessageGroupId | perQueue # whether the FIFO queue throughput quota applies to the entire queue or per message group 
        Tags:
          -
             Key: env
