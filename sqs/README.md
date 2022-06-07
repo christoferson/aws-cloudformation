@@ -46,11 +46,19 @@ aws --region eu-west-1 sqs send-message --queue-url https://sqs.eu-west-1.amazon
 
 ### SQS Encryption | [link](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-server-side-encryption.html#sqs-encryption-what-does-sse-encrypt)
 
+SSE protects the contents of messages in queues using:
+
+- SQS-owned encryption keys (SSE-SQS) 
+- Keys managed in the AWS Key Management Service (SSE-KMS)
+
 Moving a message to a dead-letter queue doesn't affect its encryption:
 
   - When Amazon SQS moves a message from an encrypted source queue to an unencrypted dead-letter queue, the message remains encrypted.
 
   - When Amazon SQS moves a message from an unencrypted source queue to an encrypted dead-letter queue, the message remains unencrypted.
+
+SQS-managed encryption keys (SSE-SQS) not yet supported in CFN
+https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/989
   
 ### SQS Require HTTPS | [link](https://forums.aws.amazon.com/thread.jspa?threadID=285230&tstart=75)
 
