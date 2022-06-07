@@ -14,7 +14,7 @@ Parameters:
 
   PlatformVersion:
     Type: String
-    Default: 64bit Amazon Linux 2 v3.2.15 running Corretto 11
+    Default: 64bit Amazon Linux 2 v4.2.15 running Tomcat 8.5 Corretto 11
     Description: Platform Version
 
   VpcId:
@@ -78,6 +78,9 @@ Resources:
       - Namespace: aws:elasticbeanstalk:environment
         OptionName: EnvironmentType
         Value: LoadBalanced
+      - Namespace: aws:elasticbeanstalk:application
+        OptionName: Application Healthcheck URL
+        Value: /
       - Namespace: aws:autoscaling:launchconfiguration
         OptionName: IamInstanceProfile
         Value: !Ref InstanceProfile
