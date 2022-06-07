@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: SQS FIFO Queue
+Description: SQS FIFO Queue - High Throughput (DeduplicationScope: messageGroup, FifoThroughputLimit: perMessageGroupId)
 
 Resources:
 
