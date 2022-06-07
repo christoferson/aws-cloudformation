@@ -14,7 +14,7 @@ Parameters:
 
   PlatformVersion:
     Type: String
-    Default: 64bit Amazon Linux 2018.03 v3.4.20 running Tomcat 8.5 Java 8
+    Default: 64bit Amazon Linux 2 v3.2.15 running Corretto 11
     Description: Platform Version
 
   VpcId:
@@ -31,26 +31,26 @@ Parameters:
 
 Resources:
 
-  sampleApplication:
+  BeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
       Description: AWS Elastic Beanstalk Sample Application
 
-  sampleApplicationVersion:
+  BeanstalkApplicationVersion:
     Type: AWS::ElasticBeanstalk::ApplicationVersion
     Properties:
       ApplicationName:
-        Ref: sampleApplication
+        Ref: BeanstalkApplication
       Description: AWS ElasticBeanstalk Sample Application Version
       SourceBundle:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey
 
-  sampleConfigurationTemplate:
+  BeanstalkConfigurationTemplate:
     Type: AWS::ElasticBeanstalk::ConfigurationTemplate
     Properties:
       ApplicationName:
-        Ref: sampleApplication
+        Ref: BeanstalkApplication
       Description: AWS ElasticBeanstalk Sample Configuration Template
       SolutionStackName: !Ref PlatformVersion
       OptionSettings:
@@ -80,27 +80,27 @@ Resources:
         Value: LoadBalanced
       - Namespace: aws:autoscaling:launchconfiguration
         OptionName: IamInstanceProfile
-        Value: !Ref MyInstanceProfile
+        Value: !Ref InstanceProfile
 
       #- Namespace: aws:ec2:vpc
       #  OptionName: DBSubnets
       #  Value: LoadBalanced
 
-  sampleEnvironment:
+  BeanstalkEnvironment:
     Type: AWS::ElasticBeanstalk::Environment
     Properties:
       ApplicationName:
-        Ref: sampleApplication
+        Ref: BeanstalkApplication
       Description: AWS ElasticBeanstalk Sample Environment
       TemplateName:
-        Ref: sampleConfigurationTemplate
+        Ref: BeanstalkConfigurationTemplate
       VersionLabel:
-        Ref: sampleApplicationVersion
+        Ref: BeanstalkApplicationVersion
       Tags: 
         - Key: "env"
           Value: "prd"
 
-  MyInstanceRole:
+  InstanceRole:
     Type: AWS::IAM::Role
     Properties: 
       AssumeRolePolicyDocument:
@@ -121,8 +121,8 @@ Resources:
         - Key: 'environment'
           Value: common
 
-  MyInstanceProfile:
+  InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties: 
       Roles:
-        - !Ref MyInstanceRole
+        - !Ref InstanceRole
