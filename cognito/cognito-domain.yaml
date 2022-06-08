@@ -18,7 +18,11 @@ Resources:
       UserPoolName: "cognito-userpool-domain"
       AdminCreateUserConfig:
           AllowAdminCreateUserOnly: false
-          UnusedAccountValidityDays: 7
+          #UnusedAccountValidityDays: 7
+          InviteMessageTemplate:
+            EmailMessage: "Custom - Your username is {username} and temporary password is {####}."
+            EmailSubject: "Custom - Your temporary password."
+            #SMSMessage: String
       AliasAttributes:
         - email
       AutoVerifiedAttributes:
@@ -31,6 +35,7 @@ Resources:
           RequireNumbers: true
           RequireSymbols: false
           RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
       Schema:
         - AttributeDataType: "String"
           DeveloperOnlyAttribute: false
