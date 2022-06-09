@@ -129,3 +129,8 @@ Resources:
     Properties: 
       Roles:
         - !Ref InstanceRole
+
+Outputs:
+
+  BeanstalkEnvironmentEndpointURL:
+    Value: !GetAtt BeanstalkEnvironment.EndpointURL
