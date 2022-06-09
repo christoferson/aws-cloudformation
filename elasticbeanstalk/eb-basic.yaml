@@ -1,5 +1,30 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - CodeBucketName
+          - CodeObjectKey
+      -
+        Label:
+          default: "Platform Configuration"
+        Parameters:
+          - PlatformVersion
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetListLoadBalancer
+          - VpcSubnetListWebServer
+
 Parameters:
 
   CodeBucketName:
@@ -34,14 +59,14 @@ Resources:
   BeanstalkApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      Description: AWS Elastic Beanstalk Sample Application
+      Description: ElasticBeanstalk Sample Application
 
   BeanstalkApplicationVersion:
     Type: AWS::ElasticBeanstalk::ApplicationVersion
     Properties:
       ApplicationName:
         Ref: BeanstalkApplication
-      Description: AWS ElasticBeanstalk Sample Application Version
+      Description: ElasticBeanstalk Sample Application Version
       SourceBundle:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey
@@ -51,7 +76,7 @@ Resources:
     Properties:
       ApplicationName:
         Ref: BeanstalkApplication
-      Description: AWS ElasticBeanstalk Sample Configuration Template
+      Description: ElasticBeanstalk Sample Configuration Template
       SolutionStackName: !Ref PlatformVersion
       OptionSettings:
       - Namespace: aws:ec2:vpc
@@ -94,7 +119,7 @@ Resources:
     Properties:
       ApplicationName:
         Ref: BeanstalkApplication
-      Description: AWS ElasticBeanstalk Sample Environment
+      Description: ElasticBeanstalk Sample Environment
       TemplateName:
         Ref: BeanstalkConfigurationTemplate
       VersionLabel:
