@@ -109,6 +109,9 @@ Resources:
       - Namespace: aws:autoscaling:launchconfiguration
         OptionName: IamInstanceProfile
         Value: !Ref InstanceProfile
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: SecurityGroups
+        Value: !Ref InstanceSecurityGroup
 
       #- Namespace: aws:ec2:vpc
       #  OptionName: DBSubnets
@@ -127,6 +130,17 @@ Resources:
       Tags: 
         - Key: "env"
           Value: "prd"
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Instance Security Group
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: "0.0.0.0/0"
 
   InstanceRole:
     Type: AWS::IAM::Role
