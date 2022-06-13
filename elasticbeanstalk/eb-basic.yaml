@@ -111,7 +111,10 @@ Resources:
         Value: /
       - Namespace: aws:elbv2:loadbalancer # LoadBalancerType=application
         OptionName: SecurityGroups
-        Value: !Ref LoadBalancerSecurityGroup
+        Value: !Sub "${LoadBalancerManagedSecurityGroup},${LoadBalancerSecurityGroup}"
+      - Namespace: aws:elbv2:loadbalancer # LoadBalancerType=application
+        OptionName: ManagedSecurityGroup
+        Value: !Ref LoadBalancerManagedSecurityGroup
       - Namespace: aws:autoscaling:launchconfiguration
         OptionName: IamInstanceProfile
         Value: !Ref InstanceProfile
@@ -147,6 +150,9 @@ Resources:
         FromPort: 22
         ToPort: 22
         CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-instance-sg"
 
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -161,6 +167,20 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-load-balancer-sg"
+
+  LoadBalancerManagedSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Load Balancer Managed Security Group
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-load-balancer-managed-sg"
 
   InstanceRole:
     Type: AWS::IAM::Role
