@@ -142,6 +142,15 @@ Resources:
           - cognito-identity:*
           Resource:
           - "*"
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          Resource:
+          - "arn:aws:s3:::mybucket"
+          Condition:
+            StringLike: 
+              "s3:prefix":
+                "${cognito-identity.amazonaws.com:sub}/*"
 
   AuthenticatedRole:
     Type: AWS::IAM::Role
