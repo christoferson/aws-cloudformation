@@ -1,7 +1,5 @@
-
 AWSTemplateFormatVersion: "2010-09-09"
-Description: 
-  S3 Basic Template
+Description: S3 Basic Template
 
 Metadata:
   "AWS::CloudFormation::Interface":
@@ -15,19 +13,15 @@ Metadata:
       BucketName: 
         default: "Bucket Name"
 
-# ------------------------------------------------------------#
-# Input Parameters
-# ------------------------------------------------------------# 
 Parameters:
+
   BucketName:
     Type: "String"
     Default: "my-bucket"
     Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
 
 Resources:
-# ------------------------------------------------------------#
-#  S3 Bucket
-# ------------------------------------------------------------#        
+
   Bucket:
     Type: "AWS::S3::Bucket"
     Properties:
@@ -39,3 +33,7 @@ Resources:
         - Key: "management"
           Value: "manual"
 
+Outputs:
+
+  BucketArn:
+    Value: !GetAtt Bucket.Arn
