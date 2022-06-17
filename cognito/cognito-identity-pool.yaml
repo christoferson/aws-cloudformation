@@ -151,6 +151,12 @@ Resources:
             StringLike: 
               "s3:prefix":
                 "${cognito-identity.amazonaws.com:sub}/*"
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          - s3:PutObject
+          Resource:
+          - "arn:aws:s3:::mybucket/${cognito-identity.amazonaws.com:sub}/*"
 
   AuthenticatedRole:
     Type: AWS::IAM::Role
