@@ -5,7 +5,7 @@ Metadata:
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label: 
-          Default: "S3 Website Configuration"
+          default: "S3 Website Configuration"
         Parameters: 
           - BucketName
 
@@ -28,7 +28,12 @@ Resources:
     Type: "AWS::S3::Bucket"
     Properties:
       BucketName: !Ref BucketName
-      AccessControl: "PublicRead"
+      AccessControl: "PublicRead" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: False
+        IgnorePublicAcls: False
+        BlockPublicPolicy: False
+        RestrictPublicBuckets: False
       VersioningConfiguration:
          Status: Suspended
       BucketEncryption: 
