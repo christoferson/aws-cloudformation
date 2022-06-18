@@ -43,6 +43,31 @@ Resources:
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: error.html
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+            AllowedOrigins:
+              - '*'
+            ExposedHeaders:
+              - Date
+            Id: CorsRule1
+            MaxAge: 3600
+          - AllowedHeaders:
+              - x-amz-*
+            AllowedMethods:
+              - DELETE
+            AllowedOrigins:
+              - 'http://www.example.com'
+              - 'http://www.example.net'
+            ExposedHeaders:
+              - Connection
+              - Server
+              - Date
+            Id: CorsRule2
+            MaxAge: 1800
       Tags:
         - Key: "management"
           Value: "manual"
