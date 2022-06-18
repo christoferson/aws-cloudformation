@@ -21,3 +21,9 @@ Server Access Log Bucket Settings:
 2. Lifecycle rule to expire Log Objects in 7 days
 
 s3-server-access-log.yaml
+
+#### S3 WebSite
+
+Provision an S3 bucket with WebSite Configuration.
+
+[s3-website](s3-website.yaml)
