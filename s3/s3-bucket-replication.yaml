@@ -1,13 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: S3 Bucket Replication
 
-Parameters:
-
-  BucketBackupDestinationName:
-    Type: "String"
-    Default: "my-bucket"
-    Description: "Backup Destination Bucket"
-
 Resources:
 
   BucketBackupDestination:
