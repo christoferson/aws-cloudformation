@@ -1,9 +1,9 @@
 
 ## S3 Cloudformation Templates
 
-### S3 Basic Minimum Example
+### S3 Basic
 
-s3-basic
+[s3-basic](s3-basic.yaml)
 
 ### S3 Standard Example
 
