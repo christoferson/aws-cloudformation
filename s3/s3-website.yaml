@@ -36,10 +36,10 @@ Resources:
         RestrictPublicBuckets: False
       VersioningConfiguration:
          Status: Suspended
-      BucketEncryption: 
-        ServerSideEncryptionConfiguration: 
-        - ServerSideEncryptionByDefault:
-            SSEAlgorithm: AES256
+      #BucketEncryption: 
+      #  ServerSideEncryptionConfiguration: 
+      #  - ServerSideEncryptionByDefault:
+      #      SSEAlgorithm: AES256
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: error.html
