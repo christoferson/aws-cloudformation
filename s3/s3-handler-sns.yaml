@@ -1,6 +1,5 @@
-
 AWSTemplateFormatVersion: "2010-09-09"
-Description: S3 with Event Notification - Trigger Lambda
+Description: S3 with Event Notification - Trigger SNS
 
 Metadata:
 
@@ -51,6 +50,10 @@ Resources:
                          Value: notify
                        - Name: suffix
                          Value: txt
+            - Event: "s3:ObjectRemoved:*"
+              Topic: !Ref SNSTopic
+            - Event: "s3:ObjectRestore:*"
+              Topic: !Ref SNSTopic
       Tags:
         - Key: "management"
           Value: "manual"
