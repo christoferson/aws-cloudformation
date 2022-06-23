@@ -1,13 +1,17 @@
 
 ## S3 Cloudformation Templates
 
-### S3 Basic Minimum Example
+### S3 Basic
+
+Provision a bucket with minimum configuration.
 
 [s3-basic](s3-basic.yaml)
 
 ### S3 Standard Example
 
 s3-bucket
+
+[s3-bucket](s3-bucket.yaml)
 
 ### S3 Object Lambda 
 
