@@ -117,6 +117,8 @@ code-codedeploy-ec2
 
 Remove Deployment in CodeDeploy
 
+Stage Action Category: Source Build Test Deploy Invoke Approval
+
 ### CodePipeline Input:CodeCommit Stage:Source,Deploy to EC2
 
 CodePipeline example with CodeCommit as Source. Has Stages Source,Deploy
