@@ -70,3 +70,11 @@ Resources:
       PolicyName: BucketBackupPolicy
       Roles:
         - !Ref BucketBackupRole
+
+Outputs:
+
+  BucketBackupSourceArn:
+    Value: !GetAtt BucketBackupSource.Arn
+
+  BucketBackupDestinationArn:
+    Value: !GetAtt BucketBackupDestination.Arn
