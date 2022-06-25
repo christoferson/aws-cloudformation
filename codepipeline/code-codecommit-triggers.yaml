@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeCommit
+Description: CodeCommit - Event Triggers to SNS
 
 Parameters:
 
@@ -16,9 +16,29 @@ Resources:
     Properties:
       RepositoryDescription: "Demo Repository"
       RepositoryName: !Ref RepositoryName
+      Triggers:
+      - Name: EventAll
+        CustomData: Version-1
+        DestinationArn: !Ref SNSTopic
+        Branches:
+        - main
+        Events:
+        - all
       Tags:
         - Key: environment
           Value: stg
+
+  SNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "My Topic"
+      Tags:
+        -
+          Key: "Environment"
+          Value: "dev"
+        -
+          Key: "Application"
+          Value: "acme"
 
 Outputs:
 
