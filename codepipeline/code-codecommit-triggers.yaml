@@ -22,8 +22,16 @@ Resources:
         DestinationArn: !Ref SNSTopic
         Branches:
         - main
-        Events:
+        Events: # all | updateReference | createReference | deleteReference
         - all
+      - Name: EventMainCreateOrUpdate
+        CustomData: Version-1
+        DestinationArn: !Ref SNSTopic
+        Branches:
+        - main
+        Events:
+        - createReference
+        - updateReference
       Tags:
         - Key: environment
           Value: stg
