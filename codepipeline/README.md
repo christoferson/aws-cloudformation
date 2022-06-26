@@ -1,9 +1,21 @@
 
+## CI/CD Cloudformation Templates
+
 ## CodeCommit
 
-CodeCommit example
+### CodeCommit - Basic
 
-code-codecommit
+Provision a CodeCommit repository
+
+[code-codecommit](code-codecommit.yaml)
+
+### CodeCommit - Triggers - SNS
+
+### CodeCommit - Triggers - Lambda
+
+[code-codecommit-triggers](code-codecommit-triggers.yaml)
+
+### CodeCommit - Notification Rules
 
 ## CodeBuild
 
@@ -152,6 +164,13 @@ https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.ht
 https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-CodeCommit.html
 https://docs.aws.amazon.com/dtconsole/latest/userguide/security-iam.html
 
+## Resources - CodeCommit
+
+- https://docs.aws.amazon.com/codecommit/latest/APIReference/API_RepositoryTrigger.html
+- https://docs.aws.amazon.com/codecommit/latest/userguide/monitoring-events.html
+- https://docs.aws.amazon.com/dtconsole/latest/userguide/concepts.html
+TODO
+EventBridgeEvents
 
 ## Errors
 
