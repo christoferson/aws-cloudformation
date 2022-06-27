@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeCommit - Event Triggers to Lambda
+
+Parameters:
+
+  RepositoryName:
+    Type: "String"
+    Default: "code-repository-trigger-lambda"
+    Description: "Code Commit Repository Name"
+
+Resources:
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    #DeletionPolicy: Retain
+    Properties:
+      RepositoryDescription: "Demo Repository"
+      RepositoryName: !Ref RepositoryName
+      Triggers:
+      - Name: EventAll
+        CustomData: Version-1
+        DestinationArn: !GetAtt LambdaFunction.Arn
+        Branches:
+        - main
+        Events: # all | updateReference | createReference | deleteReference
+        - all
+      - Name: EventMainCreateOrUpdate
+        CustomData: Version-1
+        DestinationArn: !GetAtt LambdaFunction.Arn
+        Branches:
+        - main
+        Events:
+        - createReference
+        - updateReference
+      Tags:
+        - Key: environment
+          Value: stg
+
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Lambda Triggered by CodeCommit"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          DatabaseName: lambdadb
+          DatabaseUser: admin
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              let message = JSON.parse(event.Records[0].body);
+              console.log("EventType: " + message["type"]);
+              if (message["type"] == 'error') { throw new Error('Authentication Failed: ' + event.Records[0].messageId); }
+              const response = {
+                statusCode: 200,
+                body: JSON.stringify('Processed ' + message["type"] + '.'),
+              };
+              return response;
+          };
+      #DeadLetterConfig:
+      #  TargetArn: !GetAtt DeadLetterQueue.Arn
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "codecommit-trigger-lambda"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+  CodeCommitInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      Action: lambda:InvokeFunction
+      Principal: codecommit.amazonaws.com
+      SourceArn: !Sub arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepository.Name}
+      SourceAccount: !Sub ${AWS::AccountId}
+
+Outputs:
+
+  CodeCommitRepositoryArn:
+    Value: !GetAtt CodeCommitRepository.Arn
+
+  CodeCommitRepositoryCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
