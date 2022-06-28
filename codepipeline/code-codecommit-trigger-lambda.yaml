@@ -69,15 +69,19 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = async (event) => {
-              console.log(event);
-              let message = JSON.parse(event.Records[0].body);
-              console.log("EventType: " + message["type"]);
-              if (message["type"] == 'error') { throw new Error('Authentication Failed: ' + event.Records[0].messageId); }
-              const response = {
-                statusCode: 200,
-                body: JSON.stringify('Processed ' + message["type"] + '.'),
-              };
-              return response;
+            console.log(event);
+
+            console.log("EventName: " + event.Records[0].eventName);
+            console.log("Repository: " + event.Records[0].eventSourceARN);
+            console.log("User: " + event.Records[0].userIdentityARN);
+            console.log("Branch: " + event.Records[0].codecommit.references[0].ref);
+            console.log("Commit.ID: " + event.Records[0].codecommit.references[0].commit);
+
+            const response = {
+              statusCode: 200,
+              body: JSON.stringify('Processed ' + event.Records[0].eventName + '.'),
+            };
+            return response;
           };
       #DeadLetterConfig:
       #  TargetArn: !GetAtt DeadLetterQueue.Arn
