@@ -1,17 +1,16 @@
-
 AWSTemplateFormatVersion: "2010-09-09"
 Description: EventBridge Notification (Periodic) - Trigger Lambda
 
 Metadata:
 
-  StackVersion: 2
+  StackVersion: 1
 
 Resources:
 
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "eventbridge-handler-lambda-role"
+      #RoleName: "eventbridge-handler-lambda-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -27,7 +26,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "eventbridge-handler-lambda-function"
+      #FunctionName : "eventbridge-handler-lambda-function"
       Description: "EventBridge Lambda Notification Handler"
       Runtime: nodejs12.x
       Role: !GetAtt FunctionExecutionRole.Arn
@@ -54,7 +53,7 @@ Resources:
     Type: AWS::Events::Rule
     Properties: 
       #Name: xx
-      Description: "ScheduledRule"
+      Description: "ScheduledRule to Trigger Lambda"
       #EventBusName: default
       ScheduleExpression: "rate(2 minutes)"
       State: "ENABLED"
@@ -72,9 +71,12 @@ Resources:
       SourceArn: !GetAtt EventBridgeScheduledRule.Arn
 
 Outputs:
+
   LambdaFunctionArn:
     Value: !GetAtt LambdaFunction.Arn
+
   FunctionExecutionRoleArn:
     Value: !GetAtt FunctionExecutionRole.Arn
+
   EventBridgeScheduledRuleArn:
     Value: !GetAtt EventBridgeScheduledRule.Arn
