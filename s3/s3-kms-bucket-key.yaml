@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: S3 with KMS Bucke Key Template
+Description: S3 with KMS Bucket Key Template
 
 Metadata:
   "AWS::CloudFormation::Interface":
@@ -42,10 +42,21 @@ Resources:
         RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
-      BucketEncryption:
+      #BucketEncryption: # SSE-S3
+      #  ServerSideEncryptionConfiguration: 
+      #  - ServerSideEncryptionByDefault:
+      #      SSEAlgorithm: AES256
+      #    BucketKeyEnabled: <does not support bucket key>
+      #BucketEncryption: # SSE-KMS
+      #  ServerSideEncryptionConfiguration: 
+      #  - ServerSideEncryptionByDefault:
+      #      SSEAlgorithm: 'aws:kms'
+      #      KMSMasterKeyID: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+      #    BucketKeyEnabled: true
+      BucketEncryption: # SSE-KMS (CMK)
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: 'aws:kms'
+              SSEAlgorithm: 'aws:kms' #AES256 | aws:kms
               KMSMasterKeyID: !Ref KMSMasterKeyID
             BucketKeyEnabled: true
       OwnershipControls:
