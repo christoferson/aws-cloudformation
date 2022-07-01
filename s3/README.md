@@ -13,6 +13,13 @@ s3-bucket
 
 [s3-bucket](s3-bucket.yaml)
 
+### S3 Encryption 
+
+- SSEAlgorithm {AES256 | aws:kms}
+- AES256 = S3-managed keys (SSE-S3)
+
+- arn:aws:kms:<region>:<account>:alias/aws/s3
+
 ### S3 Object Lambda 
 
 s3-object-lambda
