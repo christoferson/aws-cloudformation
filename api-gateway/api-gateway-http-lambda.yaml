@@ -6,6 +6,13 @@ Description: "API Gateway - HTTP - Integrate with Lambda Function"
 # Integration GET /demo with Lambda
 # Resource based policy on Lamda to permit access from API Gateway
 
+Parameters:
+
+  ApiGatewayName:
+    Type: "String"
+    Default: "http-lambda-proxy"
+    Description: "HTTP Api Gateway Name"
+
 Resources:
 
   LambdaExecutionRole:
@@ -47,7 +54,7 @@ Resources:
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: demo-lambda-proxy
+      Name: !Ref ApiGatewayName
       Description: Lambda Proxy / Uses  resource-based permissions
       ProtocolType: HTTP
       Tags:
@@ -116,7 +123,7 @@ Resources:
 Outputs:
 
   InvokeURL:
-    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageStg}/demo
 
   HttpApiEndpoint:
     Value: !GetAtt HttpApi.ApiEndpoint
