@@ -1,5 +1,14 @@
 ## API Gateway - HTTP
 
+### API Gateway - Integration Types
+
+- AWS: for integrating the route or method request with an AWS service action, including the Lambda function-invoking action. 
+- AWS_PROXY: for integrating the route or method request with a Lambda function or other AWS service action.
+    - This is the preferred integration type to call a Lambda function through API Gateway and is not applicable to any other AWS service actions, including Lambda actions other than the function-invoking action. 
+- HTTP: for integrating the route or method request with an HTTP endpoint.
+- HTTP_PROXY: for integrating the route or method request with an HTTP endpoint, with the client request passed through as-is. 
+- MOCK: for integrating the route or method request with API Gateway as a "loopback" endpoint without invoking any backend.
+
 ### API Gateway - Account Settings
 
 Account Settings e.g. IAM role that Amazon API Gateway uses to write API logs to Amazon CloudWatch Logs.
@@ -113,4 +122,5 @@ wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 ## Errors
 
 - Internal Server Error if no permission to Invoke Lambda
-- CloudWatch Logs role ARN must be set in account settings to enable logging 
+- CloudWatch Logs role ARN must be set in account settings to enable logging
+- Currently, an API with a protocol type of HTTP may only be associated with proxy integrations (AWS_PROXY, HTTP_PROXY) 
