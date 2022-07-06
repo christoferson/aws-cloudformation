@@ -3,6 +3,11 @@ Description: "API Gateway - HTTP - Integrate with Existing Lambda Function"
 
 Parameters:
 
+  ApiGatewayName:
+    Type: "String"
+    Default: "http-proxy"
+    Description: "HTTP Api Gateway Name"
+
   LambdaFunctionName:
     Description: Lambda Function Name
     Type: String
@@ -19,7 +24,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Version: 1
-      Name: demo-lambda-proxy
+      Name: !Ref ApiGatewayName
       Description: Lambda Proxy / Uses resource-based permissions
       ProtocolType: HTTP # WEBSOCKET | HTTP
       #DisableExecuteApiEndpoint: false
