@@ -38,13 +38,24 @@ Resources:
       Description: "Staging"
       RestApiId: !Ref ApiGatewayRestApi
       DeploymentId: !Ref ApiGatewayDeployment
+      MethodSettings:
+        - HttpMethod: "*"
+          ResourcePath: "/*"
+          DataTraceEnabled: false
+          LoggingLevel: ERROR
+          MetricsEnabled: false
+          #ThrottlingBurstLimit: 
+          #ThrottlingRateLimit:
       TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: $context.identity.sourceIp,$context.identity.caller,$context.identity.user,$context.requestTime,$context.httpMethod,$context.resourcePath,$context.protocol,$context.status,$context.responseLength,$context.requestId
       Variables:
          VariableX: variable-x
 
   ApiGatewayResource:
     Type: "AWS::ApiGateway::Resource"
-    Properties:
+    Properties: 
       RestApiId: !Ref ApiGatewayRestApi
       ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
       PathPart: !Ref ResourceName
