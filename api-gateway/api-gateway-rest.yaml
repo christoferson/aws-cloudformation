@@ -3,6 +3,11 @@ Description: "API Gateway - REST - Integrate with Existing Lambda Function"
 
 Parameters:
 
+  ApiGatewayName:
+    Type: "String"
+    Default: "rest-proxy"
+    Description: "HTTP Api Gateway Name"
+
   LambdaFunctionName:
     Description: Lambda Function Name
     Type: String
@@ -18,7 +23,7 @@ Resources:
   ApiGatewayRestApi:
     Type: "AWS::ApiGateway::RestApi"
     Properties:
-      Name: !Sub "demo-rest-api"
+      Name: !Sub "${ApiGatewayName}"
 
   ApiGatewayDeployment:
     Type: "AWS::ApiGateway::Deployment"
@@ -78,7 +83,7 @@ Resources:
 Outputs:
 
   InvokeURL:
-    Value: !Sub https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com
+    Value: !Sub https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/stg/${ResourceName}
 
 #  ApiGatewayRestApiEndpoint:
 #    Value: !GetAtt ApiGatewayRestApi.ApiEndpoint
