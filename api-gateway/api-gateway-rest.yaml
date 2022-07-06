@@ -35,8 +35,12 @@ Resources:
     Type: "AWS::ApiGateway::Stage"
     Properties:
       StageName: "stg"
+      Description: "Staging"
       RestApiId: !Ref ApiGatewayRestApi
       DeploymentId: !Ref ApiGatewayDeployment
+      TracingEnabled: true
+      Variables:
+         VariableX: variable-x
 
   ApiGatewayResource:
     Type: "AWS::ApiGateway::Resource"
@@ -54,11 +58,11 @@ Resources:
       HttpMethod: "POST"
       AuthorizationType: "NONE"
       Integration:
-        Type: "AWS"
+        Type: "AWS_PROXY"
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
         IntegrationHttpMethod: "POST"
-        IntegrationResponses:
-          - StatusCode: 200
+        #IntegrationResponses:
+        #  - StatusCode: 200
         PassthroughBehavior: WHEN_NO_MATCH
       MethodResponses:
           - StatusCode: 200
