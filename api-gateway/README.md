@@ -81,7 +81,7 @@ curl -X POST "https://ddd.execute-api.eu-west-1.amazonaws.com/stg/demo" -d "name
 
 Provision REST API that integrates with specified Lambda.
 
-[api-gateway-rest](api-gateway-rest.yaml)
+[api-gateway-rest-basic](api-gateway-rest-basic.yaml)
 
 ## API Gateway - WebSocket
 
