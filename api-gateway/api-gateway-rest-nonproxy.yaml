@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - REST - Integrate with Existing Lambda Function"
+
+Parameters:
+
+  ApiGatewayName:
+    Type: "String"
+    Default: "rest-non-proxy"
+    Description: "HTTP Api Gateway Name"
+
+  LambdaFunctionName:
+    Description: Lambda Function Name
+    Type: String
+    Default: "my-lambda"
+
+  ResourceName:
+    Description: Resource Name
+    Type: String
+    Default: "demo"
+
+Resources:
+
+  ApiGatewayRestApi:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name: !Sub "${ApiGatewayName}"
+
+  ApiGatewayDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    DependsOn: ApiGatewayMethod
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      StageName: "stg"
+      Description: "Staging"
+      RestApiId: !Ref ApiGatewayRestApi
+      DeploymentId: !Ref ApiGatewayDeployment
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: $context.identity.sourceIp,$context.identity.caller,$context.identity.user,$context.requestTime,$context.httpMethod,$context.resourcePath,$context.protocol,$context.status,$context.responseLength,$context.requestId
+      Variables:
+         VariableX: variable-x
+
+  ApiGatewayResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: !Ref ResourceName
+
+  ApiGatewayMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayResource
+      ApiKeyRequired: True
+      HttpMethod: "POST"
+      AuthorizationType: "NONE"
+      Integration:
+        Type: "AWS"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
+        IntegrationHttpMethod: "POST"
+        IntegrationResponses:
+          - StatusCode: 200
+        PassthroughBehavior: WHEN_NO_MATCH
+      MethodResponses:
+          - StatusCode: 200
+            ResponseModels:
+              application/json: Empty
+
+  ApiGatewayKey:
+    Type: "AWS::ApiGateway::ApiKey"
+    DependsOn: ApiGatewayDeployment
+    Properties:
+      Name: !Sub "${ApiGatewayName}-stg-ApiKey"
+      Enabled: True
+      StageKeys:
+        - RestApiId: !Ref ApiGatewayRestApi
+          StageName: !Ref ApiGatewayStage
+
+  ApiGatewayUsagePlan:
+    Type: "AWS::ApiGateway::UsagePlan"
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ApiGatewayRestApi
+          Stage: !Ref ApiGatewayStage
+      Quota:
+        Limit: 100
+        Period: DAY
+      Throttle:
+        BurstLimit: 10
+        RateLimit: 2
+      UsagePlanName: !Sub "${ApiGatewayName}-UsagePlan"
+
+  ApiGatewayUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties: 
+      KeyId: !Ref ApiGatewayKey
+      KeyType: "API_KEY"
+      UsagePlanId: !Ref ApiGatewayUsagePlan
+
+  ApiInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      #SourceAccount: !Ref 'AWS::AccountId'  /stg/POST/
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/${ResourceName}
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "${ApiGatewayRestApi}-access-logs"
+      RetentionInDays: 1
+
+Outputs:
+
+  InvokeURL:
+    Value: !Sub https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/stg/${ResourceName}
+
+  # ApiGatewayKey.Value not supported
+  #CurlInvocation:
+  #  Value: !Sub 'curl -X POST https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/stg/${ResourceName} -H "x-api-key: ${ApiGatewayKey}"'
