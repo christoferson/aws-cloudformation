@@ -77,11 +77,27 @@ curl -X POST "https://ddd.execute-api.eu-west-1.amazonaws.com/stg/demo" -d "name
 [api-gateway-http-sqs](api-gateway-http-sqs.yaml)
 
 
-## API Gateway - REST
+## API Gateway - REST - Basic
 
 Provision REST API that integrates with specified Lambda.
 
 [api-gateway-rest-basic](api-gateway-rest-basic.yaml)
+
+## API Gateway - REST - UsagePlan
+
+Provision REST API that integrates with specified Lambda.
+Also provisions UsagePlan and ApiKeys
+
+[api-gateway-rest-usageplan](api-gateway-rest-usageplan.yaml)
+
+## API Gateway - REST
+
+Provision REST API that integrates with specified Lambda.
+Also provisions UsagePlan and ApiKeys
+
+[api-gateway-rest](api-gateway-rest.yaml)
+
+curl -X POST https://zzz.execute-api.<region>.amazonaws.com/stg/demo -H "x-api-key: <api-key>"
 
 ## API Gateway - WebSocket
 
