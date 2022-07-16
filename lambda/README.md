@@ -6,6 +6,18 @@
 
 - Defines what can invoke the function
 - Defined using AWS::Lambda::Permission
+
+```
+  CodeCommitInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      Action: lambda:InvokeFunction
+      Principal: codecommit.amazonaws.com
+      SourceArn: !Sub arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepository}
+      SourceAccount: !Sub ${AWS::AccountId}
+```
+
 - Policy associated with a "push" event source
 - Created when you add a trigger to a Lambda function
 - Allows the event source to take the lambda:InvokeFunction action
@@ -18,6 +30,26 @@
 - IAM policy includes actions that can be taken with the resource
 - Trust policy that allows Lambda to AssumeRole
 - Creator must have permission for iam:PassRole
+
+#### Event Source Mapping
+
+- Use event source mappings to process items from a stream or queue in services that don't invoke Lambda functions directly
+    - Amazon DynamoDB
+    - Amazon Kinesis
+    - Amazon MQ
+    - Amazon Managed Streaming for Apache Kafka (Amazon MSK)
+    - Self-managed Apache Kafka
+    - Amazon Simple Queue Service (Amazon SQS)
+
+- Defined using AWS::Lambda::EventSourceMapping
+
+```yaml
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt LambdaTriggerSqsQueue.Arn
+      FunctionName: !GetAtt LambdaFunction.Arn
+```
 
 ### Concurrency
 
@@ -96,6 +128,20 @@ Provision a Lambda triggered by DynamoDB streams
 Provision a Lambda with HTTPS URL (Public Access)
 
 [lambda-url](lambda-url.yaml)
+
+### Lambda - Application Load Balancer
+
+Provision a Lambda fronted by Application Load Balancer. 
+Multi Value Header is enabled using Target Group Attribute.
+
+```
+TargetGroup MultiValue Headers:
+curl http://xxx.elb.amazonaws.com/zzz?name=foo&name=bar&name=zig
+true - multiValueQueryStringParameters: { name: [ 'foo', 'bar', 'zig' ] }
+false - queryStringParameters: { name: 'bar' }
+```
+
+[lambda-alb](lambda-alb.yaml)
 
 ### Lambda - Version and Alias
 
@@ -181,5 +227,6 @@ Cannot configure provisioned concurrency on both alias and version
 - [Lambda URL](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html)
 - [Lambda URL CFN](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-url.html)
 - [AutoScale Concurrency](https://aws.amazon.com/jp/blogs/compute/scheduling-aws-lambda-provisioned-concurrency-for-recurring-peak-usage/)
+- [MultiHeader](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-elasticloadbalancingv2-targetgroup-targetgroupattribute.html)
 
 
