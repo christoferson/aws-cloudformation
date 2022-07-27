@@ -68,6 +68,15 @@ Resources:
       Family: !Sub "MySQL${MySQLMajorVersion}"
       Description: !Sub "${Application}-${Environment}-db-pg"
 
+   DBOptionGroup:
+    Type: "AWS::RDS::OptionGroup"
+    Properties:
+      EngineName: mysql
+      MajorEngineVersion: !Ref MySQLMajorVersion
+      OptionGroupDescription: !Sub "${Application}-${Environment}-db-og"
+      #OptionConfigurations:
+
+
    # ------------------------------------------------------------#
    #  Database
    # ------------------------------------------------------------#
@@ -88,6 +97,7 @@ Resources:
        VPCSecurityGroups:
        - !Sub "{{resolve:ssm:/${Application}/${Environment}/db/sg/id:1}}"
        DBParameterGroupName: !Ref DBParameterGroup
+       OptionGroupName: !Ref DBOptionGroup
        CopyTagsToSnapshot: true
        BackupRetentionPeriod: 7
      DeletionPolicy: "Delete"
