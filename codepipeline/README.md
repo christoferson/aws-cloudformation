@@ -127,6 +127,12 @@ CodeDeploy example that deploys to EC2
 
 [code-codedeploy-ec2](code-codedeploy-ec2.yaml)
 
+## CodeDeploy - Lambda
+
+Provisions CodeDeploy Application and Deployment Group for Deploying to Lambda
+
+[code-codedeploy-lambda](code-codedeploy-lambda.yaml)
+
 ## CodePipeline
 
 Remove Deployment in CodeDeploy

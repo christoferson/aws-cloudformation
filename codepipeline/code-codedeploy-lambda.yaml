@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeDeploy - Input S3 + Output Lambda
+
+Parameters:
+
+  RevisionBucketName:
+    Description: Bucket containing revision
+    Type: String
+    Default: "my-bucket"
+
+  RevisionObjectKey:
+    Description: Name of the revision zip file
+    Type: String
+    Default: "code-codedeploy.zip"
+
+Resources:
+
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      #RoleName: !Sub "code-codedeploy-demo-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        #- arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRoleForLambdaLimited
+
+  CodeDeployAplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      #ApplicationName: "code-codedeploy-demo"
+      ComputePlatform: Lambda #ECS | Lambda | Server
+      Tags:
+        - Key: environment
+          Value: stg
+
+#  CodeDeployDeploymentConfig: 
+#    Type: AWS::CodeDeploy::DeploymentConfig
+#    Properties: 
+#      TrafficRoutingConfig: 
+#        Type: "TimeBasedLinear" #AllAtOnce | TimeBasedCanary | TimeBasedLinear
+#        TimeBasedLinear:
+#          LinearInterval: 5
+#          LinearPercentage: 10
+
+  CodeDeployGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployAplication
+      DeploymentConfigName: CodeDeployDefault.LambdaLinear10PercentEvery1Minute
+#      Deployment: 
+#        Description: "Initial Deployment"
+#        IgnoreApplicationStopFailures: true 
+#        Revision: 
+#          RevisionType: S3 
+#          S3Location: 
+#            Bucket: 
+#              Ref: RevisionBucketName 
+#            Key: 
+#              Ref: RevisionObjectKey 
+#            BundleType: Zip 
+#            #ETag: 
+#              #Ref: ETag 
+#            #Version: 
+#              #Ref: Version  
+      DeploymentStyle: 
+        DeploymentType: BLUE_GREEN
+        DeploymentOption: WITH_TRAFFIC_CONTROL 
+      ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
+      #AutoRollbackConfiguration:
+      #  Enabled: true
+      #  Events: # DEPLOYMENT_FAILURE, DEPLOYMENT_STOP_ON_ALARM, or DEPLOYMENT_STOP_ON_REQUEST
+      #    - DEPLOYMENT_FAILURE 
+      #    - DEPLOYMENT_STOP_ON_ALARM
+
+Outputs:
+
+  CodeDeployAplicationName:
+    Value: !Ref CodeDeployAplication
+
+  CodeDeployGroupName:
+    Value: !Ref CodeDeployGroup
