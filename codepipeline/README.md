@@ -11,13 +11,9 @@ Provision a CodeCommit repository
 
 ### CodeCommit - Triggers - SNS
 
-Provision a CodeCommit repository that will trigger SNS when branch is created or updated.
-
 [code-codecommit-sns](code-codecommit-sns.yaml)
 
 ### CodeCommit - Triggers - Lambda
-
-Provision a CodeCommit repository that will trigger a Lambda function when branch is created or updated.
 
 [code-codecommit-triggers](code-codecommit-triggers.yaml)
 
