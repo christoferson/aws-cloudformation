@@ -82,6 +82,7 @@ Resources:
    # ------------------------------------------------------------#
    DBInstance:
      Type: AWS::RDS::DBInstance
+     DeletionPolicy: "Delete"
      Properties:
        Engine: MySQL
        EngineVersion: !Sub "${MySQLMajorVersion}.${MySQLMinorVersion}"
@@ -91,6 +92,7 @@ Resources:
        DBInstanceClass: db.t2.micro
        StorageType: "gp2"
        AllocatedStorage: "20"
+       #MaxAllocatedStorage: 
        MultiAZ: false  
        DBSubnetGroupName: !Ref DBSubnetGroup
        PubliclyAccessible: false
@@ -100,8 +102,19 @@ Resources:
        OptionGroupName: !Ref DBOptionGroup
        CopyTagsToSnapshot: true
        BackupRetentionPeriod: 7
-     DeletionPolicy: "Delete"
-     
+       #PreferredBackupWindow: #hh24:mi-hh24:mi.
+       #PreferredMaintenanceWindow: ddd:hh24:mi-ddd:hh24:mi
+       DeletionProtection: false
+       #EnableCloudwatchLogsExports: slowquery
+       EnablePerformanceInsights: false
+       #PerformanceInsightsRetentionPeriod: 7
+       #StorageEncrypted: true
+       #KmsKeyId:
+       MonitoringInterval: 0 #0, 1, 5, 10, 15, 30, 60
+       #MonitoringRoleArn:
+       Tags:
+         - Key: "application"
+           Value: !Ref Application
               
 Outputs:
 
