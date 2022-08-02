@@ -1,0 +1,68 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS Event Subscription'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Parameters:
+          - Application
+          - Environment
+          - EventSubscriptionEmail
+          - EventSourceType
+          - EventCategoryList
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  EventSubscriptionEmail:
+    Description: EventSubscriptionEmail.
+    Type: String
+    Default: xxxx@example.co.jp
+
+  EventSourceType:
+    Description: Please select the EventSourceType.
+    Type: String
+    AllowedValues: 
+      - db-instance
+      - db-security-group
+      - db-parameter-group
+      - db-snapshot
+      - db-cluster
+      - db-cluster-snapshot
+
+  EventCategoryList:
+    Description: Please select the "availability","backtrack","backup","configuration change","creation","deletion","failover","failure","low storage","maintenance","notification","read replica","recovery","restoration"
+    Type: CommaDelimitedList
+    Default: "availability,configuration change"
+          
+Resources:
+
+  EventSubscriptionTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: !Sub ${Application}-${Environment}-rds-topic
+      Subscription:
+        - Endpoint: !Sub ${EventSubscriptionEmail}
+          Protocol: "email"
+      #TopicName: !Sub ${Application}-${Environment}-${SystemName}-topic
+
+  EventSubscription:
+    Type: "AWS::RDS::EventSubscription"
+    Properties:
+      Enabled: true
+      EventCategories: !Ref EventCategoryList
+      SnsTopicArn: !Ref EventSubscriptionTopic
+      SourceType: !Ref EventSourceType
+      Tags: 
+        - Key: "env"
+          Value: "dev"
