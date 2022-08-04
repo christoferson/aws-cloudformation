@@ -44,7 +44,7 @@ Resources:
         Variables:
           databaseName: lambdadb
           databaseUser: admin
-      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Timeout: 15 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         S3Bucket: !Ref CodeBucketName
         S3Key: !Ref CodeObjectKey
