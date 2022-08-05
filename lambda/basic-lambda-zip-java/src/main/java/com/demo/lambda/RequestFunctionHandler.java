@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
 public class RequestFunctionHandler implements RequestHandler<Map<String,String>, String> {
 
@@ -19,8 +20,15 @@ public class RequestFunctionHandler implements RequestHandler<Map<String,String>
         
         ObjectMapper mapper = new ObjectMapper();
 
-
-        return String.valueOf("000");
+        Foo foo = new Foo("Nimbus", "Dark Cotton");
+        String jsonStr = null;
+        
+        try {
+        	jsonStr = mapper.writeValueAsString(foo);
+        } catch (JsonProcessingException e) {
+        	throw new RuntimeException(e);
+        }
+        return jsonStr;
         
     }
 
