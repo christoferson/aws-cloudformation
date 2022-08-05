@@ -17,7 +17,6 @@ Parameters:
 
 Resources:
 
-
   BatchServiceRole:
     Type: 'AWS::IAM::Role'
     Properties:

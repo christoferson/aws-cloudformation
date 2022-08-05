@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Batch
+Description: Batch (EC2)
 
 Parameters:
 
@@ -16,7 +16,6 @@ Parameters:
     Type : AWS::EC2::Subnet::Id
 
 Resources:
-
 
   BatchServiceRole:
     Type: 'AWS::IAM::Role'
@@ -126,7 +125,7 @@ Resources:
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Sub "/batch/logs/my-batch"
+      LogGroupName: !Sub "/batch/logs/my-batch-ec2"
       RetentionInDays: 1
 
   BatchJobRole:
