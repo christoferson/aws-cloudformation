@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda Basic with Zip Source in S3 - NodeJS
+Description: Lambda Basic with Zip Source in S3 - Java
 
 Parameters:
 
