@@ -18,16 +18,8 @@ public class RequestFunctionHandler implements RequestHandler<Map<String,String>
 
         LOGGER.info("Start: " + values);
         
-        ObjectMapper mapper = new ObjectMapper();
-
-        Foo foo = new Foo("Nimbus", "Dark Cotton");
-        String jsonStr = null;
+        String jsonStr = DemoExternalDependency.demo();
         
-        try {
-        	jsonStr = mapper.writeValueAsString(foo);
-        } catch (JsonProcessingException e) {
-        	throw new RuntimeException(e);
-        }
         return jsonStr;
         
     }
