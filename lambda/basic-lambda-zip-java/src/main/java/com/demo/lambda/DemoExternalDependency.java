@@ -1,12 +1,12 @@
 package com.demo.lambda;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
+//import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fasterxml.jackson.core.JsonProcessingException;
 
 public class DemoExternalDependency {
 
     public static String demo() {
-    
+/*    
     	ObjectMapper mapper = new ObjectMapper();
 
         Foo foo = new Foo("Nimbus", "Dark Cotton");
@@ -19,7 +19,8 @@ public class DemoExternalDependency {
         }
         
         return jsonStr;
-        
+*/
+return "DemoExternalDependency";        
     }
 	
 	public static class Foo {

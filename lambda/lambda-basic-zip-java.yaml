@@ -31,6 +31,19 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - !Ref LambdaExecutionRolePolicy
+
+  LambdaExecutionRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "LambdaExecutionRolePolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'rds:*'
+            Effect: Allow
+            Resource: "*"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
