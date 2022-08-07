@@ -85,13 +85,19 @@ Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
 
 Provision a Lambda and Execution Role with Inline Code. Code in Python.
 
-[lambda-basic-python](lambda-basic-python.yaml)
+[lambda-basic-py](lambda-basic-py.yaml)
 
 ### Lambda - Basic - Zip NodeJS
 
 Provision a Lambda and Execution Role using Specified Code in S3. Code in NodeJS. basic-lambda-zip.zip
 
 [lambda-basic-zip](lambda-basic-zip.yaml)
+
+### Lambda - Basic - Zip Java
+
+Provision a Lambda and Execution Role using Specified Code in S3. Code in Java. basic-lambda-zip-java.zip
+
+[lambda-basic-zip-java](lambda-basic-zip-java.yaml)
 
 ### Lambda - Trigger - SQS
 
