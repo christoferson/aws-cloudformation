@@ -1,9 +1,9 @@
 
-## Basic
+## Redis - Basic
 
 Launch Elasticache Redis Cluster inside a VPC with single shard
 
-elasticache-redis-basic.yaml
+[elasticache-redis-basic](elasticache-redis-basic.yaml)
 
 ### Install Redis Client in EC2
 
@@ -18,3 +18,13 @@ src/redis-cli -c -h mycachecluster.eaogs8.0001.usw2.cache.amazonaws.com -p 6379
 ```
 
 https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/nodes-connecting.html
+
+## Memcached
+
+Versions - https://docs.aws.amazon.com/AmazonElastiCache/latest/mem-ug/supported-engine-versions-mc.html
+
+## MemcacheD - Basic
+
+Launch Elasticache MemCacheD Cluster inside a VPC
+
+[elasticache-memcached-basic](elasticache-memcached-basic.yaml)
