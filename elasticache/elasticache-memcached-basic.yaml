@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Elasticache Memcache
+
+Parameters:
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnet1:
+    Description: EC2 subnet 1
+    Type: AWS::EC2::Subnet::Id
+
+  VpcSubnet2:
+    Description: EC2 subnet 2
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+
+  ECacheSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties: 
+      VpcId: !Ref VpcId
+      #GroupName: !Ref ECacheSecurityGroupName
+      GroupDescription: Security Group for Elasticache Memcached
+      SecurityGroupIngress:
+        - 
+          IpProtocol: tcp
+          CidrIp: '0.0.0.0/0'
+          FromPort: 11211
+          ToPort: 11211
+        - 
+          IpProtocol: tcp
+          CidrIpv6: '::/0'
+          FromPort: 11211
+          ToPort: 11211
+      Tags:
+        - Key: environment
+          Value: dev
+          
+  ECacheSubnetGroup:
+    Type: "AWS::ElastiCache::SubnetGroup"
+    Properties:
+      CacheSubnetGroupName: ecache-memcached-subnet-group
+      Description: Memcached Subnet Group
+      SubnetIds:
+        - !Ref VpcSubnet1
+        - !Ref VpcSubnet2
+
+  ECacheMemcachedParameterGroup:
+    Type: 'AWS::ElastiCache::ParameterGroup'
+    Properties:
+      CacheParameterGroupFamily: memcached1.4
+      Description: "Memcached Parameter Group"
+
+  ECacheMemcachedCluster:
+    Type: 'AWS::ElastiCache::CacheCluster'
+    Properties:
+      AutoMinorVersionUpgrade: false
+      AZMode: cross-az
+      CacheNodeType: cache.t2.micro
+      CacheParameterGroupName: !Ref ECacheMemcachedParameterGroup
+      CacheSubnetGroupName: !Ref ECacheSubnetGroup
+      ClusterName: memcached-cluster-01
+      Engine: memcached
+      EngineVersion: 1.4.34
+      NumCacheNodes: 2
+      Port: 11211
+      #PreferredAvailabilityZones:
+      #  - ap-northeast-1a
+      #  - ap-northeast-1c
+      PreferredMaintenanceWindow: 'sun:17:00-sun:20:00'
+      VpcSecurityGroupIds:
+        - !Ref ECacheSecurityGroup
+  
+
