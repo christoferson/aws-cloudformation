@@ -2,8 +2,6 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Elasticache Redis Basic (cluster mode disabled) - Launch Redis inside VPC with 2 Nodes. 
 # The Redis cluster will have a single shard (node group) with one primary node and up to 5 read replica. 
 
-# TODO: CacheSecurityGroupNames?
-
 Parameters:
 
   VpcId:
@@ -61,6 +59,9 @@ Resources:
       CacheNodeType: cache.t2.micro
       CacheParameterGroupName: default.redis6.x
       CacheSubnetGroupName: !Ref ECacheSubnetGroup
+      #TransitEncryptionEnabled: true
+      #AuthToken: 
+      #UserGroupIds:
       Engine: redis
       EngineVersion: 6.2
       NumCacheClusters: 2 # The maximum permitted value for NumCacheClusters is 6 (1 primary plus 5 replicas).
@@ -75,7 +76,13 @@ Resources:
           LogType: engine-log #slow-log engine-log
           DestinationDetails:
             CloudWatchLogsDetails:
-              LogGroup: !Ref ECacheRedisLogGroup
+              LogGroup: !Ref ECacheRedisLogGroupEngine
+        - DestinationType: cloudwatch-logs # cloudwatch-logs or kinesis-firehose
+          LogFormat: json # json or text
+          LogType: slow-log #slow-log engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref ECacheRedisLogGroupSlowLog
       PreferredMaintenanceWindow: 'sun:17:00-sun:20:00'
       SnapshotRetentionLimit: 5
       SnapshotWindow: '03:15-08:15'
@@ -83,10 +90,16 @@ Resources:
         - Key: environment
           Value: dev
 
-  ECacheRedisLogGroup:
+  ECacheRedisLogGroupEngine:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/ecache/redis/redis-cluster"
+      LogGroupName: !Sub "/ecache/redis/redis-cluster-engine"
+      RetentionInDays: 1
+
+  ECacheRedisLogGroupSlowLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecache/redis/redis-cluster-slowlog"
       RetentionInDays: 1
 
 Outputs:
