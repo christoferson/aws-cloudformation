@@ -1,5 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Elasticache Redis Basic - Launch Redis inside VPC with 2 Notes. NodeGroup not enabled.
+Description: Elasticache Redis Basic (cluster mode disabled) - Launch Redis inside VPC with 2 Nodes. 
+# The Redis cluster will have a single shard (node group) with one primary node and up to 5 read replica. 
+
+# TODO: CacheSecurityGroupNames?
 
 Parameters:
 
@@ -50,7 +53,9 @@ Resources:
   ECacheReplicationGroup:
     Type: "AWS::ElastiCache::ReplicationGroup"
     Properties:
-      AtRestEncryptionEnabled: false
+      ReplicationGroupId: ecache-redis-replication-group # (Optional)
+      ReplicationGroupDescription: 'Elasticache Redis Replication Group'
+      AtRestEncryptionEnabled: true
       AutomaticFailoverEnabled: true
       AutoMinorVersionUpgrade: true
       CacheNodeType: cache.t2.micro
@@ -58,14 +63,50 @@ Resources:
       CacheSubnetGroupName: !Ref ECacheSubnetGroup
       Engine: redis
       EngineVersion: 6.2
-      NumCacheClusters: 2
+      NumCacheClusters: 2 # The maximum permitted value for NumCacheClusters is 6 (1 primary plus 5 replicas).
       MultiAZEnabled: true
-      ReplicationGroupDescription: 'Elasticache Redis'
-      ReplicationGroupId: ecache-redis-replication-group
       SecurityGroupIds:
         - !Ref ECacheSecurityGroup
+      #PreferredCacheClusterAZs:
+      #  - 
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs # cloudwatch-logs or kinesis-firehose
+          LogFormat: json # json or text
+          LogType: engine-log #slow-log engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref ECacheRedisLogGroup
+      PreferredMaintenanceWindow: 'sun:17:00-sun:20:00'
       SnapshotRetentionLimit: 5
       SnapshotWindow: '03:15-08:15'
       Tags:
         - Key: environment
           Value: dev
+
+  ECacheRedisLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecache/redis/redis-cluster"
+      RetentionInDays: 1
+
+Outputs:
+
+  # Redis (cluster mode disabled) replication groups don't have this attribute. 
+  #ECacheRedisClusterEndpoint:
+  #  Value: !GetAtt ECacheReplicationGroup.ConfigurationEndpoint.Address
+
+  # Redis (cluster mode disabled) replication groups don't have this attribute. 
+  #ECacheRedisClusterEndpointPort:
+  #  Value: !GetAtt ECacheReplicationGroup.ConfigurationEndpoint.Port
+
+  ECacheRedisPrimaryEndPoint:
+    Value: !GetAtt ECacheReplicationGroup.PrimaryEndPoint.Address
+
+  ECacheRedisPrimaryEndPointPort:
+    Value: !GetAtt ECacheReplicationGroup.PrimaryEndPoint.Port
+
+  ECacheRedisReaderEndPoint:
+    Value: !GetAtt ECacheReplicationGroup.ReaderEndPoint.Address
+
+  ECacheRedisReaderEndPointPort:
+    Value: !GetAtt ECacheReplicationGroup.ReaderEndPoint.Port
