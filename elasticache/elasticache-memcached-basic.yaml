@@ -1,5 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Elasticache Memcache
+Description: ElastiCache Memcached
+
+#TODO
+#  VpcSubnetListCache:
+#    Description: Public VpcSubnets for ElastiCache
+#    Type: List<AWS::EC2::Subnet::Id>
 
 Parameters:
 
@@ -14,6 +19,16 @@ Parameters:
   VpcSubnet2:
     Description: EC2 subnet 2
     Type: AWS::EC2::Subnet::Id
+
+  AvailabilityZone1:
+    Description: Please input Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: ".+"
+
+  AvailabilityZone2:
+    Description: Please input Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: ".+"
 
 Resources:
 
@@ -41,36 +56,56 @@ Resources:
   ECacheSubnetGroup:
     Type: "AWS::ElastiCache::SubnetGroup"
     Properties:
-      CacheSubnetGroupName: ecache-memcached-subnet-group
+      CacheSubnetGroupName: ecache-memcached-subnet-group #(Optional)
       Description: Memcached Subnet Group
       SubnetIds:
         - !Ref VpcSubnet1
         - !Ref VpcSubnet2
 
   ECacheMemcachedParameterGroup:
-    Type: 'AWS::ElastiCache::ParameterGroup'
+    Type: "AWS::ElastiCache::ParameterGroup"
     Properties:
-      CacheParameterGroupFamily: memcached1.4
       Description: "Memcached Parameter Group"
+      CacheParameterGroupFamily: memcached1.6 #memcached1.4 | memcached1.5 | memcached1.6 |
+      Properties:
+        cas_disabled: '1'
+        chunk_size_growth_factor: '1.02'
+      Tags:
+        - Key: environment
+          Value: dev
 
   ECacheMemcachedCluster:
-    Type: 'AWS::ElastiCache::CacheCluster'
+    Type: "AWS::ElastiCache::CacheCluster"
     Properties:
       AutoMinorVersionUpgrade: false
-      AZMode: cross-az
+      AZMode: cross-az #cross-az | single-az
       CacheNodeType: cache.t2.micro
       CacheParameterGroupName: !Ref ECacheMemcachedParameterGroup
       CacheSubnetGroupName: !Ref ECacheSubnetGroup
-      ClusterName: memcached-cluster-01
+      ClusterName: memcached-cluster #(Optional)
       Engine: memcached
-      EngineVersion: 1.4.34
+      EngineVersion: 1.6.12
       NumCacheNodes: 2
       Port: 11211
-      #PreferredAvailabilityZones:
-      #  - ap-northeast-1a
-      #  - ap-northeast-1c
+      PreferredAvailabilityZones:
+        - !Ref AvailabilityZone1
+        - !Ref AvailabilityZone2
       PreferredMaintenanceWindow: 'sun:17:00-sun:20:00'
       VpcSecurityGroupIds:
         - !Ref ECacheSecurityGroup
-  
+      #LogDeliveryConfigurations:
+      #  - DestinationType: cloudwatch-logs # cloudwatch-logs or kinesis-firehose
+      #    LogFormat: json # json or text
+      #    LogType: engine-log #slow-log engine-log
+      #    DestinationDetails:
+      #      CloudWatchLogsDetails:
+      #        LogGroup: !Ref ECacheMemcachedLogGroup
+      #NotificationTopicArn
+      Tags:
+        - Key: environment
+          Value: dev
 
+Outputs:
+
+  ECacheMemcachedClusterEndpoint:
+    Value: !GetAtt ECacheMemcachedCluster.ConfigurationEndpoint.Address
