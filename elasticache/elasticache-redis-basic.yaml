@@ -58,6 +58,18 @@ Resources:
         - !Ref VpcSubnet1
         - !Ref VpcSubnet2
 
+  ECacheRedisParameterGroup:
+    Type: "AWS::ElastiCache::ParameterGroup"
+    Properties:
+      Description: "Redis Parameter Group"
+      CacheParameterGroupFamily: redis6.x # redis2.6 | redis2.8 | redis3.2 | redis4.0 | redis5.0 | redis6.x
+      Properties:
+        activedefrag: 'no'
+        tcp-keepalive: '300'
+      Tags:
+        - Key: environment
+          Value: dev
+
   ECacheReplicationGroup:
     Type: "AWS::ElastiCache::ReplicationGroup"
     Properties:
@@ -67,7 +79,7 @@ Resources:
       AutomaticFailoverEnabled: true
       AutoMinorVersionUpgrade: true
       CacheNodeType: cache.t2.micro
-      CacheParameterGroupName: default.redis6.x
+      CacheParameterGroupName: !Ref ECacheRedisParameterGroup #default.redis6.x
       CacheSubnetGroupName: !Ref ECacheSubnetGroup
       #TransitEncryptionEnabled: true
       #AuthToken: 
