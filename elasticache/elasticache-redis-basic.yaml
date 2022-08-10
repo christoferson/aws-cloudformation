@@ -16,6 +16,16 @@ Parameters:
     Description: EC2 subnet 2
     Type: AWS::EC2::Subnet::Id
 
+  AvailabilityZone1:
+    Description: Please input Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: ".+"
+
+  AvailabilityZone2:
+    Description: Please input Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: ".+"
+
 Resources:
 
   ECacheSecurityGroup:
@@ -51,7 +61,7 @@ Resources:
   ECacheReplicationGroup:
     Type: "AWS::ElastiCache::ReplicationGroup"
     Properties:
-      ReplicationGroupId: ecache-redis-replication-group # (Optional)
+      #ReplicationGroupId: ecache-redis-replication-group # (Optional)
       ReplicationGroupDescription: 'Elasticache Redis Replication Group'
       AtRestEncryptionEnabled: true
       AutomaticFailoverEnabled: true
@@ -68,8 +78,9 @@ Resources:
       MultiAZEnabled: true
       SecurityGroupIds:
         - !Ref ECacheSecurityGroup
-      #PreferredCacheClusterAZs:
-      #  - 
+      PreferredCacheClusterAZs:
+        - !Ref AvailabilityZone1 
+        - !Ref AvailabilityZone2
       LogDeliveryConfigurations:
         - DestinationType: cloudwatch-logs # cloudwatch-logs or kinesis-firehose
           LogFormat: json # json or text
