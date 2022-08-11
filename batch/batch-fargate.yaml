@@ -193,6 +193,7 @@ Resources:
       #JobDefinitionName: cfn-def # (Optional)
       PlatformCapabilities: 
         - FARGATE
+      #Parameters: {"codec": "mp4"}
       ContainerProperties:
         FargatePlatformConfiguration:
           PlatformVersion: LATEST
@@ -219,11 +220,14 @@ Resources:
           - Name: DB_URL
             ValueFrom: "/demo/database/endpoint"
         LogConfiguration:
-          LogDriver: awslogs
+          LogDriver: awslogs # Fargate resources are restricted to the awslogs and splunk log drivers.
           Options:
             awslogs-group: !Ref BatchJobLogGroup #/aws/batch/job
             awslogs-region: !Ref "AWS::Region"
             awslogs-stream-prefix: "my-batch"
+          SecretOptions:
+            - Name: LOG_DB_URL
+              ValueFrom: "/demo/database/endpoint" # ARN of Secret or SSM
       RetryStrategy:
         Attempts: 1
       Timeout:
