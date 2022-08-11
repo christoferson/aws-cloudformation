@@ -55,7 +55,13 @@ Launch Elasticache MemCacheD Cluster inside a VPC
 - Scaling is not supported for engine memcached
 
 ## Errors - Redis
-Invalid AuthToken provided.
+- Invalid AuthToken provided.
+- Template error: resource ECacheReplicationGroup does not support attribute type ConfigurationEndpoint.Address in Fn::GetAtt
+- Use a parameter group with cluster-enabled parameter to create more than one node group. 
+- Node group configuration size(=1) must match number of node groups(=2)
+- Number of replica availability zones(=2) does not match replicas for the node group(=1) 
+- Each Node Group needs to have at least two distinct Availability Zones for Multi-AZ enabled 
+- Primary endpoint was not found for replication group xxxx.
 
 ## Links
 https://aws.amazon.com/about-aws/whats-new/2022/05/amazon-elasticache-memcached-supports-encryption-data-transit/?nc1=h_ls
