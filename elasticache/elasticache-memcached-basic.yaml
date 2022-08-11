@@ -1,6 +1,27 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: ElastiCache Memcached
 
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnet1
+          - VpcSubnet2
+          - AvailabilityZone1
+          - AvailabilityZone2
+      -
+        Label:
+          default: "Cache Configuration"
+        Parameters:
+          - ECacheNodeType
+          - ECacheNodeCount
+
 #TODO
 #  VpcSubnetListCache:
 #    Description: Public VpcSubnets for ElastiCache
@@ -30,6 +51,16 @@ Parameters:
     Type: AWS::EC2::AvailabilityZone::Name
     AllowedPattern: ".+"
 
+  ECacheNodeType:
+    Description: Memcached Node Type
+    Type: String
+    Default: "cache.t2.micro"
+
+  ECacheNodeCount:
+    Description: Number of Memcached Nodes
+    Type: Number
+    Default: "2"
+
 Resources:
 
   ECacheSecurityGroup:
@@ -52,7 +83,7 @@ Resources:
       Tags:
         - Key: environment
           Value: dev
-          
+
   ECacheSubnetGroup:
     Type: "AWS::ElastiCache::SubnetGroup"
     Properties:
@@ -66,7 +97,7 @@ Resources:
     Type: "AWS::ElastiCache::ParameterGroup"
     Properties:
       Description: "Memcached Parameter Group"
-      CacheParameterGroupFamily: memcached1.6 #memcached1.4 | memcached1.5 | memcached1.6 |
+      CacheParameterGroupFamily: memcached1.6 # memcached1.4 | memcached1.5 | memcached1.6 |
       Properties:
         cas_disabled: '1'
         chunk_size_growth_factor: '1.02'
@@ -79,13 +110,13 @@ Resources:
     Properties:
       AutoMinorVersionUpgrade: false
       AZMode: cross-az #cross-az | single-az
-      CacheNodeType: cache.t2.micro
+      CacheNodeType: !Ref ECacheNodeType
       CacheParameterGroupName: !Ref ECacheMemcachedParameterGroup
       CacheSubnetGroupName: !Ref ECacheSubnetGroup
       ClusterName: memcached-cluster #(Optional)
       Engine: memcached
       EngineVersion: 1.6.12
-      NumCacheNodes: 2
+      NumCacheNodes: !Ref ECacheNodeCount
       Port: 11211
       PreferredAvailabilityZones:
         - !Ref AvailabilityZone1
