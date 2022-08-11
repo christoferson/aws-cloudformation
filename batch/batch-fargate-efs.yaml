@@ -235,7 +235,7 @@ Resources:
           - Type: MEMORY
             Value: 512
         Command:
-          - sh -c 'echo fargate; cat /mnt/efs/efs-fargate.txt; ls -Alh /mnt/efs/'
+          - sh -c 'echo fargate; echo fargate >> /mnt/efs/efs-fargate.txt; cat /mnt/efs/efs-fargate.txt; ls -Alh /mnt/efs/'
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
         Environment:

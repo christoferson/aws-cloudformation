@@ -1,5 +1,25 @@
 ## Batch
 
+### Batch - Concepts
+
+Jobs
+A unit of work (such as a shell script, a Linux executable, or a Docker container image) that you submit
+
+Job Definitions
+A job definition specifies how jobs are to be run. 
+- IAM role to provide access to other AWS resources
+- Memory and CPU requirements
+- Control container properties, environment variables, and mount points for persistent storage
+
+Job Queues
+Job resides until it's scheduled onto a compute environment
+Associate one or more compute environments with a job queue
+Assign priority values for these compute environments and even across job queues themselves
+
+Compute Environment
+Set of managed or unmanaged compute resources that are used to run jobs
+
+
 ### Batch - EC2 Basic
 
 Provision a Compute Environment, Job Queue, Definition
