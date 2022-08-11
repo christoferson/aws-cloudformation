@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Elasticache Redis Basic (cluster mode enabled) - Multi-AZ
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnet1
+          - VpcSubnet2
+          - AvailabilityZone1
+          - AvailabilityZone2
+
+Parameters:
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnet1:
+    Description: EC2 subnet 1
+    Type: AWS::EC2::Subnet::Id
+
+  VpcSubnet2:
+    Description: EC2 subnet 2
+    Type: AWS::EC2::Subnet::Id
+
+  AvailabilityZone1:
+    Description: Please input Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: ".+"
+
+  AvailabilityZone2:
+    Description: Please input Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: ".+"
+
+Resources:
+
+  ECacheSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties: 
+      VpcId: !Ref VpcId
+      #GroupName: !Ref ECacheSecurityGroupName
+      GroupDescription: Security Group for Elasticache Redis
+      SecurityGroupIngress:
+        - 
+          IpProtocol: tcp
+          CidrIp: '0.0.0.0/0'
+          FromPort: 6379
+          ToPort: 6379
+        - 
+          IpProtocol: tcp
+          CidrIpv6: '::/0'
+          FromPort: 6379
+          ToPort: 6379
+      Tags:
+        - Key: environment
+          Value: dev
+
+  ECacheSubnetGroup:
+    Type: "AWS::ElastiCache::SubnetGroup"
+    Properties:
+      CacheSubnetGroupName: ecache-redis-subnet-group
+      Description: Redis Subnet Group
+      SubnetIds:
+        - !Ref VpcSubnet1
+        - !Ref VpcSubnet2
+
+  ECacheRedisParameterGroup:
+    Type: "AWS::ElastiCache::ParameterGroup"
+    Properties:
+      Description: "Redis Parameter Group (ClusterMode=Yes)"
+      CacheParameterGroupFamily: redis6.x # redis2.6 | redis2.8 | redis3.2 | redis4.0 | redis5.0 | redis6.x
+      Properties:
+        cluster-enabled: 'yes'
+        activedefrag: 'no'
+        tcp-keepalive: '300'
+      Tags:
+        - Key: environment
+          Value: dev
+
+  ECacheReplicationGroup:
+    #DeletionPolicy: Snapshot
+    #UpdateReplacePolicy: Snapshot
+    UpdatePolicy:
+      UseOnlineResharding: true
+    Type: "AWS::ElastiCache::ReplicationGroup"
+    Properties:
+      #ReplicationGroupId: ecache-redis-replication-group # (Optional)
+      ReplicationGroupDescription: 'Elasticache Redis Replication Group'
+      AtRestEncryptionEnabled: true
+      #KmsKeyId: 
+      AutomaticFailoverEnabled: true #Specifies whether a read-only replica is automatically promoted to read/write primary if the existing primary fails.
+      AutoMinorVersionUpgrade: true
+      MultiAZEnabled: true
+      CacheNodeType: cache.t2.micro
+      CacheParameterGroupName: !Ref ECacheRedisParameterGroup #default.redis6.x.cluster.on
+      CacheSubnetGroupName: !Ref ECacheSubnetGroup
+      #TransitEncryptionEnabled: true
+      #AuthToken: 
+      #UserGroupIds:
+      Engine: redis
+      EngineVersion: 6.2
+      NumNodeGroups: 2
+      ReplicasPerNodeGroup: 2
+      NodeGroupConfiguration:
+        - NodeGroupId: "0001"
+          PrimaryAvailabilityZone: !Ref AvailabilityZone1
+          ReplicaAvailabilityZones:
+          - !Ref AvailabilityZone1
+          - !Ref AvailabilityZone2 
+        - NodeGroupId: "0002"
+          PrimaryAvailabilityZone: !Ref AvailabilityZone2
+          ReplicaAvailabilityZones:
+          - !Ref AvailabilityZone1
+          - !Ref AvailabilityZone2
+      SecurityGroupIds:
+        - !Ref ECacheSecurityGroup
+      #PreferredCacheClusterAZs:
+      #  - !Ref AvailabilityZone1 
+      #  - !Ref AvailabilityZone2
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs # cloudwatch-logs or kinesis-firehose
+          LogFormat: json # json or text
+          LogType: engine-log #slow-log engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref ECacheRedisLogGroupEngine
+        - DestinationType: cloudwatch-logs # cloudwatch-logs or kinesis-firehose
+          LogFormat: json # json or text
+          LogType: slow-log #slow-log engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref ECacheRedisLogGroupSlowLog
+      PreferredMaintenanceWindow: 'sun:17:00-sun:20:00'
+      SnapshotRetentionLimit: 5
+      SnapshotWindow: '03:15-08:15'
+      Tags:
+        - Key: environment
+          Value: dev
+
+  ECacheRedisLogGroupEngine:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecache/redis/redis-cluster-engine"
+      RetentionInDays: 1
+
+  ECacheRedisLogGroupSlowLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecache/redis/redis-cluster-slowlog"
+      RetentionInDays: 1
+
+Outputs:
+
+  ECacheRedisClusterEndpoint:
+    Value: !GetAtt ECacheReplicationGroup.ConfigurationEndPoint.Address
+
+  ECacheRedisClusterEndpointPort:
+    Value: !GetAtt ECacheReplicationGroup.ConfigurationEndPoint.Port
