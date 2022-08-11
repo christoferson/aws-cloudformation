@@ -1,4 +1,4 @@
-
+## ElastiCache
 
 
 ## Redis
@@ -41,6 +41,7 @@ https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/nodes-connecting.htm
 ## Memcached
 
 Versions - https://docs.aws.amazon.com/AmazonElastiCache/latest/mem-ug/supported-engine-versions-mc.html
+Encryption in Transit can only be enabled during creation.
 
 ## MemcacheD - Basic
 
@@ -49,5 +50,18 @@ Launch Elasticache MemCacheD Cluster inside a VPC
 [elasticache-memcached-basic](elasticache-memcached-basic.yaml)
 
 
-## Errors
-engine-log log delivery is not supported for the memcached engine
+## Errors - Memcached
+- engine-log log delivery is not supported for the memcached engine
+- Scaling is not supported for engine memcached
+
+## Errors - Redis
+Invalid AuthToken provided.
+
+## Links
+https://aws.amazon.com/about-aws/whats-new/2022/05/amazon-elasticache-memcached-supports-encryption-data-transit/?nc1=h_ls
+
+##TODO
+
+User Group
+Redis Cluster Enabled
+Event
