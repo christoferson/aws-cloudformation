@@ -193,7 +193,7 @@ Resources:
       #JobDefinitionName: cfn-def # (Optional)
       PlatformCapabilities: 
         - FARGATE
-      #Parameters: {"codec": "mp4"}
+      Parameters: {"codec": "mp4"}
       ContainerProperties:
         FargatePlatformConfiguration:
           PlatformVersion: LATEST
@@ -209,8 +209,10 @@ Resources:
             Value: 0.25
           - Type: MEMORY
             Value: 512
-        Command:
-          - echo hi
+        Command: # ["echo","hi"]  ["sh","-c","echo fargate;"]
+          - sh 
+          - -c 
+          - 'echo fargate;'
         NetworkConfiguration:
           AssignPublicIp: DISABLED # DISABLED | ENABLED
         Environment:

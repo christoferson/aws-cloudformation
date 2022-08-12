@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Batch Fargate with EFS
+Description: Batch (Fargate) with EFS
 
 Metadata:
 
@@ -117,7 +117,7 @@ Resources:
         Subnets:
           - !Ref ComputeSubnetId1
           - !Ref ComputeSubnetId2
-        #InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn
+        #InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn #Needed if EC2
         #InstanceTypes:
         #  - optimal
         #Tags: {"Name": "Batch (Fargate) Compute Environment"}
