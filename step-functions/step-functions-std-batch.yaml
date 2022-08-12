@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Functions - Standard - Batch
+
+Parameters:
+
+  BatchJobName:
+    Description : "Job Name"
+    Type: String
+    Default: "step-batch-job"
+
+  BatchJobQueueArn:
+    Description : "Job Queue Name or Arn"
+    Type: String
+    Default: "BatchJobQueue-YF75D0jJcnsxSG9P"
+
+  BatchJobDefinitionArn:
+    Description : "Job Definition Name or Arn. Name:Revision or Latest Revision"
+    Type: String
+    Default: "BatchJobDefinition-10e963866c726db"
+
+Resources:
+
+  StateMachineExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - !Sub 'states.${AWS::Region}.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'batch:SubmitJob'
+                  - 'batch:DescribeJobs'
+                  - 'batch:TerminateJob'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'events:PutTargets'
+                  - 'events:PutRule'
+                  - 'events:DescribeRule'
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForBatchJobsRule"
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'xray:PutTraceSegments'
+                  - 'xray:PutTelemetryRecords'
+                  - 'xray:GetSamplingRules'
+                  - 'xray:GetSamplingTargets'
+                Resource: '*'
+
+  StateMachine:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      DefinitionString: !Sub 
+        - |-
+          {
+            "Comment": "Submit Batch Job",
+            "StartAt": "Submit Batch Job",
+            "TimeoutSeconds": 3600,
+            "States": {
+              "Submit Batch Job": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::batch:submitJob.sync",
+                "Parameters": {
+                  "JobName": "${BATCH_JOB_NAME}",
+                  "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
+                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}"
+                },
+                "Next": "Notify Success",
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "States.ALL"
+                    ],
+                    "IntervalSeconds": 30,
+                    "MaxAttempts": 2,
+                    "BackoffRate": 1.5
+                  }
+                ],
+                "Catch": [
+                  {
+                    "ErrorEquals": [
+                      "States.ALL"
+                    ],
+                    "Next": "Notify Failure"
+                  }
+                ]
+              },
+              "Notify Success": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sns:publish",
+                "Parameters": {
+                  "Message": "Batch job submitted through Step Functions succeeded",
+                  "TopicArn": ""
+                },
+                "End": true
+              },
+              "Notify Failure": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sns:publish",
+                "Parameters": {
+                  "Message": "Batch job submitted through Step Functions failed",
+                  "TopicArn": ""
+                },
+                "End": true
+              }
+            }
+          }
+        - { BATCH_JOB_NAME: !Ref BatchJobName, BATCH_JOB_QUEUE_NAME: !Ref BatchJobQueueArn, BATCH_JOB_DEFINITION_NAME: !Ref BatchJobDefinitionArn }
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt LogGroupStateMachine.Arn
+        IncludeExecutionData: true
+        Level: ERROR
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
+
+  LogGroupStateMachine:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      RetentionInDays: 1
+
+Outputs:
+
+  StateMachineArn:
+    Value: !Ref StateMachine
+
+  StateMachineName:
+    Value: !GetAtt StateMachine.Name
