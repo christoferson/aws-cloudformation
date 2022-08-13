@@ -123,3 +123,14 @@ Resources:
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
       SourceArn: !GetAtt EventBridgeRuleS3PutObject.Arn
+
+Outputs:
+
+  BucketArn:
+    Value: !GetAtt Bucket.Arn
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  EventBridgeRuleS3PutObjectName:
+    Value: !Ref EventBridgeRuleS3PutObject
