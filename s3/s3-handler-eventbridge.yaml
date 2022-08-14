@@ -22,7 +22,7 @@ Parameters:
 
   BucketName:
     Type: "String"
-    Default: "s3-handler-evtbridge-bucket"
+    Default: "my-bucket"
     Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
 
 Resources:
@@ -108,6 +108,7 @@ Resources:
           - aws.s3
         detail-type:
           - "Object Created"
+          - "Object Deleted"
         resources:
           - !Sub "arn:aws:s3:::${BucketName}"
       State: "ENABLED"
@@ -115,6 +116,24 @@ Resources:
         - 
           Arn: !GetAtt LambdaFunction.Arn
           Id: "TargetFunction"
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunctionTransformed"
+          InputTransformer: 
+            InputPathsMap:
+              "BucketName" : "$.detail.bucket.name"
+              "ObjectKey" : "$.detail.object.key"
+              "ObjectVersion" : "$.detail.version"
+              "ObjectAction" : "$.detail.reason"
+              "Timestamp" : "$.time"
+            InputTemplate: |
+              {
+                "BucketName" : "\"<BucketName>\"",
+                "ObjectKey" : "\"<ObjectKey>\"",
+                "ObjectVersion": "\"<ObjectVersion>\"",
+                "ObjectAction": "\"<ObjectAction>\"",
+                "Timestamp": "\"<Timestamp>\""
+              }
 
   InvokeLambdaPermissionS3ObjectPut:
     Type: AWS::Lambda::Permission
