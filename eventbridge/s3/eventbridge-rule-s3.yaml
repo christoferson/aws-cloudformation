@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (S3) - Send to Lambda
+
+# Bucket must have event bridge notification enabled
+#  Bucket:
+#    Type: "AWS::S3::Bucket"
+#    Properties:
+#      ...
+#      NotificationConfiguration:
+#         EventBridgeConfiguration:
+#            EventBridgeEnabled: true
+
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "S3 Configuration"
+        Parameters: 
+          - BucketArn
+
+    ParameterLabels: 
+      BucketArn: 
+        Default: "BucketArn"
+        MinLength: 5
+        MaxLength: 124
+
+Parameters:
+
+  BucketArn:
+    Type: "String"
+    Default: "arn:aws:s3:::bucket-name"
+    Description: "Must contain only lowercase letters, numbers, periods (.), and dashes (-) "
+
+Resources:
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "eventbridge-rule-s3-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "eventbridge-rule-s3-lambda-function"
+      Description: "EventBridge S3 Lambda Notification Handler"
+      Runtime: nodejs16.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-basic"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+  EventBridgeRuleS3PutObject: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-s3-object-put
+      Description: "S3 Trigger"
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        resources:
+          - !Ref BucketArn
+      State: "ENABLED"
+      Targets:
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunction"
+
+  InvokeLambdaPermissionS3ObjectPut:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRuleS3PutObject.Arn
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  EventBridgeRuleS3PutObjectName:
+    Value: !Ref EventBridgeRuleS3PutObject
