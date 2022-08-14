@@ -37,7 +37,7 @@ Resources:
     Properties:
       #FunctionName : "basic-lambda-zip"
       Description: "Basic Lambda Zip File in S3"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:

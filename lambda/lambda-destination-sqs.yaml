@@ -53,7 +53,7 @@ Resources:
     Properties:
       FunctionName : "dst-lambda"
       Description: "Lambda with Destination"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:
@@ -72,6 +72,11 @@ Resources:
           };
       DeadLetterConfig:
         TargetArn: !GetAtt DeadLetterQueue.Arn
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-trigger-sqs-lambda"
 
 #  LambdaFunctionVersion:
 #    Type: AWS::Lambda::Version

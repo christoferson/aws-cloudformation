@@ -44,7 +44,7 @@ Resources:
     Properties:
       FunctionName : "dynamodb-client-lambda-register"
       Description: "Basic Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:

@@ -50,7 +50,7 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole #Allows lambda to create, delete, describe network interfaces
         - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
@@ -59,7 +59,7 @@ Resources:
     Properties:
       FunctionName : "rds-client-lambda"
       Description: "Lambda Client RDS (S3)"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Timeout: 30
