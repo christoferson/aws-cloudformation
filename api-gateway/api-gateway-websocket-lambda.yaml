@@ -94,7 +94,7 @@ Resources:
     Properties:
       #FunctionName : "xxx"
       Description: "WebSocket OnConnect Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: app.handler
       Environment:
@@ -130,7 +130,7 @@ Resources:
     Properties:
       #FunctionName : "xxx"
       Description: "WebSocket OnDisconnect Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: app.handler
       Environment:
@@ -166,7 +166,7 @@ Resources:
     Properties:
       #FunctionName : "xxx"
       Description: "WebSocket OnMessage Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: app.handler
       Environment:
@@ -202,7 +202,7 @@ Resources:
     Properties:
       #FunctionName : "xxx"
       Description: "WebSocket OnCustomList Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: app.handler
       Environment:
