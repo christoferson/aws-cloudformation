@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda - VPC
+
+Parameters:
+
+  CodeBucketName:
+    Type: String
+    Default: my-bucket
+    Description: Bucket containing lambda code
+
+  CodeObjectKey:
+    Type: String
+    Default: lambda/rds-client-lambda.zip
+    Description: Object Key of the zipped code
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnet:
+    Description: Subnet
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+
+  # Todo Receive this as a parameter. 
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: allow ICMP via same VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "client-lambda"
+      Description: "Lambda Client RDS (S3)"
+      Runtime: nodejs16.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Timeout: 30
+      Environment:
+        Variables:
+          EDATABASE_ENDPOINT: xxx
+          EDATABASE_USER: xxx
+          EDATABASE_NAME: xxx
+          EDATABASE_PASSWORD: xxx
+      Code:
+        S3Bucket: !Ref CodeBucketName
+        S3Key: !Ref CodeObjectKey
+        #S3ObjectVersion: 1
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref VpcSubnet
+      TracingConfig:
+        Mode: Active
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+Outputs:
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+
+
