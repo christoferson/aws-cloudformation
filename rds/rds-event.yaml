@@ -12,6 +12,7 @@ Metadata:
           - EventSubscriptionEmail
           - EventSourceType
           - EventCategoryList
+
 Parameters:
 
   Application:
@@ -66,3 +67,9 @@ Resources:
       Tags: 
         - Key: "env"
           Value: "dev"
+
+Outputs:
+
+  EventSubscriptionTopicArn:
+    Description: EventSubscriptionTopic
+    Value: !Ref EventSubscriptionTopic
