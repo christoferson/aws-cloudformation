@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Dynamo DB"
+Description: "Dynamo DB - LSI (Local Secondary Index)"
 
 Resources:
 

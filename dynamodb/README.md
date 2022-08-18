@@ -6,6 +6,24 @@ Provision a DynamoDB with HASH and RANGE key.
 
 [dynamodb-basic](dynamodb-basic.yaml)
 
+### DynamoDB - Index
+
+Provision a DynamoDB with LSI
+
+[dynamodb-index](dynamodb-index.yaml)
+
+### DynamoDB - Stream
+
+Provision a DynamoDB with Streams Enabled. Lambda Function called on Item insertion and modification.
+
+[dynamodb-stream](dynamodb-stream.yaml)
+
+### DynamoDB - Dax
+
+Provision a DynamoDB DAX Cluster.
+
+[dynamodb-dax](dynamodb-dax.yaml)
+
 ### Auto Scaling (RCU and WCU)
 
 Provision a DynamoDB table with Auto-scaling configuration for both RCU and WCU.
@@ -32,3 +50,12 @@ Script: dynamodb-autoscale.yaml
 - dynamodb:table:WriteCapacityUnits - The provisioned write capacity for a DynamoDB table.
 - dynamodb:index:ReadCapacityUnits - The provisioned read capacity for a DynamoDB global secondary index.
 - dynamodb:index:WriteCapacityUnits - The provisioned write capacity for a DynamoDB global secondary index.
+
+# Errors - DAX
+- "dax" No endpoints available 
+  You can only connect to DAX from an EC2 machine in the same VPC as the DAX cluster.
+
+
+### TODO
+
+- DAX (Memory Caching) - Dax Endpoint, Read Heavy Application, Runs inside VPC, Encryption at REST
