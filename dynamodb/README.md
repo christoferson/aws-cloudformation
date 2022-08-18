@@ -6,11 +6,11 @@ Provision a DynamoDB with HASH and RANGE key.
 
 [dynamodb-basic](dynamodb-basic.yaml)
 
-### DynamoDB - Index
+### DynamoDB - Local Secondary Index
 
 Provision a DynamoDB with LSI
 
-[dynamodb-index](dynamodb-index.yaml)
+[dynamodb-index-local](dynamodb-index-local.yaml)
 
 ### DynamoDB - Stream
 
