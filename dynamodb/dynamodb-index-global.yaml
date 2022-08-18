@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB - GSI (Global Secondary Index)"
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: "Character10"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+        - 
+          AttributeName: "Race"
+          AttributeType: "S"
+        - 
+          AttributeName: "Profession"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      GlobalSecondaryIndexes: 
+        - 
+          IndexName: "RaceCharacterName"
+          KeySchema: 
+            - 
+              AttributeName: "Race"
+              KeyType: "HASH"
+            - 
+              AttributeName: "CharacterName"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "Region"
+              - "Profession"
+            ProjectionType: "INCLUDE"
+          ProvisionedThroughput: 
+            ReadCapacityUnits: "1"
+            WriteCapacityUnits: "1"
+        - 
+          IndexName: "ProfessionCharacterName"
+          KeySchema: 
+            - 
+              AttributeName: "Profession"
+              KeyType: "HASH"
+            - 
+              AttributeName: "CharacterName"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "Region"
+              - "Race"
+            ProjectionType: "INCLUDE"
+          ProvisionedThroughput: 
+            ReadCapacityUnits: "1"
+            WriteCapacityUnits: "1"
+      Tags:
+        - Key: environment
+          Value: dev
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
