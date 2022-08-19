@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Dynamo DB With Stream"
+Description: "DynamoDB - Streams Enabled -> Lambda"
 
 Resources:
 
@@ -65,7 +65,7 @@ Resources:
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "lambda-trigger-dynamodb-role"
+      #RoleName: "lambda-trigger-dynamodb-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -82,9 +82,9 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "lambda-trigger-dynamodb-lambda"
+      #FunctionName : "lambda-trigger-dynamodb-lambda"
       Description: "Lambda Triggered by DynamoDB"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:
@@ -93,14 +93,30 @@ Resources:
           databaseUser: admin
       Code:
         ZipFile: |
-          exports.handler = async (event) => {
-              console.log(event);
-              if (event.type == 'error') { throw new Error('Authentication Failed'); }
-              const response = {
-                  statusCode: 200,
-                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
-              };
-              return response;
+          exports.handler = async (event, context, callback) => {
+
+              event.Records.forEach((record) => {
+                console.log('Stream record: ', JSON.stringify(record, null, 2));
+                //console.log('Type', record.eventName);
+                //console.log('DynamoDB Record: %j', record.dynamodb);
+
+                if (record.eventName == 'INSERT') {
+                    const item = record.dynamodb.NewImage;
+                    console.log('Inserted: %j', item);
+                } else if(record.eventName == 'MODIFY') {
+                    //const oldItem = record.dynamodb.OldImage;
+                    const item = record.dynamodb.NewImage;
+                    console.log('Updated: %j', item);
+                } else if(record.eventName == 'REMOVE') {
+                    const item = record.dynamodb.OldImage;
+                    console.log('Deleted: %j', item);
+                } else {
+                    console.log('NotSupported Type', record.eventName);
+                }
+
+              });
+
+              callback(null, `Successfully processed ${event.Records.length} records.`);
           };
 
   LambdaEventSourceMapping:
