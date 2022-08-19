@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Dynamo DB - Time to Live"
 
+Parameters:
+
+  TimeToLiveAttributeName:
+    Description: Time to Live Attribute Name
+    Type: String
+    Default: expires_on
+
 Resources:
 
   DynamoTable: 
@@ -31,7 +38,7 @@ Resources:
         ReadCapacityUnits: "1"
         WriteCapacityUnits: "1"
       TimeToLiveSpecification:
-        AttributeName: expires_on
+        AttributeName: !Ref TimeToLiveAttributeName
         Enabled: true
       LocalSecondaryIndexes: 
         - 
