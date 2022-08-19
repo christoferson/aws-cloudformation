@@ -30,12 +30,6 @@ NEW_AND_OLD_IMAGES - Both the new and the old item images of the item are writte
 
 [dynamodb-stream](dynamodb-stream.yaml)
 
-### DynamoDB - Dax
-
-Provision a DynamoDB DAX Cluster.
-
-[dynamodb-dax](dynamodb-dax.yaml)
-
 ### DynamoDB - Auto Scaling (RCU and WCU)
 
 Provision a DynamoDB table with Auto-scaling configuration for both RCU and WCU.
@@ -48,6 +42,13 @@ Script: dynamodb-autoscale.yaml
 - LatestRestorableDateTime is typically 5 minutes before the current time.
 - EarliestRestorableDateTime, you can restore your table to any point in time during the last 35 days.
 - The point-in-time recovery process always restores to a new table.
+
+### DynamoDB - Dax
+
+Provision a DynamoDB DAX Cluster.
+
+[dynamodb-dax](dynamodb-dax.yaml)
+
 
 Note
 
@@ -80,8 +81,10 @@ Note
 ### Resources
 
 - https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery.html
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-globaltable.html
 
 ### TODO
 
 - DAX (Memory Caching) - Dax Endpoint, Read Heavy Application, Runs inside VPC, Encryption at REST
 - Point in Time Recovery
+- Global Table
