@@ -19,6 +19,13 @@ Assign priority values for these compute environments and even across job queues
 Compute Environment
 Set of managed or unmanaged compute resources that are used to run jobs
 
+Fargate or EC2 - Amazon EC2 if your jobs require any of the following:
+- More than four vCPUs
+- More than 30 gibibytes (GiB) of memory
+- A GPU
+- An Arm-based AWS Graviton CPU
+- A custom Amazon Machine Image (AMI)
+- Any of the linuxParameters parameters
 
 ### Batch - EC2 Basic
 
