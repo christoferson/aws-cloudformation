@@ -114,7 +114,7 @@ Resources:
                 "Resource": "arn:aws:states:::sns:publish",
                 "Parameters": {
                   "Message": "Batch job submitted through Step Functions succeeded",
-                  "TopicArn": ""
+                  "TopicArn": "${SNS_SUCCESS}"
                 },
                 "End": true
               },
@@ -123,13 +123,17 @@ Resources:
                 "Resource": "arn:aws:states:::sns:publish",
                 "Parameters": {
                   "Message": "Batch job submitted through Step Functions failed",
-                  "TopicArn": ""
+                  "TopicArn": "${SNS_FAIL}"
                 },
                 "End": true
               }
             }
           }
-        - { BATCH_JOB_NAME: !Ref BatchJobName, BATCH_JOB_QUEUE_NAME: !Ref BatchJobQueueArn, BATCH_JOB_DEFINITION_NAME: !Ref BatchJobDefinitionArn }
+        - BATCH_JOB_NAME: !Ref BatchJobName
+          BATCH_JOB_QUEUE_NAME: !Ref BatchJobQueueArn
+          BATCH_JOB_DEFINITION_NAME: !Ref BatchJobDefinitionArn
+          SNS_SUCCESS: !Ref StepFunctionSnsTopicSuccess 
+          SNS_FAIL: !Ref StepFunctionSnsTopicFailure
       TracingConfiguration:
         Enabled: true
       LoggingConfiguration:
@@ -148,6 +152,24 @@ Resources:
     Type: 'AWS::Logs::LogGroup'
     Properties:
       RetentionInDays: 1
+
+  StepFunctionSnsTopicSuccess:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "Step Function Notification - Success"
+      Tags:
+        -
+          Key: "Environment"
+          Value: "dev"
+
+  StepFunctionSnsTopicFailure:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "Step Function Notification - Failure"
+      Tags:
+        -
+          Key: "Environment"
+          Value: "dev"
 
 Outputs:
 
