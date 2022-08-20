@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB - Full Settings"
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      #TableName: "Character12" #(Optional)
+      TableClass: STANDARD # STANDARD | STANDARD_INFREQUENT_ACCESS
+      BillingMode: PROVISIONED
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+      KeySchema: # The attributes in the KeySchema property must also be defined in the AttributeDefinitions property.
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: "ExpiresOn"
+      ContributorInsightsSpecification:
+        Enabled: true
+      #GlobalSecondaryIndexes:
+      #LocalSecondaryIndexes
+      #ImportSourceSpecification
+      # KinesisStreamSpecification
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        #KMSMasterKeyId: alias/aws/dynamodb
+        #SSEType: KMS
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: environment
+          Value: dev
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "lambda-dynamodb-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "lambda-dynamodb"
+      Description: "Lambda Triggered by DynamoDB Streams"
+      Runtime: nodejs16.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context, callback) => {
+
+              event.Records.forEach((record) => {
+
+                if (record.eventName == 'INSERT') {
+                    const item = record.dynamodb.NewImage;
+                    console.log('Inserted: %j', item);
+                } else if(record.eventName == 'MODIFY') {
+                    //const oldItem = record.dynamodb.OldImage;
+                    const item = record.dynamodb.NewImage;
+                    console.log('Updated: %j', item);
+                } else if(record.eventName == 'REMOVE') {
+                    const item = record.dynamodb.OldImage;
+                    console.log('Deleted: %j', item);
+                } else {
+                    console.log('NotSupported Type', record.eventName);
+                }
+
+              });
+
+              callback(null, `Successfully processed ${event.Records.length} records.`);
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "Name"
+          Value: "dynamodb-streams-lambda"
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DynamoTable.StreamArn
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Enabled: true
+      BatchSize: 10
+      StartingPosition: LATEST
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+      Tags:
+        - Key: "Environment"
+          Value: "dev"
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
