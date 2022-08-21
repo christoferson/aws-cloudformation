@@ -1,6 +1,31 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Dynamo DB - Full Settings"
 
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Key Configuration"
+        Parameters:
+          - KeyHashAttributeName
+          - KeyRangeAttributeName
+
+
+Parameters:
+
+  KeyHashAttributeName:
+    Description: KeyHashAttributeName
+    Type: String
+    Default: Region
+
+  KeyRangeAttributeName:
+    Description: KeyRangeAttributeName
+    Type: String
+    Default: CharacterName
+
 Resources:
 
   DynamoTable: 
@@ -14,17 +39,17 @@ Resources:
         WriteCapacityUnits: "1"
       AttributeDefinitions: 
         - 
-          AttributeName: "Region"
+          AttributeName: !Ref KeyHashAttributeName
           AttributeType: "S"
         - 
-          AttributeName: "CharacterName"
+          AttributeName: !Ref KeyRangeAttributeName
           AttributeType: "S"
       KeySchema: # The attributes in the KeySchema property must also be defined in the AttributeDefinitions property.
         - 
-          AttributeName: "Region"
+          AttributeName: !Ref KeyHashAttributeName
           KeyType: "HASH"
         - 
-          AttributeName: "CharacterName"
+          AttributeName: !Ref KeyRangeAttributeName
           KeyType: "RANGE"
       TimeToLiveSpecification:
         Enabled: true
@@ -73,6 +98,33 @@ Resources:
         PredefinedMetricSpecification:
           PredefinedMetricType: DynamoDBReadCapacityUtilization
 
+  # Dynamo Write Capacity Unit AutoScaling
+
+  DynamoTableWcuScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties:
+      MaxCapacity: 2
+      MinCapacity: 1
+      ResourceId: !Sub "table/${DynamoTable}"
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable"
+      ScalableDimension: "dynamodb:table:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DynamoTableWcuScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: dynamo-table-autoscale-policy-wcu
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId:
+        Ref: DynamoTableWcuScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 30
+        ScaleOutCooldown: 30 
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+  
+  # DynamoDB Streams Lambda Handler 
 
   FunctionExecutionRole:
     Type: AWS::IAM::Role
