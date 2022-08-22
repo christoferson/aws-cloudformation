@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB - Global Tables"
+
+# Adding a replica might take a few minutes for an empty table, or up to several hours for large tables. 
+# If you want to add or remove a replica, we recommend submitting an UpdateStack operation containing only that change.
+
+# If you add or delete a replica during an update, we recommend that you don't update any other resources. 
+# If your stack fails to update and is rolled back while adding a new replica, you might need to manually delete the replica.
+
+# You can create a new global table with as many replicas as needed. 
+# You can add or remove replicas after table creation, but you can only add or remove a single replica in each update.
+
+Parameters:
+
+  KeyHashAttributeName:
+    Description: Hash Key Attribute Name
+    Type: String
+    Default: Region
+
+  KeyRangeAttributeName:
+    Description: Range Key Attribute Name
+    Type: String
+    Default: CharacterName
+
+  TimeToLiveAttributeName:
+    Description: Time To Live Attribute Name
+    Type: String
+    Default: ExpiresOn
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::GlobalTable
+    Properties: 
+      #TableName: "Character"
+      BillingMode: PROVISIONED
+      AttributeDefinitions: 
+        - 
+          AttributeName: !Ref KeyHashAttributeName
+          AttributeType: "S"
+        - 
+          AttributeName: !Ref KeyRangeAttributeName
+          AttributeType: "S"
+      KeySchema:
+        - 
+          AttributeName: !Ref KeyHashAttributeName
+          KeyType: "HASH"
+        - 
+          AttributeName: !Ref KeyRangeAttributeName
+          KeyType: "RANGE"
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: !Ref TimeToLiveAttributeName
+      SSESpecification:
+        SSEEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      WriteProvisionedThroughputSettings:
+        WriteCapacityAutoScalingSettings:
+          MaxCapacity: "2"
+          MinCapacity: "1"
+          TargetTrackingScalingPolicyConfiguration:
+            DisableScaleIn: false
+            ScaleInCooldown: 300
+            ScaleOutCooldown: 300
+            TargetValue: 70
+      Replicas:
+        - Region: eu-west-1
+          TableClass: STANDARD
+          ContributorInsightsSpecification:
+            Enabled: true
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          #SSESpecification:
+          #  KMSMasterKeyId: alias/dynamodb-key
+          ReadProvisionedThroughputSettings:
+            #ReadCapacityUnits: 1
+            ReadCapacityAutoScalingSettings:
+              MaxCapacity: "2"
+              MinCapacity: "1"
+              TargetTrackingScalingPolicyConfiguration:
+                DisableScaleIn: false
+                ScaleInCooldown: 300
+                ScaleOutCooldown: 300
+                TargetValue: 70
+          Tags:
+            - Key: environment
+              Value: dev
+        - Region: us-east-1
+          TableClass: STANDARD
+          ContributorInsightsSpecification:
+            Enabled: true
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          #SSESpecification:
+          #  KMSMasterKeyId: alias/dynamodb-key
+          ReadProvisionedThroughputSettings:
+            #ReadCapacityUnits: 1
+            ReadCapacityAutoScalingSettings:
+              MaxCapacity: "2"
+              MinCapacity: "1"
+              TargetTrackingScalingPolicyConfiguration:
+                DisableScaleIn: false
+                ScaleInCooldown: 300
+                ScaleOutCooldown: 300
+                TargetValue: 70
+          Tags:
+            - Key: environment
+              Value: dev
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
