@@ -12,19 +12,28 @@ Metadata:
         Parameters:
           - KeyHashAttributeName
           - KeyRangeAttributeName
-
+      -
+        Label:
+          default: "Time to Live Configuration"
+        Parameters:
+          - TimeToLiveAttributeName
 
 Parameters:
 
   KeyHashAttributeName:
-    Description: KeyHashAttributeName
+    Description: Hash Key Attribute Name
     Type: String
     Default: Region
 
   KeyRangeAttributeName:
-    Description: KeyRangeAttributeName
+    Description: Range Key Attribute Name
     Type: String
     Default: CharacterName
+
+  TimeToLiveAttributeName:
+    Description: Time To Live Attribute Name
+    Type: String
+    Default: ExpiresOn
 
 Resources:
 
@@ -53,7 +62,7 @@ Resources:
           KeyType: "RANGE"
       TimeToLiveSpecification:
         Enabled: true
-        AttributeName: "ExpiresOn"
+        AttributeName: !Ref TimeToLiveAttributeName
       ContributorInsightsSpecification:
         Enabled: true
       #GlobalSecondaryIndexes:
