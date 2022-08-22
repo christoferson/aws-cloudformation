@@ -1,10 +1,19 @@
 
 ## CloudFormation VPC Examples
 
-### Vpc with Public Subnets Only
+### Vpc - 2 Public Subnets Only
 
-vpc-public
+VPC with Public Subnets only and spans 2 Availability Zones
 
-### Vpc with Public and Private Subnets
+[vpc-public](vpc-public.yaml)
+
+### Vpc - 2 Public and Private Subnets
 
 Example for VPC with Public and Private Subnets. Spans 2 Availability Zone
+
+
+### TODO
+3 Public Private Subnets
+NAT or NOT
+6 Private Subnets
+S3 or Dynamo
