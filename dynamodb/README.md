@@ -1,5 +1,15 @@
 ## DynamoDB Cloudformation
 
+### DynamoDB - Concepts
+
+
+
+### DynamoDB - Full
+
+Provision a DynamoDB with various features enabled.
+
+[dynamodb](dynamodb.yaml)
+
 ### DynamoDB - Basic
 
 Provision a DynamoDB with HASH and RANGE key.
@@ -43,6 +53,12 @@ Script: dynamodb-autoscale.yaml
 - EarliestRestorableDateTime, you can restore your table to any point in time during the last 35 days.
 - The point-in-time recovery process always restores to a new table.
 
+### DynamoDB - Global Table
+
+Provision a DynamoDB Global Table
+
+[dynamodb-global](dynamodb-global.yaml)
+
 ### DynamoDB - Dax
 
 Provision a DynamoDB DAX Cluster.
@@ -76,7 +92,7 @@ Note
 # Errors - DAX
 - "dax" No endpoints available 
   You can only connect to DAX from an EC2 machine in the same VPC as the DAX cluster.
-
+- #/TimeToLiveSpecification: required key [Enabled] not found
 
 ### Resources
 
