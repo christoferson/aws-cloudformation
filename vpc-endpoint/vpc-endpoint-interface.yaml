@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Vpc Endpoint (Interface Endpoint)'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnetList:
+    Description: Private VpcSubnets for Endpoint
+    Type: List<AWS::EC2::Subnet::Id>
+
+#  VpcEndpointSecurityGroupIdList:
+#    Type: List<AWS::EC2::SecurityGroup::Id>
+
+Resources:
+
+ VpcEndpointCloudwatchLogs:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    VpcEndpointType: Interface
+    #SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
+
+
+Outputs:
+
+  VpcEndpointCloudwatchLogsId:
+    Description: The Endpoint Id
+    Value: !Ref VpcEndpointCloudwatchLogs
+
+#  VpcEndpointCloudwatchLogsDnsEntries:
+#    Description: The Endpoint Id
+#    Value: !GetAtt VpcEndpointCloudwatchLogs.DnsEntries
+
+#  VpcEndpointCloudwatchLogsNetworkInterfaceIds:
+#    Description: The Endpoint Id
+#    Value: !GetAtt VpcEndpointCloudwatchLogs.NetworkInterfaceIds
