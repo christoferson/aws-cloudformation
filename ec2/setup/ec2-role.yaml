@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 - Role
+
+Resources:
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "Instance Role"
+      RoleName: !Ref 'AWS::NoValue'
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      Policies: !Ref 'AWS::NoValue'
+
+  InstanceRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: InstanceRolePolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:List*
+          Resource:
+          - '*'
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogStreams
+          Resource:
+          - arn:aws:logs:*:*:*
+      Roles:
+      - !Ref 'InstanceRole'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - !Ref InstanceRole
