@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'LAB S3 VPC ENDPOINT'
+Description: 'LAB S3 VPC ENDPOINT (Gateway Endpoint)'
 
 Parameters:
 
