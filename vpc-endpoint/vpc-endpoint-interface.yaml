@@ -37,8 +37,8 @@ Parameters:
     Description: Private VpcSubnets for Endpoint
     Type: List<AWS::EC2::Subnet::Id>
 
-#  VpcEndpointSecurityGroupIdList:
-#    Type: List<AWS::EC2::SecurityGroup::Id>
+  VpcEndpointSecurityGroupIdList:
+    Type: List<AWS::EC2::SecurityGroup::Id>
 
 Resources:
 
@@ -49,7 +49,7 @@ Resources:
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     VpcEndpointType: Interface
-    #SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
     PrivateDnsEnabled: true
 
 
