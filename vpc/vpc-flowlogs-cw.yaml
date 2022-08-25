@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC FlowLogs - Log to Cloudwatch'
+
+Parameters:
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+Resources:
+
+
+  VpcFlowLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "Vpc Flow Logs Role"
+      RoleName: !Ref AWS::NoValue
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - vpc-flow-logs.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      Policies: !Ref 'AWS::NoValue'
+
+  VpcFlowLogsRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: VpcFlowLogsRolePolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogStreams
+          Resource:
+          - arn:aws:logs:*:*:*
+      Roles:
+      - !Ref VpcFlowLogsRole
+
+  VpcFlowLogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      #LogGroupName: !Ref LogGroupName
+      RetentionInDays: 3
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
+
+  VpcFlowLogsCloudwatch:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: VPC #NetworkInterface | Subnet | VPC
+      ResourceId: !Ref VpcId
+      TrafficType: REJECT #ACCEPT | ALL | REJECT
+      MaxAggregationInterval: 600
+      LogDestinationType: cloud-watch-logs #cloud-watch-logs | s3
+      LogGroupName: !Ref VpcFlowLogsLogGroup
+      DeliverLogsPermissionArn: !GetAtt VpcFlowLogsRole.Arn
+      Tags:
+        - Key: Name
+          Value: FlowLogForSubnetB
+        - Key: Purpose
+          Value: AcceptTraffic
+
+Outputs:
+
+  VpcFlowLogsCloudwatchId:
+    Description: The FlowLog Id
+    Value: !Ref VpcFlowLogsCloudwatch
