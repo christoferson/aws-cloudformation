@@ -45,13 +45,32 @@ Resources:
  VpcEndpointCloudwatchLogs:
   Type: AWS::EC2::VPCEndpoint
   Properties:
+    VpcEndpointType: Interface
     ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
-    VpcEndpointType: Interface
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
     PrivateDnsEnabled: true
 
+ VpcEndpointEventBridge:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.events'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
+
+ VpcEndpointSSM:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
 
 Outputs:
 
