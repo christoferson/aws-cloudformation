@@ -1,7 +1,22 @@
----
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Vpc Endpoint (Gateway Endpoint) - S3'
-# TODO Params meta
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - RouteTableIdList
+
 Parameters:
 
   Application:
