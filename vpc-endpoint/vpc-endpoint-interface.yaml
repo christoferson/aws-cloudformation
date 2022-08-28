@@ -72,6 +72,26 @@ Resources:
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
     PrivateDnsEnabled: true
 
+ VpcEndpointEcr:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
+
+ VpcEndpointEcrApi:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
+
 Outputs:
 
   VpcEndpointCloudwatchLogsId:
