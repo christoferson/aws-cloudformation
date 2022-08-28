@@ -92,6 +92,17 @@ Resources:
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
     PrivateDnsEnabled: true
 
+ VpcEndpointKms:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.kms'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
+
+
 Outputs:
 
   VpcEndpointCloudwatchLogsId:
