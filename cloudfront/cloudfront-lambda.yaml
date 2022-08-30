@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFront distribution with Lambda Function as origin
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      - Label:
+          default: Lambda Function Endpoint
+        Parameters:
+          - LambdaEndpoint
+
+    ParameterLabels:
+
+      LambdaEndpoint:
+        default: Function URL endpoint (No https prefix)
+
+Parameters:
+
+  LambdaEndpoint:
+    Type: String
+    Description: Enter the Lambda Function URL endpoint
+    Default: "w18zapoescpo4gulnbcwarjgha0jamro.lambda-url.us-west-1.on.aws"
+
+Resources:
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        PriceClass: PriceClass_200 #PriceClass_100 | PriceClass_200 | PriceClass_All
+        HttpVersion: http2
+        IPV6Enabled: false
+        Comment: !Sub Distribution with Lambda Function URL
+        Origins:
+        - DomainName: !Ref LambdaEndpoint
+          Id: LambdaOrigin
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            HTTPSPort: 443
+            OriginProtocolPolicy: https-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+          OriginCustomHeaders:
+            - HeaderName: c_security
+              HeaderValue: secret
+        DefaultCacheBehavior:
+          TargetOriginId: LambdaOrigin
+          CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6' #CachingOptimized
+          ViewerProtocolPolicy: redirect-to-https #allow-all | https-only | redirect-to-https
+          SmoothStreaming: 'false'
+          Compress: 'true'
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+Outputs:
+
+  CloudFrontDomain:
+    Description: CloudFront default domain name configured
+    Value: !Sub https://${CloudFrontDistribution.DomainName}/
