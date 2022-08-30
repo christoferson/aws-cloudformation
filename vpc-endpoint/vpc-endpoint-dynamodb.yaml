@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Vpc Endpoint (Gateway Endpoint) - DynamoDB'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - RouteTableIdList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  RouteTableIdList:
+    Description : "VPC ID"
+    Type: CommaDelimitedList
+    Default: "rtb-xxxxx,rtb-yyy"
+
+Resources:
+
+  VpcEndpointS3:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Gateway # Gateway | GatewayLoadBalancer | Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcId: !Ref VpcId
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - "dynamodb:*"
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*"
+      RouteTableIds: !Ref RouteTableIdList
+      #  - rtb-xxxxx
+      #SecurityGroupIds:
+
+
+Outputs:
+
+  VpcEndpointId:
+    Description: The Endpoint Id
+    Value: !Ref VpcEndpointS3
+    
