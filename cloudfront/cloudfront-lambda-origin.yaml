@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloudfront Lambda Origin
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "cloudfront-lambda-origin-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "cloudfront-lambda-origin"
+      Description: "Basic Lambda"
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Timeout: 15 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code: # c_security is header sent from cloudfront
+        ZipFile: |
+          exports.handler = async (event, context, callback) => {
+              console.log(event);
+              if (event.headers['c_security'] !== 'secret') {
+                  return { statusCode: 401, body: JSON.stringify('Access Denied!'), };
+              }
+              context.succeed("success!");
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref LambdaFunction
+      #Qualifier: dev # The alias name.
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "https://*"
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      #FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionUrlAuthType: NONE
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+  LambdaFunctionUrl:
+    Value: !GetAtt LambdaUrl.FunctionUrl
+
+
