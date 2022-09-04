@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: CloudFront S3 Bucket origin
+Description: CloudFront S3 Bucket Origin
 
 Resources:
 
@@ -10,6 +10,14 @@ Resources:
       AccessControl: PublicRead
       VersioningConfiguration:
          Status: Suspended
+      BucketEncryption: # SSE-KMS (CMK)
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256 #AES256 | aws:kms
+            BucketKeyEnabled: true
+      Tags:
+        - Key: "Name"
+          Value: "cloudfront-s3-origin"
 
   BucketPolicy:
     Type: "AWS::S3::BucketPolicy"
