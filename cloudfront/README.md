@@ -32,9 +32,25 @@ Bucket must allow public access and appropriate bucket policy.
 Provision a cloudfront for S3. 
 No ACM Certificate/Alias. No OAI.
 
-[cloudfront-s3](cloudfront-s3.yaml)
+[cloudfront-s3-website-origin](cloudfront-s3-website-origin.yaml)
+[cloudfront-s3-website](cloudfront-s3-website.yaml)
 
 
 ### References
 - managed cache policies
 - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html
+- https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html
+
+### TODO
+- Origin
+- OAI
+- Create Origin Group
+- AWS WAF
+- Alternate domain name (CNAME) 
+- Custom SSL certificate - optional
+- Standard logging
+- Error Response
+- Multi Path
+
+Migrating from origin access identity (OAI) to origin access control (OAC)
+https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
