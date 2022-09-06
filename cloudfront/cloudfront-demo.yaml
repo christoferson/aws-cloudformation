@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFront distribution with Multiple Origins
+
+Parameters:
+
+  BucketDomainName:
+    Type: String
+    Description: S3 Bucket Endpoint URL. (No Protocol Prefix)
+    Default: bucket-name.s3.amazonaws.com
+
+  BucketWebsiteEndpoint:
+    Type: String
+    Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
+    Default: my-bucket-name.s3-website-us-west-1.amazonaws.com
+
+Resources:
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        PriceClass: PriceClass_100 #PriceClass_100 | PriceClass_200 | PriceClass_All
+        HttpVersion: http2
+        IPV6Enabled: false
+        Comment: !Sub Distribution with Multiple Origins
+        Origins:
+        - DomainName: !Sub "${BucketDomainName}"
+          Id: !Sub "S3BucketOrigin"
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            #HTTPSPort: 443
+            OriginProtocolPolicy: http-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+        - DomainName: !Sub "${BucketWebsiteEndpoint}"
+          Id: !Sub "S3BucketWebsiteOrigin"
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            #HTTPSPort: 443
+            #Amazon S3 doesnÅft support HTTPS connections for static website hosting endpoints.
+            OriginProtocolPolicy: http-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+        CacheBehaviors:
+        - PathPattern: bucket-ws/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          ForwardedValues:
+            QueryString: false
+            #Headers:
+            #- Host
+          TargetOriginId: S3BucketWebsiteOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+        - PathPattern: bucket/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          ForwardedValues:
+            QueryString: false
+            #Headers:
+            #- Host
+          TargetOriginId: S3BucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+        DefaultCacheBehavior:
+          TargetOriginId: !Sub "S3BucketOrigin"
+          #CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6' #CachingOptimized
+          ViewerProtocolPolicy: redirect-to-https #allow-all | https-only | redirect-to-https
+          AllowedMethods:
+          - GET
+          - HEAD
+          CachedMethods:
+          - GET
+          - HEAD
+          SmoothStreaming: false
+          Compress: true
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            QueryString: false
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+Outputs:
+
+  CloudFrontDomain:
+    Description: CloudFront default domain name configured
+    Value: !Sub https://${CloudFrontDistribution.DomainName}/
