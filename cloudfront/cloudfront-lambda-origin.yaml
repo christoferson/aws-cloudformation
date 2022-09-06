@@ -36,10 +36,13 @@ Resources:
               if (event.headers['c_security'] !== 'secret') {
                   return { statusCode: 401, body: JSON.stringify('Access Denied!'), };
               }
-              context.succeed("success!");
+              context.succeed(JSON.stringify("LambdaOrigin!"));
           };
       TracingConfig:
         Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "cloudfront-lambda-origin"
 
   LambdaUrl:
     Type: AWS::Lambda::Url
