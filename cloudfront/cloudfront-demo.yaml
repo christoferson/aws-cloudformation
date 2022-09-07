@@ -17,6 +17,10 @@ Metadata:
         Parameters: 
           - CloudFrontOriginAccessIdentityBucketDomainName
           - CloudFrontOriginAccessIdentity
+      - Label: 
+          default: "Lambda URL Origin Configuration"
+        Parameters: 
+          - LambdaEndpoint
 
     ParameterLabels: 
       BucketDomainName: 
@@ -45,6 +49,11 @@ Parameters:
     Type: String
     Description: "CloudFrontOriginAccessIdentity"
     Default: "E1AY8F53CDYM9E"
+
+  LambdaEndpoint:
+    Type: String
+    Description: Enter the Lambda Function URL endpoint
+    Default: "w18zapoescpo4gulnbcwarjgha0jamro.lambda-url.us-west-1.on.aws"
 
 Resources:
 
@@ -83,6 +92,18 @@ Resources:
           ConnectionTimeout: 10
           S3OriginConfig:
             OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
+        - DomainName: !Ref LambdaEndpoint
+          Id: LambdaOrigin
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            HTTPSPort: 443
+            OriginProtocolPolicy: https-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+          OriginCustomHeaders:
+            - HeaderName: c_security
+              HeaderValue: secret
         CacheBehaviors:
         - PathPattern: bucket-ws/*
           AllowedMethods:
@@ -124,6 +145,20 @@ Resources:
             #Headers:
             #- Host
           TargetOriginId: S3OriginOAI
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+        - PathPattern: lambda/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          ForwardedValues:
+            QueryString: false
+            #Headers:
+            #- Host
+          TargetOriginId: LambdaOrigin
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
         DefaultCacheBehavior:
