@@ -1,6 +1,29 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: CloudFront distribution with Multiple Origins
 
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "S3 Origin Configuration"
+        Parameters: 
+          - BucketDomainName
+      - Label: 
+          default: "S3 Website Origin Configuration"
+        Parameters: 
+          - BucketWebsiteEndpoint
+      - Label: 
+          default: "S3 OAI Origin Configuration"
+        Parameters: 
+          - CloudFrontOriginAccessIdentityBucketDomainName
+          - CloudFrontOriginAccessIdentity
+
+    ParameterLabels: 
+      BucketDomainName: 
+        default: "Bucket Domain Name"
+      BucketWebsiteEndpoint: 
+        default: "Bucket Website Domain Name"
+
 Parameters:
 
   BucketDomainName:
@@ -12,6 +35,16 @@ Parameters:
     Type: String
     Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
     Default: my-bucket-name.s3-website-us-west-1.amazonaws.com
+
+  CloudFrontOriginAccessIdentityBucketDomainName:
+    Type: String
+    Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
+    Default: bucket-name.s3.amazonaws.com
+
+  CloudFrontOriginAccessIdentity:
+    Type: String
+    Description: "CloudFrontOriginAccessIdentity"
+    Default: "E1AY8F53CDYM9E"
 
 Resources:
 
@@ -44,6 +77,12 @@ Resources:
             OriginProtocolPolicy: http-only #http-only | https-only | match-viewer
             OriginKeepaliveTimeout: 5
             OriginReadTimeout: 30
+        - DomainName: !Sub "${CloudFrontOriginAccessIdentityBucketDomainName}"
+          Id: !Sub "S3OriginOAI"
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
         CacheBehaviors:
         - PathPattern: bucket-ws/*
           AllowedMethods:
@@ -71,6 +110,20 @@ Resources:
             #Headers:
             #- Host
           TargetOriginId: S3BucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+        - PathPattern: oai/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          ForwardedValues:
+            QueryString: false
+            #Headers:
+            #- Host
+          TargetOriginId: S3OriginOAI
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
         DefaultCacheBehavior:
