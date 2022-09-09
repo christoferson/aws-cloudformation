@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFront distribution with S3 as origin
+
+Parameters:
+
+#  BucketName:
+#    Type: String
+
+  BucketWebsiteEndpoint:
+    Type: String
+    Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
+    Default: my-bucket-name.s3-website-us-west-1.amazonaws.com
+
+Resources:
+
+#  Bucket:
+#    Type: "AWS::S3::Bucket"
+#    Properties:
+#      BucketName: !Ref BucketName
+#      AccessControl: PublicRead
+#      VersioningConfiguration:
+#         Status: Suspended
+#      WebsiteConfiguration:
+#        IndexDocument: index.html
+#        ErrorDocument: index.html
+
+#  BucketPolicy:
+#    Type: "AWS::S3::BucketPolicy"
+#    Properties:
+#      Bucket: !Ref Bucket
+#      PolicyDocument:
+#        Statement:
+#        - Action: "s3:GetObject"
+#          Effect: Allow
+#          Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+#          Principal: '*'
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        PriceClass: PriceClass_200 #PriceClass_100 | PriceClass_200 | PriceClass_All
+        HttpVersion: http2
+        IPV6Enabled: false
+        Comment: !Sub Distribution with S3
+        Origins:
+        - DomainName: !Sub "${BucketWebsiteEndpoint}"
+          Id: !Sub "S3Origin"
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            #HTTPSPort: 443
+            #Amazon S3 doesnÅft support HTTPS connections for static website hosting endpoints.
+            OriginProtocolPolicy: http-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+        DefaultCacheBehavior:
+          TargetOriginId: !Sub "S3Origin"
+          #CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6' #CachingOptimized
+          ViewerProtocolPolicy: redirect-to-https #allow-all | https-only | redirect-to-https
+          AllowedMethods:
+          - GET
+          - HEAD
+          CachedMethods:
+          - GET
+          - HEAD
+          SmoothStreaming: false
+          Compress: true
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            QueryString: false
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+Outputs:
+
+  CloudFrontDomain:
+    Description: CloudFront default domain name configured
+    Value: !Sub https://${CloudFrontDistribution.DomainName}/
