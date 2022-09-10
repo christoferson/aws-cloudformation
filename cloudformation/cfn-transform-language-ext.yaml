@@ -4,8 +4,15 @@ Description: LanguageExtensions
 
 Parameters:
 
+  InputText:
+    Type: String
+    Default: Text Value
+    Description: "Text Value"
+
   InputList:
     Type: CommaDelimitedList
+    Default: 1,2,3
+    Description: "Comma Delimited Text"
 
 Resources:
 
@@ -30,5 +37,14 @@ Outputs:
     Value: 
       Fn::Length: !Ref InputList
 
-  
+  ObjectJsonString:
+    Value: 
+      Fn::ToJsonString: 
+        Key1: !Sub "${InputText}-1"
+        Key2: !Sub "${InputText}-2"
 
+  ArrayJsonString:
+    Value: 
+      Fn::ToJsonString: 
+        - Element1: !Sub "${InputText}-1"
+          Element2: !Sub "${InputText}-2"

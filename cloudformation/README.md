@@ -9,9 +9,11 @@
 
 ## Cloudformation - Transform - Language Extensions
 
-Demo Language extensions transform
+Demo Language extensions transform. Uses new implicit functions Fn::Length, Fn::ToJsonString
 
 https://aws.amazon.com/jp/about-aws/whats-new/2022/09/aws-cloudformation-new-language-extensions-transform/
+
+https://github.com/aws-cloudformation/cfn-language-discussion
 
 [cfn-transform-language-ext](cfn-transform-language-ext.yaml)
 
