@@ -7,10 +7,18 @@
 
 ### Mappings
 
+## Cloudformation - Transform - Language Extensions
+
+Demo Language extensions transform
+
+https://aws.amazon.com/jp/about-aws/whats-new/2022/09/aws-cloudformation-new-language-extensions-transform/
+
+[cfn-transform-language-ext](cfn-transform-language-ext.yaml)
+
 
 ### Errors
 
-## SSM Secure reference is not supported in: [AWS::IAM::Role/Properties/Tags,AWS::IAM::Role/Properties/Tags]
+#### SSM Secure reference is not supported in: [AWS::IAM::Role/Properties/Tags,AWS::IAM::Role/Properties/Tags]
         - Key: "DynamicSsmSecureLatest"
           Value: !Sub "{{resolve:ssm-secure:/demo/database/password}}"
         - Key: "DynamicSsmSecureVersion"
@@ -41,3 +49,5 @@ Cause: FindInMap did not resolve any value. No defaulting.
 ## Links
 
 - [Sample Templates](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-sample-templates.html)
+
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
