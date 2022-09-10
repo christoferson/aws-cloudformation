@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Intrinsic Functions
+
+Parameters:
+
+  InputText:
+    Type: String
+    Default: Text Value
+    Description: "Text Value"
+
+Resources:
+
+  DummyResourceRole: 
+    Type: "AWS::IAM::Role"
+    Properties: 
+      Path: "/"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+
+Outputs:
+
+  DemoRef:
+    Value: 
+      !Ref InputText
+
