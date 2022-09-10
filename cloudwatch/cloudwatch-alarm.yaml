@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudWatch
+
+Resources:
+
+  CloudWatchAlaramSnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      #TopicName: !Sub "${Application}-${Environment}-${TopicName}"
+      DisplayName: "Cloudwatch Alarm Topic"
+      Tags:
+        -
+          Key: "Name"
+          Value: "cloudwatch-alarm-topic"
+
+  EC2StatusCheckFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: "MyCloudWatchAlarm"
+      Namespace: MyNamespace
+      MetricName: ErrorCount
+      Dimensions:
+        - Name: InstanceId
+          Value: "1662602716588"
+      AlarmActions:
+        - !Ref CloudWatchAlaramSnsTopic
+      OKActions:
+        - !Ref CloudWatchAlaramSnsTopic
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1  # 閾値超過回数
+      Threshold: 0  # 閾値
+      TreatMissingData: breaching  # 欠落データは不良
+      ComparisonOperator: GreaterThanThreshold  # 閾値より大きい
