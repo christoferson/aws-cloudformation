@@ -3,32 +3,42 @@ Description: CloudWatch
 
 Resources:
 
-  CloudWatchAlaramSnsTopic:
-    Type: "AWS::SNS::Topic"
+  CloudWatchAlarmSnsTopic:
+    Type: AWS::SNS::Topic
     Properties:
-      #TopicName: !Sub "${Application}-${Environment}-${TopicName}"
       DisplayName: "Cloudwatch Alarm Topic"
       Tags:
         -
           Key: "Name"
           Value: "cloudwatch-alarm-topic"
 
-  EC2StatusCheckFailedAlarm:
+  CloudWatchAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: "MyCloudWatchAlarm"
+      ActionsEnabled: true
+      #AlarmName: "MyCloudWatchAlarm"
+      AlarmDescription: "CloudWatch Alarm"
       Namespace: MyNamespace
       MetricName: ErrorCount
       Dimensions:
         - Name: InstanceId
           Value: "1662602716588"
       AlarmActions:
-        - !Ref CloudWatchAlaramSnsTopic
+        - !Ref CloudWatchAlarmSnsTopic
       OKActions:
-        - !Ref CloudWatchAlaramSnsTopic
-      Statistic: Average
-      Period: 60
-      EvaluationPeriods: 1  # 閾値超過回数
-      Threshold: 0  # 閾値
-      TreatMissingData: breaching  # 欠落データは不良
-      ComparisonOperator: GreaterThanThreshold  # 閾値より大きい
+        - !Ref CloudWatchAlarmSnsTopic
+      InsufficientDataActions:
+        - !Ref CloudWatchAlarmSnsTopic
+      Statistic: Average #Average | Maximum | Minimum | SampleCount | Sum
+      Period: 60 #10, 30, 60, and any multiple of 60
+      DatapointsToAlarm: 10
+      EvaluationPeriods: 10
+      Threshold: 5
+      TreatMissingData: ignore  # breaching, notBreaching, ignore, and missing
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+Outputs:
+
+  CloudWatchAlarmArn:
+    Description: CloudWatch Alarm Arn
+    Value: !GetAtt CloudWatchAlarm.Arn
