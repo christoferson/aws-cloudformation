@@ -28,6 +28,25 @@ Resources:
 Outputs:
 
   DemoRef:
-    Value: 
-      !Ref InputText
+    Value: !Ref InputText
 
+  #DemoCidr:
+  #  Value: !Cidr [ "192.168.0.0/24", 6, 8 ]
+
+  DemoCidrSelect0:
+    Value: !Select [ 0, !Cidr [ "10.0.0.0/16", 4, 8 ]]
+
+  DemoCidrSelect1:
+    Value: !Select [ 1, !Cidr [ "10.0.0.0/16", 4, 8 ]]
+
+  ListAZGet0: 
+    Value: 
+     !Select 
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+
+  ListAZGet1: 
+    Value: 
+     !Select 
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
