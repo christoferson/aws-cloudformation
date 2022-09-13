@@ -24,22 +24,33 @@ Bucket must allow public access and appropriate bucket policy.
     ]
 }
 ```
-
+[cloudfront-s3-bucket-origin](cloudfront-s3-bucket-origin.yaml)
 [cloudfront-s3-bucket](cloudfront-s3-bucket.yaml)
 
 ### Cloudfront - S3 - Static Website
 
-Provision a cloudfront for S3. 
+Provision a cloudfront for S3 Static WebSite. 
 No ACM Certificate/Alias. No OAI.
 
 [cloudfront-s3-website-origin](cloudfront-s3-website-origin.yaml)
 [cloudfront-s3-website](cloudfront-s3-website.yaml)
 
+### Cloudfront - S3 - Origin Access Identifier
+
+Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
+
+[cloudfront-s3-oai-origin](cloudfront-s3-oai-origin.yaml)
+[cloudfront-s3-oai](cloudfront-s3-oai.yaml)
+
+### Cloudfront - S3 - Origin Access Control
+
 
 ### References
+- [cloudformation](https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_CloudFront.html)
 - managed cache policies
 - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html
 - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-cloudfront-originaccesscontrol.html
 
 ### TODO
 - Origin
