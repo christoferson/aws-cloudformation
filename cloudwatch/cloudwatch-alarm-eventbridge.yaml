@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudWatch - EventBridge integration
+
+Resources:
+
+  CloudWatchAlarmSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: "Cloudwatch Alarm Topic"
+      Tags:
+        -
+          Key: "Name"
+          Value: "cloudwatch-alarm-topic"
+
+  CloudWatchAlarmSnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref CloudWatchAlarmSnsTopic
+      PolicyDocument:
+        Statement:
+          - Sid: AllowEvents
+            Effect: Allow
+            Principal:
+              Service: 
+                - events.amazonaws.com
+                - cloudwatch.amazonaws.com
+            Action: 'sns:Publish'
+            Resource: 
+              - !Ref CloudWatchAlarmSnsTopic
+          #- Sid: AllowAccount
+          #  Effect: Allow
+          #  Principal:
+          #    AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+          #  Action: 'sns:Publish'
+          #  Resource: 
+          #    - !Ref CloudWatchAlarmSnsTopic
+
+  CloudWatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: false
+      #AlarmName: "MyCloudWatchAlarm"
+      AlarmDescription: "CloudWatch Alarm EventBridge"
+      Namespace: MyNamespace
+      MetricName: ErrorCount
+      Dimensions:
+        - Name: InstanceId
+          Value: "1662602716588"
+      #AlarmActions:
+      #  - !Ref CloudWatchAlarmSnsTopic
+      #OKActions:
+      #  - !Ref CloudWatchAlarmSnsTopic
+      #InsufficientDataActions:
+      #  - !Ref CloudWatchAlarmSnsTopic
+      Statistic: Average #Average | Maximum | Minimum | SampleCount | Sum
+      Period: 60 #10, 30, 60, and any multiple of 60
+      DatapointsToAlarm: 10
+      EvaluationPeriods: 10
+      Threshold: 5
+      TreatMissingData: ignore  # breaching, notBreaching, ignore, and missing
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+  CloudWatchAlarmEventBridgeRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: ""
+      Description: "CodeCommit Notification Trigger on Pull Request Merge"
+      #EventBusName: default
+      State: "ENABLED"
+      EventPattern:
+        source:
+          - aws.cloudwatch
+        detail-type:
+          - "CloudWatch Alarm State Change"
+        resources:
+          - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${CloudWatchAlarm}"
+      Targets:
+        - 
+          Arn: !Ref CloudWatchAlarmSnsTopic
+          Id: "TargetSnsTopic"
+          InputTransformer:
+            InputPathsMap:
+              "AlarmName": "$.detail.alarmName"
+            InputTemplate: |
+              "Alarm Change state to Alarm!"
+              "Alarm name : <AlarmName>"
+
+Outputs:
+
+  CloudWatchAlarmArn:
+    Description: CloudWatch Alarm Arn
+    Value: !GetAtt CloudWatchAlarm.Arn
