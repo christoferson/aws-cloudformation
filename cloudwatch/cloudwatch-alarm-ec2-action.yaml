@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudWatch - Alarm - EC2 Action
+
+Resources:
+
+  CloudWatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      #AlarmName: ""
+      AlarmDescription: "CloudWatch Alarm"
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: InstanceId
+          Value: "574583750843"
+      AlarmActions:
+        - !Sub "arn:aws:automate:${AWS::Region}:ec2:stop"
+      Statistic: Average
+      Period: 60
+      DatapointsToAlarm: 10
+      EvaluationPeriods: 10
+      Threshold: 70
+      TreatMissingData: ignore
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+Outputs:
+
+  CloudWatchAlarmArn:
+    Description: CloudWatch Alarm Arn
+    Value: !GetAtt CloudWatchAlarm.Arn
