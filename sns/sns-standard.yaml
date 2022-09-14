@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SNS
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
+  TopicName:
+    Type: String
+    Default: sample-topic
+    Description: Topic Name    
+
+Resources:
+  
+  SNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      #TopicName: !Sub "${Application}-${Environment}-${TopicName}"
+      DisplayName: "My Topic Standard"
+      FifoTopic: false
+      #ContentBasedDeduplication: false #alias/aws/sns
+      #KmsMasterKeyId: "alias/aws/sns"
+      KmsMasterKeyId: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/sns"
+      Tags:
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+        -
+          Key: "Application"
+          Value: !Ref Application
+
+#  Subscription:
+#    Type: AWS::SNS::Subscription
+#    Properties:
+#      Endpoint: test@example.com
+#      Protocol: email
+#      TopicArn: !Ref SNSTopic
+
+
+Outputs:
+
+  SNSTopicArn:
+    Description: SNSTopic
+    Value: !Ref SNSTopic
+
