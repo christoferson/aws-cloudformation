@@ -39,7 +39,7 @@ Resources:
   CloudWatchAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      ActionsEnabled: false
+      ActionsEnabled: true
       #AlarmName: "MyCloudWatchAlarm"
       AlarmDescription: "CloudWatch Alarm EventBridge"
       Namespace: MyNamespace
@@ -47,12 +47,12 @@ Resources:
       Dimensions:
         - Name: InstanceId
           Value: "1662602716588"
-      #AlarmActions:
-      #  - !Ref CloudWatchAlarmSnsTopic
-      #OKActions:
-      #  - !Ref CloudWatchAlarmSnsTopic
-      #InsufficientDataActions:
-      #  - !Ref CloudWatchAlarmSnsTopic
+      AlarmActions:
+        - !Ref CloudWatchAlarmSnsTopic
+      OKActions:
+        - !Ref CloudWatchAlarmSnsTopic
+      InsufficientDataActions:
+        - !Ref CloudWatchAlarmSnsTopic
       Statistic: Average #Average | Maximum | Minimum | SampleCount | Sum
       Period: 60 #10, 30, 60, and any multiple of 60
       DatapointsToAlarm: 10
