@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudWatch - Alarm - EC2 Action
+Description: CloudWatch - Alarm - Action - EC2
 
 Resources:
 
@@ -8,7 +8,7 @@ Resources:
     Properties:
       ActionsEnabled: true
       #AlarmName: ""
-      AlarmDescription: "CloudWatch Alarm"
+      AlarmDescription: "CloudWatch Alarm EC2 Action"
       Namespace: AWS/EC2
       MetricName: CPUUtilization
       Dimensions:
@@ -23,6 +23,7 @@ Resources:
       Threshold: 70
       TreatMissingData: ignore
       ComparisonOperator: GreaterThanOrEqualToThreshold
+
 
 Outputs:
 

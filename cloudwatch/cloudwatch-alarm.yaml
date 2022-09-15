@@ -37,6 +37,52 @@ Resources:
       TreatMissingData: ignore  # breaching, notBreaching, ignore, and missing
       ComparisonOperator: GreaterThanOrEqualToThreshold
 
+  # AWS Metrics
+      #Namespace: AWS/EC2
+      #MetricName: StatusCheckFailed
+
+      #Namespace: AWS/EC2
+      #MetricName: CPUCreditBalance
+
+      #MetricName: CPUUtilization
+
+      #Namespace: CWAgent
+      #MetricName: mem_used_percent
+
+      #Namespace: CWAgent
+      #MetricName: disk_used_percent
+
+      #Namespace: CWAgent
+      #MetricName: procstat_lookup_pid_count
+
+      #Namespace: AWS/ApplicationELB
+      #MetricName: HealthyHostCount
+
+      #Namespace: AWS/ApplicationELB
+      #MetricName: RejectedConnectionCount
+
+      #MetricName: TargetConnectionErrorCount
+      #Namespace: AWS/ApplicationELB
+
+      #MetricName: TargetTLSNegotiationErrorCount
+      #Namespace: AWS/ApplicationELB
+
+      #MetricName: CPUCreditBalance
+      #Namespace: AWS/RDS
+
+      #MetricName: DatabaseConnections
+      #Namespace: AWS/RDS
+
+      #MetricName: Deadlocks
+      #Namespace: AWS/RDS
+
+      #MetricName: FreeableMemory
+      #Namespace: AWS/RDS
+
+      #MetricName: CPUUtilization
+      #Namespace: AWS/RDS
+
+
 Outputs:
 
   CloudWatchAlarmArn:
