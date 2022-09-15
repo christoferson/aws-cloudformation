@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda Basic with Inline Source (Python)
+Description: Lambda Basic with Inline Source (Python) - EC2
 
 Resources:
 
@@ -39,7 +39,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       #FunctionName : "basic-lambda-python"
-      Description: "Basic Lambda Python"
+      Description: "Lambda Python - EC2"
       Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
@@ -63,7 +63,7 @@ Resources:
                 # Iterate over regions
                 for region in regions:
                 
-                    print ("* Checking region  --   %s " % region['RegionName'])
+                    print ("Checking Region -- %s " % region['RegionName'])
                     reg=region['RegionName']
                 
                     client = boto3.client('ec2', region_name=reg)
@@ -71,7 +71,7 @@ Resources:
                     print(response)
                     for reservation in response["Reservations"]:
                         for instance in reservation["Instances"]:
-                            print ("  ---- Instance %s in %s" % (instance['InstanceId'], region['RegionName']))
+                            print ("  Instance %s in %s" % (instance['InstanceId'], region['RegionName']))
                             ec2list.append(instance['InstanceId'])
 
                 return {
