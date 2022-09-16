@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Basic with Inline Source (Python) (RDS)
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-python-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - !Ref LambdaExecutionRolePolicy
+
+  LambdaExecutionRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "LambdaExecutionRolePolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'rds:*'
+            Effect: Allow
+            Resource: "*"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda-python"
+      Description: "RDS - Stop Instance if Running"
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          CUSTOM_DB_INSTANCE_ID: "xxx"
+      Code:
+        ZipFile: |
+            import json
+            import boto3
+            import os
+            instance = os.environ["CUSTOM_DB_INSTANCE_ID"]
+
+            def handler(event, context):
+                try:
+                  rds = boto3.client('rds')
+                  #rds.stop_db_instance(DBInstanceIdentifier=instance)
+                  response = rds.describe_db_instances(DBInstanceIdentifier=instance)
+                  db_instance_list = response['DBInstances']
+                  for db_instance in db_instance_list:
+                    db_instance_id = db_instance['DBInstanceIdentifier']
+                    db_instance_status = db_instance['DBInstanceStatus']
+                    print("InstanceID:", db_instance_id, "", "InstanceStatus:", db_instance_status)
+                    if 'available' == db_instance_status:
+                      rds.stop_db_instance(DBInstanceIdentifier=db_instance_id)
+                except Exception as e:
+                    print(f'Got Exception: {e}')
+                return "200"
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+  EventBridgeScheduledRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: xx
+      Description: "ScheduledRule to Trigger Lambda"
+      #EventBusName: default
+      ScheduleExpression: "rate(1 day)"
+      State: "ENABLED"
+      Targets: #up to five (5) targets
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunctionV1"
+
+  InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeScheduledRule.Arn
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+
