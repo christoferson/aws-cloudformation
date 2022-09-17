@@ -18,7 +18,23 @@ Resources:
         - Key: "Name"
           Value: "custom-event-bus"
 
+  EventBridgeEventBusPolicy: 
+      Type: AWS::Events::EventBusPolicy
+      Properties: 
+          EventBusName: !Ref EventBridgeEventBus
+          StatementId: "statement"
+          Statement:
+              Effect: "Allow"
+              Principal: "*"
+              Action: "events:PutEvents"
+              Resource: !GetAtt "EventBridgeEventBus.Arn"
+              Condition:
+                  StringEquals:
+                      "aws:PrincipalOrgID": "o-1234567890"
 Outputs:
 
   EventBridgeEventBusArn:
     Value: !GetAtt EventBridgeEventBus.Arn
+
+  EventBridgeEventBusPolicyId:
+    Value: !Ref EventBridgeEventBusPolicy
