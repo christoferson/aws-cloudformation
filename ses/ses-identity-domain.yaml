@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SES - Identity - Domain
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
+  VerifiedIdentityName:
+    Type: String
+    Default: xxx.com
+    Description: "domain to verify"
+
+Resources:
+
+  VerifiedIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref VerifiedIdentityName
+      #ConfigurationSetAttributes:
+      #  ConfigurationSetName: xxx
+      DkimAttributes:
+        SigningEnabled: true
+      DkimSigningAttributes:
+        NextSigningKeyLength: RSA_2048_BIT # RSA_1024_BIT | RSA_2048_BIT
+      FeedbackAttributes:
+        EmailForwardingEnabled: true
+      MailFromAttributes:
+        BehaviorOnMxFailure: REJECT_MESSAGE # USE_DEFAULT_VALUE | REJECT_MESSAGE
+        MailFromDomain: !Sub "mailer.${VerifiedIdentityName}"
+
+Outputs:
+
+  VerifiedIdentityDkimTokenName1:
+    Value: !GetAtt VerifiedIdentity.DkimDNSTokenName1
+
+  VerifiedIdentityDkimTokenName2:
+    Value: !GetAtt VerifiedIdentity.DkimDNSTokenName2
+
+  VerifiedIdentityDkimTokenName3:
+    Value: !GetAtt VerifiedIdentity.DkimDNSTokenName3
+
+  VerifiedIdentityDkimTokenValue1:
+    Value: !GetAtt VerifiedIdentity.DkimDNSTokenValue1
+
+  VerifiedIdentityDkimTokenValue2:
+    Value: !GetAtt VerifiedIdentity.DkimDNSTokenValue2
+
+  VerifiedIdentityDkimTokenValue3:
+    Value: !GetAtt VerifiedIdentity.DkimDNSTokenValue3
