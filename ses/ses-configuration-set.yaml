@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SES - Configuration Set
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
+  ConfigSetName:
+    Type: String
+    Default: default-config
+    Description: Config Set Name
+
+Resources:
+
+  ConfigSet:
+    Type: 'AWS::SES::ConfigurationSet'
+    Properties:
+      SendingOptions:
+        SendingEnabled: true
+      DeliveryOptions:
+        #SendingPoolName: ""
+        TlsPolicy: OPTIONAL #REQUIRE | OPTIONAL
+      ReputationOptions:
+        ReputationMetricsEnabled: false
+      #SuppressionOptions:
+      #  SuppressedReasons:
+      #    - COMPLAINT
+      #    - BOUNCE
+      #TrackingOptions:
+      #  CustomRedirectDomain: xxx
+
+Outputs:
+
+  ConfigSetArn:
+    Description: ConfigSet
+    Value: !Ref ConfigSet
