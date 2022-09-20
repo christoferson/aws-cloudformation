@@ -13,15 +13,10 @@ Parameters:
     Default: stg
     Description: Environment
 
-  ConfigSetName:
-    Type: String
-    Default: default-config
-    Description: Config Set Name
-
 Resources:
 
   ConfigSet:
-    Type: 'AWS::SES::ConfigurationSet'
+    Type: AWS::SES::ConfigurationSet
     Properties:
       SendingOptions:
         SendingEnabled: true
@@ -37,8 +32,70 @@ Resources:
       #TrackingOptions:
       #  CustomRedirectDomain: xxx
 
+  ConfigSetEventDestinationSnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      #TopicName: !Sub "${Application}-${Environment}-${TopicName}"
+      DisplayName: "SES SNS Topic"
+      FifoTopic: false
+      #KmsMasterKeyId: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/sns"
+      Tags:
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+        -
+          Key: "Application"
+          Value: !Ref Application
+
+  ConfigSetEventDestinationSnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref ConfigSetEventDestinationSnsTopic
+      PolicyDocument:
+        Statement:
+          - Sid: allow-ses
+            Effect: Allow
+            Principal:
+              Service:
+                - ses.amazonaws.com
+            Action: 
+              - 'sns:Publish'
+            Resource:
+              - !Ref ConfigSetEventDestinationSnsTopic
+            Condition:
+              StringEquals:
+                'AWS:SourceOwner': !Ref AWS::AccountId
+              #StringEquals:
+              #  'AWS:SourceArn': !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/identity_name"
+
+  ConfigSetEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    DependsOn:
+      - ConfigSetEventDestinationSnsTopic
+      - ConfigSetEventDestinationSnsTopicPolicy
+    Properties:
+      ConfigurationSetName: !Ref ConfigSet
+      EventDestination:
+        #Name: !Ref EventDestinationName
+        Enabled: true
+        MatchingEventTypes:
+          - reject
+          - bounce
+          - complaint
+        SnsDestination:
+          TopicARN: !Ref ConfigSetEventDestinationSnsTopic
+        #CloudWatchDestination:
+        #  DimensionConfigurations:
+        #    - DimensionName: !Ref DimensionName1
+        #      DimensionValueSource: !Ref DimensionValueSource1
+        #      DefaultDimensionValue: !Ref DefaultDimensionValue1
+        #    - DimensionName: !Ref DimensionName2
+        #      DimensionValueSource: !Ref DimensionValueSource2
+        #      DefaultDimensionValue: !Ref DefaultDimensionValue2
+
 Outputs:
 
-  ConfigSetArn:
-    Description: ConfigSet
+  ConfigSetName:
+    Description: ConfigurationSet Name
     Value: !Ref ConfigSet
