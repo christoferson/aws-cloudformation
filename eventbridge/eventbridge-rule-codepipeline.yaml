@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (CodePipeline - Pipeline) - Invoke Lambda
+
+Resources:
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "EventBridge Lambda Notification Handler"
+      Runtime: nodejs16.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              if (event.type == 'error') { throw new Error('Authentication Failed'); }
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify('success'),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "eventbridge-rule-lambda"
+
+  EventBridgeRule: 
+    Type: AWS::Events::Rule
+    Properties:
+      State: "ENABLED"
+      Description: "EventBridgeRule"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codepipeline
+        detail-type:
+          - "CodePipeline Pipeline Execution State Change"
+          #- "CodePipeline Action Execution State Change"
+          #- CodePipeline Stage Execution State Change
+        #resources:
+        #  - "arn:aws:codepipeline:us-gov-west-1:294518889195:pipeline:myPipeline"
+        #  - !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+        detail:
+          pipeline: 
+            - "MyCodePipeline"
+          state:
+            - "FAILED"
+            - "SUCCEEDED"
+      Targets:
+        - 
+          Arn: !GetAtt LambdaFunction.Arn
+          Id: "TargetFunction"
+
+  InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRule.Arn
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  FunctionExecutionRoleArn:
+    Value: !GetAtt FunctionExecutionRole.Arn
+
