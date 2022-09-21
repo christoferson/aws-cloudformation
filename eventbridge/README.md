@@ -1,12 +1,32 @@
 ## EventBridge Cloudformation
 
+### EventBridge - EventBus
+
+Provision a Custom Event Bus
+
+[eventbridge-eventbus](eventbridge-eventbus.yaml)
+
+### EventBridge - Rule - CloudWatch Alarm
+
+[eventbridge-rule-cloudwatch-alarm](eventbridge-rule-cloudwatch-alarm.yaml)
+
+### EventBridge - CodePipeline - Pipeline
+
+Privision EventBride rule to detect 'CodePipeline Pipeline Execution State Change' and invoke lambda.
+
+[eventbridge-rule-codepipeline](eventbridge-rule-codepipeline.yaml) | [reference](https://docs.aws.amazon.com/codepipeline/latest/userguide/detect-state-changes-cloudwatch-events.html)
+
+### EventBridge - Rule - Custom
+
+[eventbridge-rule-custom](eventbridge-rule-custom.yaml)
+
 ### EventBridge - Periodic - Trigger Lambda
 
 Provision an EventBridge rule that periodically triggers a Lambda Function.
 
-[eventbridge-trigger-lambda](eventbridge-trigger-lambda.yaml)
+[eventbridge-call-lambda-schedule](eventbridge-call-lambda-schedule.yaml)
 
-### EventBridge - CodeCommit - Trigger Lambda
+### EventBridge - Rule - CodeCommit - Trigger Lambda
 
 Provision an EventBridge rule that triggers a Lambda Function on CodeCommit events.
 
@@ -33,3 +53,16 @@ Also includes settings to transform the input Event into a custom output format.
 
 [eventbridge-rule-codecommit](eventbridge-rule-codecommit.yaml)
 
+### EventBridge - Rule - S3 - Trigger Lambda
+
+[s3/eventbridge-rule-s3](s3/eventbridge-rule-s3.yaml)
+
+### Refernces
+
+- https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_Events.html
+
+
+### TODO
+
+Receiving events using AWS Lambda function URLs
+https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-saas-furls.html
