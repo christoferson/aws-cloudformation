@@ -14,6 +14,8 @@ Provision a Custom Event Bus
 
 Privision EventBride rule to detect 'CodePipeline Pipeline Execution State Change' and invoke lambda.
 
+CodePipeline Pipeline Execution State Change: CANCELED | FAILED | RESUMED | STARTED | STOPPED | STOPPING | SUCCEEDED | SUPERSEDED 
+
 [eventbridge-rule-codepipeline](eventbridge-rule-codepipeline.yaml) | [reference](https://docs.aws.amazon.com/codepipeline/latest/userguide/detect-state-changes-cloudwatch-events.html)
 
 ### EventBridge - Rule - Custom
