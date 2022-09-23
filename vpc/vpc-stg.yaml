@@ -59,6 +59,7 @@ Metadata:
           - PrivateSubnet02Block
 
 Resources:
+
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -71,12 +72,17 @@ Resources:
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-${Environment}-igw'
 
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
     Properties:
-      InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
