@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backup - Service Setup
+
+Resources:
+
+  BackupServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: AWSBackupDefaultServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: backup.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+      - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      Path: "/"
+      Tags:
+        - Key: 'Name'
+          Value: 'backup-service-role'
+
+  BackupVault:
+    Type: "AWS::Backup::BackupVault"
+    Properties:
+      BackupVaultName: !Sub "backup-vault"
+      BackupVaultTags:
+        Owner: Me 
+      #EncryptionKeyArn: <Use Aws Managed Default>
+      #LockConfiguration:
+      #  MinRetentionDays: 365
+      #AccessPolicy:
+      #Notifications
