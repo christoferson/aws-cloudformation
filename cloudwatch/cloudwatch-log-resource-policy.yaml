@@ -9,6 +9,31 @@ Resources:
       PolicyName: "Route53CloudWatchLogs"
       PolicyDocument: "{ \"Version\": \"2012-10-17\", \"Statement\": [ { \"Sid\": \"Route53LogsToCloudWatchLogs\", \"Effect\": \"Allow\", \"Principal\": { \"Service\": [ \"route53.amazonaws.com\" ] }, \"Action\":\"logs:PutLogEvents\", \"Resource\": \"logArn\" } ] }"
 
+  LogResourcePolicyDataSync:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: "DataSyncCloudWatchLogs"
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "datasync.amazonaws.com"
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": [ "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:*" ],
+              "Condition": {
+                "StringEquals": { "aws:SourceAccount": "${AWS::AccountId}" },
+                "ArnLike": { "aws:SourceArn": [ "arn:aws:datasync:${AWS::Region}:${AWS::AccountId}:task/*" ] }
+              }
+            }
+          ]
+        }
 
 Outputs:
 
