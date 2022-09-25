@@ -3,6 +3,8 @@ Description: DataSync S3 to S3
 
 Resources:
 
+# Source
+
   DataSyncSourceBucket:
     Type: AWS::S3::Bucket
     #DeletionPolicy: Retain
@@ -119,6 +121,126 @@ Resources:
         - Key: "Name"
           Value: "datasync-source"
 
+# Destination
+
+
+  DataSyncDestinationBucket:
+    Type: AWS::S3::Bucket
+    #DeletionPolicy: Retain
+    Properties:
+      #BucketName: !Sub ${SystemName}-${EnvType}-${Tagprefix}-${S3BucketName1}-${AWS::AccountId}
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Suspended          
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: 
+          - ServerSideEncryptionByDefault: 
+              SSEAlgorithm: AES256                  
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: false           
+      Tags:
+        - Key: "Name"
+          Value: "datasync-dst-bucket"      
+
+  DataSyncDestinationServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub ${SystemName}-${EnvType}-${Tagprefix}-DataSync-Destination-IAM-Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "datasync.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      #MaxSessionDuration: 3600        
+      Path: /
+      Tags:
+        - Key: "Name"
+          Value: "datasync-dst-service-role"
+
+  DataSyncDestinationServiceRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy to Access DataSync Destination
+      Path: /
+      #ManagedPolicyName: !Sub ${SystemName}-${EnvType}-${Tagprefix}-DataSync-Destination-IAM-Policy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Sid: bucket
+            Action:
+              - s3:GetBucketLocation
+              - s3:ListBucket
+              - s3:ListBucketMultipartUploads
+            Resource:
+              - !Sub "arn:${AWS::Partition}:s3:::${DataSyncDestinationBucket}"
+          - Effect: Allow
+            Sid: bucketobject
+            Action:
+              - s3:AbortMultipartUpload
+              - s3:DeleteObject
+              - s3:GetObject
+              - s3:ListMultipartUploadParts
+              - s3:PutObjectTagging
+              - s3:GetObjectTagging
+              - s3:PutObject
+            Resource:
+              - !Sub "arn:${AWS::Partition}:s3:::${DataSyncDestinationBucket}/*"
+      Roles:
+        - !Ref DataSyncDestinationServiceRole
+
+  DataSyncDestinationBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataSyncDestinationBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt DataSyncDestinationServiceRole.Arn
+            Action: 
+              - s3:GetBucketLocation
+              - s3:ListBucket
+              - s3:ListBucketMultipartUploads
+              - s3:AbortMultipartUpload
+              - s3:DeleteObject
+              - s3:GetObject
+              - s3:ListMultipartUploadParts
+              - s3:PutObject
+              - s3:GetObjectTagging
+              - s3:PutObjectTagging
+            Resource: 
+              - !Sub "arn:${AWS::Partition}:s3:::${DataSyncDestinationBucket}"
+              - !Sub "arn:${AWS::Partition}:s3:::${DataSyncDestinationBucket}/*"
+
+  DataSyncDestination:
+    Type: AWS::DataSync::LocationS3
+    DependsOn: 
+      - DataSyncDestinationBucketPolicy 
+    Properties:
+      S3BucketArn: !Sub "arn:${AWS::Partition}:s3:::${DataSyncDestinationBucket}"
+      S3Config:
+        BucketAccessRoleArn: !GetAtt DataSyncDestinationServiceRole.Arn
+      S3StorageClass: STANDARD
+      #Subdirectory: ""
+      Tags:
+        - Key: "Name"
+          Value: "datasync-destination"
+
+
 Outputs:
 
   DataSyncSourceBucket:
@@ -128,3 +250,15 @@ Outputs:
   DataSyncSource:
     Description: DataSyncSource
     Value: !Ref DataSyncSource
+
+  DataSyncDestinationBucket:
+    Description: DataSyncDestinationBucket
+    Value: !Ref DataSyncDestinationBucket
+
+  DataSyncDestination:
+    Description: DataSyncDestination
+    Value: !Ref DataSyncDestination
+
+  DataSyncTaskTaskArn:
+    Description: DataSyncTaskTaskArn
+    Value: !GetAtt DataSyncTask.TaskArn
