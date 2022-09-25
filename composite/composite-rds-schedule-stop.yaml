@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Lambda Basic with Inline Source (Python) (RDS)
 
+Parameters:
+
+  DatabaseInstanceId:
+    Description: Database Instance Identifier
+    Type: String
+    Default: "yyy"
+
 Resources:
 
   LambdaExecutionRole:
@@ -43,7 +50,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          CUSTOM_DB_INSTANCE_ID: "xxx"
+          CUSTOM_DB_INSTANCE_ID: !Ref DatabaseInstanceId
       Code:
         ZipFile: |
             import json
@@ -73,7 +80,7 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
-      RetentionInDays: 1
+      RetentionInDays: 3
 
   EventBridgeScheduledRule: 
     Type: AWS::Events::Rule
@@ -81,7 +88,7 @@ Resources:
       #Name: xx
       Description: "ScheduledRule to Trigger Lambda"
       #EventBusName: default
-      ScheduleExpression: "rate(1 day)"
+      ScheduleExpression: "rate(8 hours)" #"rate(1 day)"
       State: "ENABLED"
       Targets: #up to five (5) targets
         - 
