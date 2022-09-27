@@ -240,6 +240,54 @@ Resources:
         - Key: "Name"
           Value: "datasync-destination"
 
+#
+
+  DataSyncLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      #LogGroupName: !Sub "/aws/datasync/logs"
+      RetentionInDays: 1
+      Tags:
+        - Key: Name
+          Value: "datasync-log-group"
+
+
+#
+
+  DataSyncTask:
+    Type: AWS::DataSync::Task
+    Properties:
+      #Name: !Sub "datasync-task"
+      SourceLocationArn: !GetAtt DataSyncSource.LocationArn
+      DestinationLocationArn: !GetAtt DataSyncDestination.LocationArn
+      CloudWatchLogGroupArn:  !GetAtt DataSyncLogGroup.Arn
+      Schedule:
+        ScheduleExpression: "cron(0 15 * * ? *)"
+      #Excludes:
+        #- FilterType: SIMPLE_PATTERN
+        #  Value: /folder1|/folder2
+      #Includes:
+        #- FilterType: SIMPLE_PATTERN
+        #  Value: /folder1|/folder2
+      Options:
+        BytesPerSecond: "1048576" #1MB
+        LogLevel: "TRANSFER" # BASIC | OFF | TRANSFER
+        Atime:  "BEST_EFFORT"
+        Mtime:  "PRESERVE"
+        ObjectTags: "PRESERVE" # NONE | PRESERVE
+        OverwriteMode: "ALWAYS"  #ALWAYS | NEVER
+        PosixPermissions: "NONE"
+        PreserveDeletedFiles: "PRESERVE" #PRESERVE | REMOVE
+        PreserveDevices: "NONE"
+        TaskQueueing: "ENABLED"
+        TransferMode: "CHANGED"
+        Uid: "NONE"
+        VerifyMode: "ONLY_FILES_TRANSFERRED"
+      Tags:
+        - Key: Name
+          Value: "datasync-task"
+
+
 
 Outputs:
 
