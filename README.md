@@ -1,33 +1,35 @@
-# aws-cloudformation
-Aws Cloudformation Templates
+# AWS Cloudformation Templates
+
+##### [API Gateway](api-gateway/README.md)
+
+##### [Backup](backup/README.md)
+
+##### [Batch](batch/README.md)
+
+##### [Cloudfront](cloudfront/README.md)
+
+##### [EC2](/ec2/README.md)
+
+##### [KMS](kms/README.md)
+
+### Lambda
 
 
-## Batch
-
-[readme](batch/README.md)
-
-## EC2
-
-[readme](/ec2/README.md)
-
-## Lambda
-
-
-### Lambda triggered by SQS
+#### Lambda triggered by SQS
 
 lambda-trigger-sqs.yaml
 
 
 
 
-## S3
+### S3
 
-### S3 Notification Handler Lambda
+#### S3 Notification Handler Lambda
 
 s3-handler-lambda.yaml
 
 
-TODO
+### TODO
 
 ### Lambda triggered by S3
 
@@ -47,3 +49,5 @@ aws cloudformation validate-template --template-body file://C:\xxx\yyy\zzz\lambd
 ## Links
 
 https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues
+
+https://github.com/awsdocs/aws-cloudformation-user-guide/blob/main/CONTRIBUTING.md
