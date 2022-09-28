@@ -10,6 +10,14 @@
 
 ##### [EC2](/ec2/README.md)
 
+##### [EC2 ImageBuilder](/ec2-imagebuilder/README.md)
+
+##### [ECR](ecr/README.md)
+
+##### [ECS](ecs/README.md)
+
+##### [EFS](efs/README.md)
+
 ##### [KMS](kms/README.md)
 
 ### Lambda
