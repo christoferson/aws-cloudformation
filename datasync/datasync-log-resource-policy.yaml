@@ -20,11 +20,14 @@ Resources:
                 "logs:CreateLogStream",
                 "logs:PutLogEvents"
               ],
-              "Resource": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:*"
+              "Resource": [ "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:*" ],
+              "Condition": {
+                "StringEquals": { "aws:SourceAccount": "${AWS::AccountId}" },
+                "ArnLike": { "aws:SourceArn": [ "arn:aws:datasync:${AWS::Region}:${AWS::AccountId}:task/*" ] }
+              }
             }
           ]
         }
-
 
 Outputs:
 
