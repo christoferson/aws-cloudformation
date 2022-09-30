@@ -20,15 +20,15 @@
 
 ##### [KMS](kms/README.md)
 
-### Lambda
+##### [Lambda](lambda/README.md)
 
+###### [Lambda triggered by SQS](lambda/lambda-trigger-sqs.yaml)
 
-#### Lambda triggered by SQS
+##### [RDS](rds/README.md)
 
-lambda-trigger-sqs.yaml
+##### [Redshift](redshift/README.md)
 
-
-
+##### [Route53](route53/README.md)
 
 ### S3
 
