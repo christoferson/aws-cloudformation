@@ -16,7 +16,7 @@ Parameters:
   VerifiedIdentityName:
     Type: String
     Default: xxx@yyy.com
-    Description: "email address or domain to verify"
+    Description: "email address to verify"
 
 Resources:
 

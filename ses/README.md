@@ -26,3 +26,26 @@ Cause: SNS topic has encryption enabled but SES has no permission for the KMS ke
 ### Links
 
 - [cloudformation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_SES.html)
+
+### SES SMTP Credentials
+
+User is the IAM Access Key. Password is derived/calculated from the IAM Secret Key.
+Make sure the IAM User have the required permissions to send emails.
+
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "ses:SendRawEmail",
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+- [AWS Documentation](https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html#smtp-credentials-console)
+- [Java Code to derive SMTP Password from IAM Secret Key](smtp/AwsSesSmtpPasswordCalculator.java)
+
+
