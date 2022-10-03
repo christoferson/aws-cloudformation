@@ -2,9 +2,15 @@
 
 ### EventBridge - EventBus
 
-Provision a Custom Event Bus
+Provision a Custom Event Bus with Custom Policy.
 
 [eventbridge-eventbus](eventbridge-eventbus.yaml)
+
+### EventBridge - Periodic - Trigger Lambda
+
+Provision an EventBridge rule that periodically triggers a Lambda Function.
+
+[eventbridge-call-lambda-schedule](eventbridge-call-lambda-schedule.yaml)
 
 ### EventBridge - Rule - CloudWatch Alarm
 
@@ -18,15 +24,13 @@ CodePipeline Pipeline Execution State Change: CANCELED | FAILED | RESUMED | STAR
 
 [eventbridge-rule-codepipeline](eventbridge-rule-codepipeline.yaml) | [reference](https://docs.aws.amazon.com/codepipeline/latest/userguide/detect-state-changes-cloudwatch-events.html)
 
+### EventBrdige - Rule - Health
+
+[eventbridge-rule-health](eventbridge-rule-health.yaml)
+
 ### EventBridge - Rule - Custom
 
 [eventbridge-rule-custom](eventbridge-rule-custom.yaml)
-
-### EventBridge - Periodic - Trigger Lambda
-
-Provision an EventBridge rule that periodically triggers a Lambda Function.
-
-[eventbridge-call-lambda-schedule](eventbridge-call-lambda-schedule.yaml)
 
 ### EventBridge - Rule - CodeCommit - Trigger Lambda
 
@@ -59,7 +63,7 @@ Also includes settings to transform the input Event into a custom output format.
 
 [s3/eventbridge-rule-s3](s3/eventbridge-rule-s3.yaml)
 
-### Refernces
+### References
 
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_Events.html
 
