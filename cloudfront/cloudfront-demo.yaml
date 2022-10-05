@@ -18,6 +18,11 @@ Metadata:
           - CloudFrontOriginAccessIdentityBucketDomainName
           - CloudFrontOriginAccessIdentity
       - Label: 
+          default: "S3 OAC Origin Configuration"
+        Parameters: 
+          - CloudFrontOriginAccessControlBucketDomainName
+          - CloudFrontOriginAccessControlId
+      - Label: 
           default: "Lambda URL Origin Configuration"
         Parameters: 
           - LambdaEndpoint
@@ -50,6 +55,16 @@ Parameters:
     Description: "CloudFrontOriginAccessIdentity"
     Default: "E1AY8F53CDYM9E"
 
+  CloudFrontOriginAccessControlBucketDomainName:
+    Type: String
+    Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
+    Default: bucket-name.s3.amazonaws.com
+
+  CloudFrontOriginAccessControlId:
+    Type: String
+    Description: "CloudFrontOriginAccessControlId"
+    Default: "E1021E835ZN5FD"
+
   LambdaEndpoint:
     Type: String
     Description: Enter the Lambda Function URL endpoint
@@ -63,7 +78,7 @@ Resources:
       DistributionConfig:
         Enabled: true
         PriceClass: PriceClass_100 #PriceClass_100 | PriceClass_200 | PriceClass_All
-        HttpVersion: http2
+        HttpVersion: http2 # http1.1 | http2 | http2and3 | http3
         IPV6Enabled: false
         Comment: !Sub Distribution with Multiple Origins
         Origins:
@@ -92,6 +107,12 @@ Resources:
           ConnectionTimeout: 10
           S3OriginConfig:
             OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
+        - DomainName: !Ref CloudFrontOriginAccessControlBucketDomainName
+          Id: !Sub "S3OriginOAC"
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          S3OriginConfig: {}
+          OriginAccessControlId: !Ref CloudFrontOriginAccessControlId
         - DomainName: !Ref LambdaEndpoint
           Id: LambdaOrigin
           ConnectionAttempts: 3
@@ -145,6 +166,20 @@ Resources:
             #Headers:
             #- Host
           TargetOriginId: S3OriginOAI
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+        - PathPattern: oac/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          ForwardedValues:
+            QueryString: false
+            #Headers:
+            #- Host
+          TargetOriginId: S3OriginOAC
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
         - PathPattern: lambda/*
