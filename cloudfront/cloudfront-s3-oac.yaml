@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFront (Origin Access Control)
+
+Parameters:
+
+  BucketDomainName:
+    Type: String
+    Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
+    Default: bucket-name.s3.amazonaws.com
+
+  CloudFrontOriginAccessControlId:
+    Type: String
+    Description: "CloudFrontOriginAccessControlId"
+    Default: "E1021E835ZN5FD"
+
+Resources:
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        PriceClass: PriceClass_100 #PriceClass_100 | PriceClass_200 | PriceClass_All
+        #Aliases:
+        #- !Ref WebsiteDomainName
+        HttpVersion: http2
+        IPV6Enabled: false
+        Comment: !Sub Distribution with S3 Bucket (OAC)
+        Origins:
+        - DomainName: !Ref BucketDomainName
+          Id: !Sub "S3OriginOAC"
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          S3OriginConfig: {}
+          OriginAccessControlId: !Ref CloudFrontOriginAccessControlId
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: !Sub "S3OriginOAC"
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+          - GET
+          - HEAD
+          CachedMethods:
+          - GET
+          - HEAD
+          SmoothStreaming: false
+          DefaultTTL: 3600
+          MaxTTL: 86400
+          MinTTL: 60
+          Compress: true
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            QueryString: false
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        #ViewerCertificate:
+        #  SslSupportMethod: sni-only
+        #  MinimumProtocolVersion: TLSv1.1_2016
+        #  AcmCertificateArn: !Sub "arn:aws:acm:us-east-1:${AWS::AccountId}:certificate/${CertificateID}"
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+Outputs:
+
+  CloudFrontDomain:
+    Description: CloudFront default domain name configured
+    Value: !Sub https://${CloudFrontDistribution.DomainName}/
