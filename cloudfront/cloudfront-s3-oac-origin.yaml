@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: CloudFront S3 Bucket Origin (Origin Access Control)
 
+Parameters:
+
+  CloudFrontDistributionId:
+    Type: String
+    Description: "CloudFrontDistributionId"
+    Default: "E1521E835ZN7KD"
+
 Resources:
 
   Bucket:
@@ -45,9 +52,9 @@ Resources:
           Resource: !Sub "arn:aws:s3:::${Bucket}/*"
           Principal:
             Service: "cloudfront.amazonaws.com"
-          #Condition:
-          #  StringEquals:
-          #    AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/<DistributionId>"
+          Condition:
+            StringEquals:
+              AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}"
 Outputs:
 
   BucketDomainName:
