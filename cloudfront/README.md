@@ -53,6 +53,8 @@ Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
 - Invalid request provided: Illegal configuration: The origin type and OAC origin type differ. 
   For S3 OAC, make sure you specify S3OriginConfig instead of CustomOriginConfig
 
+- Exactly one of [AcmCertificateArn, CloudFrontDefaultCertificate, IamCertificateId] needs to be specified
+
 ### References
 - [cloudformation](https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_CloudFront.html)
 - managed cache policies
