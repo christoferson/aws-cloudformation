@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM - Access Analyzer
+
+Resources:
+
+  Analyzer:
+    Type: AWS::AccessAnalyzer::Analyzer
+    Properties:
+      #AnalyzerName: MyAccountAnalyzer
+      Type: ACCOUNT
+      ArchiveRules:
+        -
+          # Archive findings for a trusted AWS account
+          RuleName: ArchiveTrustedAccountAccess
+          Filter:
+            -
+              Property: 'principal.AWS'
+              Eq:
+                - '923456789012'
+      Tags:
+        -
+          Key: Kind
+          Value: Dev
+
+Outputs:
+
+  AnalyzerArn:
+    Value: !Ref Analyzer
