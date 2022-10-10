@@ -248,7 +248,8 @@ Resources:
     Properties: 
       VpcId: !Ref VpcId
       #Name: !Sub "${PJPrefix}-${InternetALBName}-tg"
-      Protocol: HTTP
+      Protocol: HTTP # GENEVE | HTTP | HTTPS | TCP | TCP_UDP | TLS | UDP
+      ProtocolVersion: HTTP2 # GRPC, HTTP1, and HTTP2
       Port: 80
       HealthCheckProtocol: HTTP
       HealthCheckPath: "/"
@@ -268,6 +269,8 @@ Resources:
       #    Value: lb_cookie
       #  - Key: "stickiness.lb_cookie.duration_seconds"
       #    Value: 86400
+      # load_balancing.algorithm.type round_robin | least_outstanding_requests
+      # slow_start.duration_seconds 30-900 seconds (15 minutes). The default is 0 seconds (disabled)
       #Targets: 
       #  - Id: !Ref EC2Instance
       #    Port: 80

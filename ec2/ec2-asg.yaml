@@ -222,6 +222,7 @@ Resources:
       MinSize: !Ref 'Ec2AutoscaleMinSize'
       MaxSize: !Ref 'Ec2AutoscaleMaxSize'
       DesiredCapacity: !Ref 'Ec2AutoscaleDesiredCapacity'
+      HealthCheckType: EC2
 
   Ec2InstanceAutoScalingPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
