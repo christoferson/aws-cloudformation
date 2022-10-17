@@ -70,6 +70,7 @@ Resources:
         - COGNITO
       DefaultRedirectURI: "http://localhost:3000"
       ExplicitAuthFlows:
+        - 'ALLOW_USER_SRP_AUTH'
         - 'ALLOW_REFRESH_TOKEN_AUTH'
       LogoutURLs:
         - 'http://localhost:3000'
