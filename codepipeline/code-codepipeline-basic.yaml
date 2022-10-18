@@ -221,7 +221,7 @@ Resources:
           Actions:
             - Name: SourceAction
               ActionTypeId:
-                Category: Source
+                Category: Source # Source Build Test Deploy Invoke Approval
                 Owner: AWS
                 Version: 1
                 Provider: CodeCommit
