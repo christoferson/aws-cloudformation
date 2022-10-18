@@ -8,6 +8,8 @@
 
 ##### [Cloudfront](cloudfront/README.md)
 
+##### [Cognito](cognito/README.md)
+
 ##### [EC2](/ec2/README.md)
 
 ##### [EC2 ImageBuilder](/ec2-imagebuilder/README.md)
@@ -30,7 +32,15 @@
 
 ##### [Route53](route53/README.md)
 
-### S3
+##### [S3](s3/README.md)
+
+##### [Secrets Manager](secrets-manager/README.md)
+
+##### [SNS](sns/README.md)
+
+##### [SQS](sqs/README.md)
+
+##### [SSM](ssm/README.md)
 
 #### S3 Notification Handler Lambda
 
