@@ -1,5 +1,19 @@
 ## Cloudfront
 
+### Cloudfront - Demo
+
+Provision a cloudfront showcasing multiple Origin Types
+
+- bucket-ws/*  S3 Bucket Website Origin
+- bucket/* S3 Bucket Origin
+- oai/* S3 Origin OAI
+- oac/* S3 Origin OAC
+- lambda/* Lambda Origin
+- elb/* Load Balancer Origin (http)
+
+
+- [cloudfront-demo](cloudfront-demo.yaml)
+
 ### Cloudfront - Lambda
 
 Provision a cloudfront for Lambda Backend
@@ -74,6 +88,7 @@ Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
 - Standard logging
 - Error Response
 - Multi Path
+- Origin ALB
 
 Migrating from origin access identity (OAI) to origin access control (OAC)
 https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
