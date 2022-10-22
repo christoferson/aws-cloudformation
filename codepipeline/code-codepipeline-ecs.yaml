@@ -1,6 +1,36 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: CodePipeline For ECS Fargate
 
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Source Repository Configuration"
+        Parameters:
+          - CodeCommitRepositoryName
+      - Label:
+          default: "Container Repository Configuration"
+        Parameters:
+          - ContainerRepositoryName
+      - Label:
+          default: "ECS Fargate Configuration"
+        Parameters:
+          - ContainerClusterName
+          - ContainerServiceName
+          - ContainerName
+    ParameterLabels:
+      CodeCommitRepositoryName:
+        default: "CodeCommit Repository Name"
+      ContainerRepositoryName:
+        default: "ECR Container Repository Name"
+      ContainerClusterName:
+        default: "ECS Cluster Name"
+      ContainerServiceName:
+        default: "ECS TaskName"
+      ContainerName:
+        default: "ECS Task Container Name"
+
 Parameters:
 
   ContainerClusterName:
@@ -297,6 +327,8 @@ Resources:
           Value: "app"
         - Key: "environment"
           Value: "dev"
+        - Key: "source"
+          Value: !Sub "${CodeCommitRepositoryName}"
 
   LogGroupCodeBuildProject:
     Type: AWS::Logs::LogGroup
