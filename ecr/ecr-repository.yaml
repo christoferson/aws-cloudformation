@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ECR"
+
+Parameters:
+
+  RepositoryName:
+    Type: "String"
+    Default: "ecr-repository-demo"
+    Description: "ECR Repository Name"
+    
+Resources:
+
+  EcrRepository: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Ref RepositoryName
+      EncryptionConfiguration:
+        EncryptionType: AES256     
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration: 
+        ScanOnPush: true
+      Tags: 
+        - Key: "owner"
+          Value: "me"
+        - Key: "environment"
+          Value: "dev"
+
+Outputs:
+
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+ 
+  EcrRepositoryArn:
+    Value: !GetAtt EcrRepository.Arn    
