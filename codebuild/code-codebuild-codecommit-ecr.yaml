@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: CodeBuild For ECS Fargate
+Description: CodeBuild - CodeCommit to ECR
 
 Metadata:
 
@@ -202,6 +202,18 @@ Resources:
                 - echo "[{\"name\":\"${CONTAINER_NAME}\",\"imageUri\":\"${REPOSITORY_URI}:${IMAGE_TAG}\"}]" > imagedefinitions.json
           artifacts:
             files: imagedefinitions.json
+          cache:
+            paths:
+              - '/root/.m2/**/*'
+              - '/root/.npm/**/*'
+      Cache:
+        #Type: S3
+        #Location: !Sub "${CodeBuildOutputBucket}/cache"
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_SOURCE_CACHE
       Tags:
         - Key: "application"
           Value: "app"
