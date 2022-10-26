@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CodeBuild - CodeCommit to ECR
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Source Repository Configuration"
+        Parameters:
+          - CodeCommitRepositoryName
+      - Label:
+          default: "Container Repository Configuration"
+        Parameters:
+          - ContainerRepositoryName
+      - Label:
+          default: "ECS Fargate Configuration"
+        Parameters:
+          - ContainerName
+    ParameterLabels:
+      CodeCommitRepositoryName:
+        default: "CodeCommit Repository Name"
+      ContainerRepositoryName:
+        default: "ECR Container Repository Name"
+      ContainerClusterName:
+        default: "ECS Cluster Name"
+      ContainerServiceName:
+        default: "ECS TaskName"
+      ContainerName:
+        default: "ECS Task Container Name"
+
+Parameters:
+
+  CodeCommitRepositoryName: #Todo Add Branch Name
+    Description: CodeCommit Repository Name
+    Type: String
+    Default: "demo-server-blank"
+    
+  ContainerName:
+    Type: String
+    Default: "ecsdev-container"
+
+  ContainerRepositoryName:
+    Description: ECR Repository Name  
+    Type: String
+    Default: "demo-server-blank-ecr"
+
+Resources:
+
+  CodeBuildOutputBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      #BucketName: !Ref BucketName
+      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "code-build-demo-role"
+      Description: !Sub "CodeBuild Role"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref CodeBuildRolePolicy
+        #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Tags:
+        - Key: 'environment'
+          Value: common
+
+  CodeBuildRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeBuild Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'eks:Describe*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'ecr:GetAuthorizationToken'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::${CodeBuildOutputBucket}/*"
+          - Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+            Effect: Allow
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ContainerRepositoryName}"
+          - Action:
+              - 'ecr:BatchGetImage'
+              - 'ecr:GetDownloadUrlForLayer'
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ContainerRepositoryName}/*"
+          - Action:
+              - 'codecommit:GitPull'
+            Effect: Allow
+            Resource: !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+            
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      #Name: myProjectName
+      Description: Project Description
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: S3 # NO_ARTIFACTS | S3 | CODEPIPELINE
+        Location: !Sub "${CodeBuildOutputBucket}"
+        Path: /output
+        Name: build.zip
+        NamespaceType: BUILD_ID # NONE | BUILD_ID
+        Packaging: ZIP # NONE | ZIP
+        OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
+      Environment:
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        #Image: aws/codebuild/docker:18.09.0-1.7.0
+        Image: aws/codebuild/standard:5.0
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Value: !Ref ContainerRepositoryName
+          - Name: IMAGE_TAG
+            Value: "latest"
+          - Name: REPOSITORY_URI
+            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ContainerRepositoryName}
+          - Name: CONTAINER_NAME
+            Value: !Ref ContainerName
+      Source:
+        Type: CODECOMMIT # BITBUCKET | CODECOMMIT | CODEPIPELINE | GITHUB | GITHUB_ENTERPRISE | NO_SOURCE | S3
+        Location: !Sub "https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${CodeCommitRepositoryName}"
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}
+                #- $(aws ecr get-login --no-include-email)
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                - IMAGE_TAG=${COMMIT_HASH:=latest}
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building the Docker image...
+                - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker images...
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+                - echo Writing image definitions file...
+                - echo "[{\"name\":\"${CONTAINER_NAME}\",\"imageUri\":\"${REPOSITORY_URI}:${IMAGE_TAG}\"}]" > imagedefinitions.json
+          artifacts:
+            files: imagedefinitions.json
+          cache:
+            paths:
+              - '/root/.m2/**/*'
+              - '/root/.npm/**/*'
+      Cache:
+        #Type: S3
+        #Location: !Sub "${CodeBuildOutputBucket}/cache"
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_SOURCE_CACHE
+      Tags:
+        - Key: "application"
+          Value: "app"
+        - Key: "environment"
+          Value: "dev"
+
+  LogGroupCodeBuildProject:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/codebuild/${CodeBuildProject}"
+      RetentionInDays: 1
+
+Outputs:
+
+  CodeBuildRoleArn:
+    Value: !Ref CodeBuildRole
+
