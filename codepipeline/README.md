@@ -29,7 +29,7 @@ Provision a CodeCommit repository
 
 CodeBuild example with No Input Source and No Output Artifact
 
-code-codebuild-nosource
+[code-codebuild-nosource](code-codebuild-nosource.yaml)
 
 ### CodeBuild - Input:S3 Output:S3
 
@@ -81,6 +81,13 @@ code-codebuild-codecommit
         Packaging: ZIP
         OverrideArtifactName: true #Use Name in buildspec.yaml. Otherwise use Name'build.zip' defined here.
 ```
+### CodeBuild - Input:CodeCommit Output:S3 with ECR Push
+
+CodeBuild example with CodeCommit Input Source and S3 Output Artifact
+
+- BuildSpec pushes image to ECR
+
+[code-codebuild-codecommit-ecr](code-codebuild-codecommit-ecr.yaml)
 
 ### CodeBuild - Input:CodeCommit Output:S3 with Trigger on Commit
 
@@ -157,14 +164,13 @@ CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy
 
 - CodePipeline is triggered on CodeCommit push
 
-code-codepipeline-evt
+[code-codepipeline-evt](code-codepipeline-evt.yaml)
 
 ### CodePipeline Input:CodeCommit Stage:Source,Build,Deploy to ECS with Trigger on Push
 
 CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy. Deploys to ECS
 
-code-codepipeline-ecs
-
+[code-codepipeline-ecs](code-codepipeline-ecs.yaml)
 
 ## Resources
 
