@@ -6,6 +6,10 @@
 
 ##### [Batch](batch/README.md)
 
+##### [CodeCommit](codecommit/README.md)
+
+##### [CodeBuild](codebuild/README.md)
+
 ##### [Cloudfront](cloudfront/README.md)
 
 ##### [Cognito](cognito/README.md)

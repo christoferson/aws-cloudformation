@@ -46,25 +46,30 @@ Parameters:
     Default: 10.0.144.0/24
     Description: CidrBlock for public subnet 02 within the VPC
 
+  PublicSubnet03Block:
+    Type: String
+    Default: 10.0.160.0/24
+    Description: CidrBlock for public subnet 03 within the VPC
 
 Resources:
 
   VPC:
-    Type: AWS::EC2::VPC
+    Type: "AWS::EC2::VPC"
     Properties:
       CidrBlock: !Ref VpcBlock
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      InstanceTenancy: "default"
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-vpc'
+        Value: !Sub "${Application}-${Environment}-vpc"
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-igw'
+        Value: !Sub "${Application}-${Environment}-igw"
 
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -73,19 +78,19 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
-      - Key: Name
+      - Key: Description
         Value: Public Subnet Route Table
       - Key: Network
         Value: Public
-      - Key: Data
-        Value: !Sub '${Application}-${Environment}-public-route'
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
 
   PublicRoute:
-    Type: AWS::EC2::Route
+    Type: "AWS::EC2::Route"
     DependsOn: VPCGatewayAttachment
     Properties:
       RouteTableId: !Ref PublicRouteTable
@@ -109,8 +114,6 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
-      #- Key: kubernetes.io/role/elb
-      #  Value: 1
 
   PublicSubnet02:
     Type: AWS::EC2::Subnet
@@ -129,9 +132,27 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
-      #- Key: kubernetes.io/role/elb
-      #  Value: 1
 
+      
+  PublicSubnet03:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet 03
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+        - 2
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PublicSubnet03Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-3"
+
+      
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -144,6 +165,12 @@ Resources:
       SubnetId: !Ref PublicSubnet02
       RouteTableId: !Ref PublicRouteTable
 
+  PublicSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet03
+      RouteTableId: !Ref PublicRouteTable
+      
 Outputs:
 
   VpcId:
@@ -166,3 +193,6 @@ Outputs:
     Description: Public Subnet 2 ID
     Value: !Ref PublicSubnet02
 
+  PublicSubnet03Id:
+    Description: Public Subnet 3 ID
+    Value: !Ref PublicSubnet03
