@@ -7,11 +7,23 @@
 
 - VPC EnableDnsHostnames - Assign Public HostName to Instances if it has Public IP.
 
+#### Concepts - Private IP Address
+  
+  - (10.0.0.0/8) 10.0.0.0 - 10.255.255.255
+  - (172.16.0.0/12) 172.16.0.0 - 172.31.255.255
+  - (192.168.0.0/16) 192.168.0.0 - 192.168.255.255
+
 ### Vpc - 2 Public Subnets Only
 
 VPC with Public Subnets only and spans 2 Availability Zones
 
 [vpc-public](vpc-public.yaml)
+
+### Vpc - 3 Public Subnets Only
+
+VPC with Public Subnets only and spans 3 Availability Zones
+
+[vpc-public](3az/vpc-public.yaml)
 
 ### Vpc - 2 Public and Private Subnets + NAT Gateways
 
