@@ -18,7 +18,8 @@ Metadata:
           - VpcBlock
           - PublicSubnet01Block
           - PublicSubnet02Block
-
+          - PublicSubnet03Block
+          
 Parameters:
 
   Application:
@@ -133,7 +134,6 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
 
-      
   PublicSubnet03:
     Type: AWS::EC2::Subnet
     Metadata:
@@ -170,7 +170,7 @@ Resources:
     Properties:
       SubnetId: !Ref PublicSubnet03
       RouteTableId: !Ref PublicRouteTable
-      
+
 Outputs:
 
   VpcId:
