@@ -134,7 +134,7 @@ Resources:
       AvailabilityZone:
         Fn::Select:
         - 0
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PublicSubnet01Block
       Tags:
@@ -171,7 +171,7 @@ Resources:
       AvailabilityZone:
         Fn::Select:
         - '0'
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet01Block
       Tags:
@@ -188,8 +188,8 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone:
         Fn::Select:
-        - '1'
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - "1"
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet02Block
       Tags:

@@ -2,6 +2,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'VPC with Public and Private Subnets spanning 2 Availability Zones'
 
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcBlock
+          - PublicSubnet01Block
+          - PublicSubnet02Block
+          - PrivateSubnet01Block
+          - PrivateSubnet02Block
+
 Parameters:
 
   Application:
@@ -39,25 +59,6 @@ Parameters:
     Default: 10.0.32.0/20
     Description: CidrBlock for private subnet 02 within the VPC
 
-Metadata:
-  AWS::CloudFormation::Interface:
-    ParameterGroups:
-      -
-        Label:
-          default: "Application Configuration"
-        Parameters:
-          - Application
-          - Environment
-      -
-        Label:
-          default: "Network Configuration"
-        Parameters:
-          - VpcBlock
-          - PublicSubnet01Block
-          - PublicSubnet02Block
-          - PrivateSubnet01Block
-          - PrivateSubnet02Block
-
 Resources:
 
   VPC:
@@ -83,16 +84,17 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
       - Key: Name
-        Value: Public Subnets
+        Value: Public Subnet Route Table
       - Key: Network
         Value: Public
+      - Key: Data
+        Value: !Sub '${Application}-${Environment}-public-route'
 
   PrivateRouteTable01:
     Type: AWS::EC2::RouteTable
@@ -185,18 +187,16 @@ Resources:
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Subnet 01
+      Comment: Public Subnet 01
     Properties:
+      VpcId: !Ref VPC    
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - '0'
-        - Fn::GetAZs:
-            Ref: AWS::Region
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PublicSubnet01Block
-      VpcId:
-        Ref: VPC
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
@@ -206,18 +206,16 @@ Resources:
   PublicSubnet02:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Subnet 02
+      Comment: Public Subnet 02
     Properties:
+      VpcId: !Ref VPC    
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - '1'
-        - Fn::GetAZs:
-            Ref: AWS::Region
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
       CidrBlock:
         Ref: PublicSubnet02Block
-      VpcId:
-        Ref: VPC
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
@@ -227,17 +225,15 @@ Resources:
   PrivateSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Subnet 03
+      Comment: Private Subnet 01
     Properties:
+      VpcId: !Ref VPC
       AvailabilityZone:
         Fn::Select:
         - '0'
-        - Fn::GetAZs:
-            Ref: AWS::Region
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet01Block
-      VpcId:
-        Ref: VPC
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-private-1"
@@ -249,15 +245,13 @@ Resources:
     Metadata:
       Comment: Private Subnet 02
     Properties:
+      VpcId: !Ref VPC
       AvailabilityZone:
         Fn::Select:
-        - '1'
-        - Fn::GetAZs:
-            Ref: AWS::Region
+        - "1"
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet02Block
-      VpcId:
-        Ref: VPC
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-private-2"
