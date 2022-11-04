@@ -139,7 +139,7 @@ Resources:
               - 'codecommit:GitPull'
             Effect: Allow
             Resource: !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
-            
+
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -221,7 +221,7 @@ Resources:
           Value: "dev"
         - Key: "Name"
           Value: "codebuild-project"
-          
+
   LogGroupCodeBuildProject:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -230,7 +230,76 @@ Resources:
       Tags:
         - Key: "Name"
           Value: "codebuild-log-group"
-          
+
+## Trigger CodeBuild on Push
+
+  EventBridgeCodeBuilTriggerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: "Trigger CodeBuild"
+      #ManagedPolicyName:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - codebuild:StartBuild
+            Effect: Allow
+            #Resource: !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${CodeBuildProject}"
+            Resource: !Sub "${CodeBuildProject.Arn}"
+
+  EventBridgeCodeBuildTriggerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Path: /
+      #RoleName:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+      Description: "EventBridgeCodeBuildTriggerRole"
+      ManagedPolicyArns:
+        - !Ref EventBridgeCodeBuilTriggerPolicy
+      Tags:
+        - Key: 'environment'
+          Value: common
+        - Key: owner
+          Value: xxx
+
+  EventBridgeRuleCodeCommitOnPush: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-codecommit-on-push-sns
+      Description: "CodeCommit OnPush Trigger"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Repository State Change"
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - master
+            - main
+            - staging
+        resources:
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}" #TODO
+          # - !Sub "${CodeCommitRepository.Arn}" 
+      State: "ENABLED"
+      Targets:
+        -
+          Arn: !Sub "${CodeBuildProject.Arn}"
+          Id: "TriggerCodePipeline"
+          RoleArn: !GetAtt EventBridgeCodeBuildTriggerRole.Arn
+
+
 Outputs:
 
   CodeBuildRoleArn:
