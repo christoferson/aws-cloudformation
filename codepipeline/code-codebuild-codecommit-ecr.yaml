@@ -14,7 +14,7 @@ Metadata:
         Parameters:
           - ContainerRepositoryName
       - Label:
-          default: "ECS Fargate Configuration"
+          default: "Container Configuration"
         Parameters:
           - ContainerName
     ParameterLabels:
@@ -22,10 +22,6 @@ Metadata:
         default: "CodeCommit Repository Name"
       ContainerRepositoryName:
         default: "ECR Container Repository Name"
-      ContainerClusterName:
-        default: "ECS Cluster Name"
-      ContainerServiceName:
-        default: "ECS TaskName"
       ContainerName:
         default: "ECS Task Container Name"
 
@@ -35,15 +31,15 @@ Parameters:
     Description: CodeCommit Repository Name
     Type: String
     Default: "demo-server-blank"
-    
-  ContainerName:
-    Type: String
-    Default: "ecsdev-container"
 
   ContainerRepositoryName:
     Description: ECR Repository Name  
     Type: String
     Default: "demo-server-blank-ecr"
+    
+  ContainerName:
+    Type: String
+    Default: "ecsdev-container"
 
 Resources:
 
@@ -51,7 +47,7 @@ Resources:
     Type: "AWS::S3::Bucket"
     Properties:
       #BucketName: !Ref BucketName
-      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      AccessControl: "Private"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: True
         IgnorePublicAcls: True
@@ -67,6 +63,8 @@ Resources:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
       Tags:
+        - Key: "Name"
+          Value: "codebuild-output-bucket"
         - Key: "management"
           Value: "manual"
 
@@ -90,6 +88,8 @@ Resources:
       Tags:
         - Key: 'environment'
           Value: common
+        - Key: "Name"
+          Value: "codebuild-role"
 
   CodeBuildRolePolicy:
     Type: 'AWS::IAM::ManagedPolicy'
@@ -219,13 +219,18 @@ Resources:
           Value: "app"
         - Key: "environment"
           Value: "dev"
-
+        - Key: "Name"
+          Value: "codebuild-project"
+          
   LogGroupCodeBuildProject:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/codebuild/${CodeBuildProject}"
       RetentionInDays: 1
-
+      Tags:
+        - Key: "Name"
+          Value: "codebuild-log-group"
+          
 Outputs:
 
   CodeBuildRoleArn:
