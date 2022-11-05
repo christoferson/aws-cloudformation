@@ -21,7 +21,7 @@ Parameters:
 Resources:
 
   HttpApi:
-    Type: AWS::ApiGatewayV2::Api
+    Type: "AWS::ApiGatewayV2::Api"
     Properties:
       Version: 1
       Name: !Ref ApiGatewayName
@@ -43,9 +43,10 @@ Resources:
       Tags:
         Environment: test
         Application: api
+        Name: !Ref ApiGatewayName
 
   Integration:
-    Type: 'AWS::ApiGatewayV2::Integration'
+    Type: "AWS::ApiGatewayV2::Integration"
     Properties:
       ApiId: !Ref HttpApi
       Description: Lambda Integration
@@ -57,25 +58,25 @@ Resources:
       #TimeoutInMillis: 30000  # Custom timeout between 50 and 30,000 milliseconds
 
   RouteGetDemo:
-    Type: AWS::ApiGatewayV2::Route
+    Type: "AWS::ApiGatewayV2::Route"
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: !Sub 'GET /${ResourceName}'
+      RouteKey: !Sub "GET /${ResourceName}"
       AuthorizationType:  NONE
       #AuthorizerId: 
       #OperationName
-      #Target: !Sub "integrations/${Integration}"
-      Target: !Join
-        - /
-        - - integrations
-          - !Ref Integration
+      Target: !Sub "integrations/${Integration}"
+      #Target: !Join
+      #  - /
+      #  - - integrations
+      #    - !Ref Integration
 
   Stage:
-    Type: AWS::ApiGatewayV2::Stage
+    Type: "AWS::ApiGatewayV2::Stage"
     Properties:
       ApiId: !Ref HttpApi
       AutoDeploy: true
-      StageName: 'stg'
+      StageName: "stg"
       Description: "Staging"
       StageVariables:
          VariableX: variable-x
@@ -105,7 +106,12 @@ Resources:
     Properties:
       LogGroupName: !Sub "${HttpApi}-access-logs"
       RetentionInDays: 1
-
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
+          
 Outputs:
 
   InvokeURL:
