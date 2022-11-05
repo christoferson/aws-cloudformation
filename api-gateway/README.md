@@ -19,6 +19,12 @@ Account Settings e.g. IAM role that Amazon API Gateway uses to write API logs to
 
 Provision HTTP API that integrates with specified Lambda using Quick Create
 
+Quick Integrate uses the Target and RouteKey property of the Api resource. [link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html)
+
+> **Target:** This property is part of quick create. Quick create produces an API with an integration, a default catch-all route, and a default stage which is configured to automatically deploy changes. For HTTP integrations, specify a fully qualified URL. For Lambda integrations, specify a function ARN. The type of the integration will be HTTP_PROXY or AWS_PROXY, respectively. Supported only for HTTP APIs.
+
+> **RouteKey:** This property is part of quick create. If you don't specify a routeKey, a default route of $default is created. The $default route acts as a catch-all for any request made to your API, for a particular stage. The $default route key can't be modified. You can add routes after creating the API, and you can update the route keys of additional routes. Supported only for HTTP APIs.
+
 [api-gateway-http-quick](api-gateway-http-quick.yaml)
 
 ### API Gateway - Integrate with existing Lambda
@@ -89,6 +95,10 @@ Provision REST API that integrates with specified Lambda.
 Also provisions UsagePlan and ApiKeys
 
 [api-gateway-rest-usageplan](api-gateway-rest-usageplan.yaml)
+
+## API Gateway - REST - Cache
+
+[api-gateway-rest-cache](api-gateway-rest-cache.yaml)
 
 ## API Gateway - REST
 
