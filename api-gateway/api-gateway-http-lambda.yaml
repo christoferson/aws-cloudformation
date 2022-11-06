@@ -34,7 +34,7 @@ Resources:
   LambdaFunctionGetDemo:
     Type: AWS::Lambda::Function
     Properties:
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Code:
@@ -52,17 +52,32 @@ Resources:
   # API Gateway
 
   HttpApi:
-    Type: AWS::ApiGatewayV2::Api
+    Type: "AWS::ApiGatewayV2::Api"
     Properties:
+      Version: 1
       Name: !Ref ApiGatewayName
-      Description: Lambda Proxy / Uses  resource-based permissions
-      ProtocolType: HTTP
+      Description: Lambda Proxy / Uses resource-based permissions
+      ProtocolType: HTTP # WEBSOCKET | HTTP
+      #DisableExecuteApiEndpoint: false
+      CorsConfiguration:
+        #AllowCredentials: false
+        #AllowHeaders:
+        AllowMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          - POST
+        AllowOrigins:
+          - 'https://*'
+        #ExposeHeaders
+        MaxAge: 300
       Tags:
         Environment: test
-        Application: demo
+        Application: api
+        Name: !Ref ApiGatewayName
 
   IntegrationGetDemo:
-    Type: 'AWS::ApiGatewayV2::Integration'
+    Type: "AWS::ApiGatewayV2::Integration"
     Properties:
       ApiId: !Ref HttpApi
       Description: Lambda Integration GET /demo
@@ -74,7 +89,7 @@ Resources:
       #TimeoutInMillis: 30000  # Custom timeout between 50 and 30,000 milliseconds
 
   RouteGetDemo:
-    Type: AWS::ApiGatewayV2::Route
+    Type: "AWS::ApiGatewayV2::Route"
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: 'GET /demo'
@@ -84,11 +99,11 @@ Resources:
       Target: !Sub "integrations/${IntegrationGetDemo}"
 
   StageStg:
-    Type: AWS::ApiGatewayV2::Stage
+    Type: "AWS::ApiGatewayV2::Stage"
     Properties:
       ApiId: !Ref HttpApi
       AutoDeploy: true
-      StageName: 'stg'
+      StageName: "stg"
       Description: "Staging"
       StageVariables:
          VariableX: variable-x
@@ -118,7 +133,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "${HttpApi}-access-logs"
       RetentionInDays: 1
-
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
 
 Outputs:
 
