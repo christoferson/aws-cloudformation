@@ -10,8 +10,13 @@ Parameters:
 
   ApiGatewayName:
     Type: "String"
-    Default: "http-lambda-proxy"
+    Default: "http-proxy-lambda"
     Description: "HTTP Api Gateway Name"
+
+  ResourceName:
+    Description: Resource Name
+    Type: String
+    Default: "demo"
 
 Resources:
 
@@ -42,7 +47,7 @@ Resources:
           exports.handler = async (event) => {
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hello!' + Date.now()),
+                  body: JSON.stringify('lambda-proxy!' + Date.now()),
               };
               return response;
           };
@@ -80,7 +85,7 @@ Resources:
     Type: "AWS::ApiGatewayV2::Integration"
     Properties:
       ApiId: !Ref HttpApi
-      Description: Lambda Integration GET /demo
+      Description: !Sub "Lambda Integration GET /${ResourceName}"
       ConnectionType: INTERNET # INTERNET |  VPC_LINK 
       IntegrationType: AWS_PROXY
       IntegrationUri: !GetAtt LambdaFunctionGetDemo.Arn
@@ -92,7 +97,7 @@ Resources:
     Type: "AWS::ApiGatewayV2::Route"
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: 'GET /demo'
+      RouteKey: !Sub "GET /${ResourceName}"
       AuthorizationType:  NONE
       #AuthorizerId: 
       #OperationName
@@ -126,7 +131,7 @@ Resources:
       FunctionName: !Ref LambdaFunctionGetDemo
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageStg}/GET/${ResourceName}"
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
@@ -142,7 +147,7 @@ Resources:
 Outputs:
 
   InvokeURL:
-    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageStg}/demo
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageStg}/${ResourceName}"
 
   HttpApiEndpoint:
     Value: !GetAtt HttpApi.ApiEndpoint
