@@ -6,6 +6,18 @@ Description: "API Gateway - HTTP - Integrate with Lambda Function with Alias"
 # Integration GET /demo with Lambda
 # Resource based policy on Lamda to permit access from API Gateway
 
+Parameters:
+
+  ApiGatewayName:
+    Type: "String"
+    Default: "http-proxy-lambda-alias"
+    Description: "HTTP Api Gateway Name"
+
+  ResourceName:
+    Description: Resource Name
+    Type: String
+    Default: "demo"
+
 Resources:
 
   LambdaExecutionRole:
@@ -35,7 +47,7 @@ Resources:
           exports.handler = async (event) => {
               const response = {
                   statusCode: 200,
-                  body: JSON.stringify('Hello V1!' + Date.now()),
+                  body: JSON.stringify('lambda-proxy!' + Date.now()),
               };
               return response;
           };
@@ -59,20 +71,35 @@ Resources:
   # API Gateway
 
   HttpApi:
-    Type: AWS::ApiGatewayV2::Api
+    Type: "AWS::ApiGatewayV2::Api"
     Properties:
-      Name: demo-lambda-proxy
-      Description: Lambda Proxy / Uses  resource-based permissions
-      ProtocolType: HTTP
+      Version: 1
+      Name: !Ref ApiGatewayName
+      Description: Lambda Proxy / Uses resource-based permissions
+      ProtocolType: HTTP # WEBSOCKET | HTTP
+      #DisableExecuteApiEndpoint: false
+      CorsConfiguration:
+        #AllowCredentials: false
+        #AllowHeaders:
+        AllowMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          - POST
+        AllowOrigins:
+          - 'https://*'
+        #ExposeHeaders
+        MaxAge: 300
       Tags:
         Environment: test
-        Application: demo
+        Application: api
+        Name: !Ref ApiGatewayName
 
   IntegrationGetDemo:
-    Type: 'AWS::ApiGatewayV2::Integration'
+    Type: "AWS::ApiGatewayV2::Integration"
     Properties:
       ApiId: !Ref HttpApi
-      Description: Lambda Integration GET /demo
+      Description: !Sub "Lambda Integration GET /${ResourceName}"
       ConnectionType: INTERNET # INTERNET |  VPC_LINK 
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub ${LambdaAliasDev} # arn:aws:lambda:us-east-1:000:function:api-gateway-http-lambda-alia-LambdaFunctionGetDemo-GOXlf0CS9zA3:dev
@@ -81,21 +108,21 @@ Resources:
       #TimeoutInMillis: 30000  # Custom timeout between 50 and 30,000 milliseconds
 
   RouteGetDemo:
-    Type: AWS::ApiGatewayV2::Route
+    Type: "AWS::ApiGatewayV2::Route"
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: 'GET /demo'
+      RouteKey: !Sub "GET /${ResourceName}"
       AuthorizationType:  NONE
       #AuthorizerId: 
       #OperationName
       Target: !Sub "integrations/${IntegrationGetDemo}"
 
   StageStg:
-    Type: AWS::ApiGatewayV2::Stage
+    Type: "AWS::ApiGatewayV2::Stage"
     Properties:
       ApiId: !Ref HttpApi
       AutoDeploy: true
-      StageName: 'stg'
+      StageName: "stg"
       Description: "Staging"
       StageVariables:
          VariableX: variable-x
@@ -118,18 +145,23 @@ Resources:
       FunctionName: !Sub ${LambdaAliasDev}
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/stg/GET/demo
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${StageStg}/GET/${ResourceName}"
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "${HttpApi}-access-logs"
       RetentionInDays: 1
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
 
 Outputs:
 
   InvokeURL:
-    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/stg/demo
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageStg}/${ResourceName}"
 
   HttpApiEndpoint:
     Value: !GetAtt HttpApi.ApiEndpoint
