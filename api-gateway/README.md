@@ -93,6 +93,22 @@ curl -X POST "https://ddd.execute-api.eu-west-1.amazonaws.com/stg/demo" -d "name
 
 Provision REST API that integrates with specified Lambda.
 
+Execution Logs
+
+```
+  ApiGatewayStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      StageName: "stg"
+      ...
+      MethodSettings:
+        - LoggingLevel: "ERROR"
+          ResourcePath: "/*"
+          HttpMethod: "*"
+```
+
+Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo
+
 [api-gateway-rest-basic](api-gateway-rest-basic.yaml)
 
 ## API Gateway - REST - UsagePlan
