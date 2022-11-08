@@ -15,7 +15,7 @@ Account Settings e.g. IAM role that Amazon API Gateway uses to write API logs to
 
 [api-gateway-account](api-gateway-account.yaml)
 
-### API Gateway - Quick Integrate with existing Lambda
+### API Gateway - HTTP - Quick Integrate with existing Lambda
 
 Provision HTTP API that integrates with specified Lambda using Quick Create
 
@@ -27,39 +27,45 @@ Quick Integrate uses the Target and RouteKey property of the Api resource. [link
 
 [api-gateway-http-quick](api-gateway-http-quick.yaml)
 
-### API Gateway - Integrate with existing Lambda
+### API Gateway - HTTP - Integrate with existing Lambda
 
 Provision HTTP API that integrates with specified Lambda.
 
 [api-gateway-http](api-gateway-http.yaml)
 
-### API Gateway - Integrate with Lambda
+### API Gateway - HTTP - Integrate with Lambda
 
 Provision HTTP API that integrates with newly provisioned Lambda.
 
+AWS::Lambda::Function
+
 [api-gateway-http-lambda](api-gateway-http-lambda.yaml)
 
-### API Gateway - Integrate with Lambda Alias
+### API Gateway - HTTP - Integrate with Lambda Alias
 
 Provision HTTP API that integrates with newly provisioned Lambda and Alias.
 
+AWS::Lambda::Function
+AWS::Lambda::Version
+AWS::Lambda::Alias
+
 [api-gateway-http-lambda-alias](api-gateway-http-lambda-alias.yaml)
 
-### API Gateway - Integrate with existing Lambda - Multiple Stages
+### API Gateway - HTTP - Integrate with existing Lambda - Multiple Stages
 
 Provision HTTP API that integrates with specified Lambda.
 Exposes 2 stages staging and production.
 
 [api-gateway-http-staged](api-gateway-http-staged.yaml)
 
-### API Gateway - Integrate with existing Lambda - Authorizer Cognito
+### API Gateway - HTTP - Integrate with existing Lambda - Authorizer Cognito
 
 Provision HTTP API that integrates with specified Lambda.
 Secured by Authorizer using Cognito, requires JWT token.
 
 [api-gateway-http-authorizer-cognito](api-gateway-http-authorizer-cognito.yaml)
 
-### API Gateway - Integrate with existing Lambda - Authorizer Lambda
+### API Gateway - HTTP - Integrate with existing Lambda - Authorizer Lambda
 
 Provision HTTP API that integrates with specified Lambda.
 Secured by Lambda Authorizer. Uses Payload format version 2.0.
@@ -68,7 +74,7 @@ Secured by Lambda Authorizer. Uses Payload format version 2.0.
 
 [api-gateway-http-authorizer-lambda](api-gateway-http-authorizer-lambda.yaml)
 
-### API Gateway - Integrate with SQS Standard Queue
+### API Gateway - HTTP - Integrate with SQS Standard Queue
 
 Provision HTTP API that integrates with newly provisioned SQS Standard Queue.
 
