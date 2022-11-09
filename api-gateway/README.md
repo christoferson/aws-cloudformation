@@ -113,12 +113,37 @@ Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo
 
 ## API Gateway - REST - UsagePlan
 
-Provision REST API that integrates with specified Lambda.
-Also provisions UsagePlan and ApiKeys
+Provision REST API that integrates with specified Lambda. Access is controlled by UsagePlan and ApiKeys.
+
+- AWS::ApiGateway::ApiKey
+
+- AWS::ApiGateway::UsagePlan
+
+- AWS::ApiGateway::UsagePlanKey
+
+Invoke: curl -X POST --header "x-api-key:xxx" https://rest-id.execute-api.region.amazonaws.com/stg/demo
 
 [api-gateway-rest-usageplan](api-gateway-rest-usageplan.yaml)
 
 ## API Gateway - REST - Cache
+
+Provision REST API that integrates with specified Lambda. Cache is enabled on the Api Stage for GET requests.
+
+```
+  ApiGatewayStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      StageName: "stg"
+      ...
+      MethodSettings:
+        - HttpMethod: "*"
+          ResourcePath: "/*"
+          ...
+        - HttpMethod: "GET"
+          ResourcePath: "/"
+          CachingEnabled: true
+          CacheTtlInSeconds: 600
+```
 
 [api-gateway-rest-cache](api-gateway-rest-cache.yaml)
 
