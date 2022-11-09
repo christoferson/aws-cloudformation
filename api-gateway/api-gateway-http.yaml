@@ -111,7 +111,7 @@ Resources:
           Value: dev
         - Key: Application
           Value: app
-          
+
 Outputs:
 
   InvokeURL:

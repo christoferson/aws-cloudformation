@@ -40,7 +40,7 @@ Resources:
     Properties:
       #FunctionName : "dst-lambda"
       Description: "Lambda with Destination"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaAuthorizerExecutionRole.Arn
       Handler: index.handler
       Environment:

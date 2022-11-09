@@ -51,7 +51,7 @@ Resources:
         - HttpMethod: "GET"
           ResourcePath: "/"
           CachingEnabled: true
-          CacheTtlInSeconds: 600 
+          CacheTtlInSeconds: 600
       TracingEnabled: true
       AccessLogSetting:
         DestinationArn: !GetAtt ApiLogGroup.Arn

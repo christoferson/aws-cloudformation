@@ -24,6 +24,11 @@ Resources:
     Type: "AWS::ApiGateway::RestApi"
     Properties:
       Name: !Sub "${ApiGatewayName}"
+      Description: !Sub "REST API ${ApiGatewayName}"
+      DisableExecuteApiEndpoint: false
+      Tags:
+        - Key: "Environment"
+          Value: "dev"
 
   ApiGatewayDeployment:
     Type: "AWS::ApiGateway::Deployment"
@@ -38,12 +43,20 @@ Resources:
       Description: "Staging"
       RestApiId: !Ref ApiGatewayRestApi
       DeploymentId: !Ref ApiGatewayDeployment
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          LoggingLevel: ERROR
+          DataTraceEnabled: false
+          MetricsEnabled: false
+          #ThrottlingBurstLimit: 
+          #ThrottlingRateLimit:
       TracingEnabled: true
       AccessLogSetting:
         DestinationArn: !GetAtt ApiLogGroup.Arn
         Format: $context.identity.sourceIp,$context.identity.caller,$context.identity.user,$context.requestTime,$context.httpMethod,$context.resourcePath,$context.protocol,$context.status,$context.responseLength,$context.requestId
       Variables:
-         VariableX: variable-x
+        VariableX: variable-x
 
   ApiGatewayResource:
     Type: "AWS::ApiGateway::Resource"
@@ -117,6 +130,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "${ApiGatewayRestApi}-access-logs"
       RetentionInDays: 1
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
 
 Outputs:
 
