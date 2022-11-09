@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - REST - Integrate with Existing Lambda Function with Usage Plan"
+Description: "API Gateway - REST - Integrate with Existing Lambda Function with Usage Plan / Api Key"
 
 Parameters:
 
@@ -18,6 +18,16 @@ Parameters:
     Type: String
     Default: "demo"
 
+  UsagePlanName:
+    Description: Usage Plan Name
+    Type: String
+    Default: "rest-demo-usage-plan"
+
+  ApiKeyName:
+    Description: Api Key Name
+    Type: String
+    Default: "rest-demo-api-key"
+    
 Resources:
 
   ApiGatewayRestApi:
@@ -89,7 +99,7 @@ Resources:
     Type: "AWS::ApiGateway::ApiKey"
     DependsOn: ApiGatewayDeployment
     Properties:
-      Name: !Sub "${ResourceName}-ApiKey"
+      Name: !Sub "${ApiKeyName}"
       Enabled: True
       StageKeys:
         - RestApiId: !Ref ApiGatewayRestApi
@@ -98,7 +108,8 @@ Resources:
   ApiGatewayUsagePlan:
     Type: "AWS::ApiGateway::UsagePlan"
     Properties:
-      UsagePlanName: !Sub "${ResourceName}-UsagePlan"
+      UsagePlanName: !Sub "${UsagePlanName}"
+      #Description: To test usage plan and api key in REST API
       ApiStages:
         - ApiId: !Ref ApiGatewayRestApi
           Stage: !Ref ApiGatewayStage
