@@ -149,12 +149,13 @@ Provision REST API that integrates with specified Lambda. Cache is enabled on th
 
 ## API Gateway - REST
 
-Provision REST API that integrates with specified Lambda.
-Also provisions UsagePlan and ApiKeys
+Provision REST API that showcases the different features
+
+Invoke: curl -X GET https://rest-id.execute-api.eu-west-1.amazonaws.com/stg/demo -H "x-api-key: <api-key>"
 
 [api-gateway-rest](api-gateway-rest.yaml)
 
-curl -X POST https://zzz.execute-api.<region>.amazonaws.com/stg/demo -H "x-api-key: <api-key>"
+
 
 ## API Gateway - WebSocket
 
