@@ -25,7 +25,7 @@ Resources:
     Properties:
       #FunctionName : "basic-lambda"
       Description: "Basic Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
@@ -39,7 +39,7 @@ Resources:
       #ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
-          exports.handler = async (event, context, callback) => {
+          exports.handler = async (event, context) => {
               let envDatabaseName = process.env.DatabaseName;
               console.log(`DatabaseName: ${envDatabaseName}`);
               const response = {
