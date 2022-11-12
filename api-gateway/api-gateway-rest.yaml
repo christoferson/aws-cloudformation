@@ -5,7 +5,7 @@ Parameters:
 
   ApiGatewayName:
     Type: "String"
-    Default: "rest-proxy"
+    Default: "rest-proxy-demo"
     Description: "HTTP Api Gateway Name"
 
   LambdaFunctionName:
@@ -18,6 +18,16 @@ Parameters:
     Type: String
     Default: "demo"
 
+  UsagePlanName:
+    Description: Usage Plan Name
+    Type: String
+    Default: "rest-proxy-demo-usage-plan"
+
+  ApiKeyName:
+    Description: Api Key Name
+    Type: String
+    Default: "rest-proxy-demo-api-key"
+    
 Resources:
 
   ApiGatewayRestApi:
@@ -43,14 +53,21 @@ Resources:
       Description: "Staging"
       RestApiId: !Ref ApiGatewayRestApi
       DeploymentId: !Ref ApiGatewayDeployment
+      CacheClusterEnabled: true
+      CacheClusterSize: 0.5
       MethodSettings:
+        - HttpMethod: "GET"
+          ResourcePath: "/"
+          CachingEnabled: true
+          CacheTtlInSeconds: 600
+          LoggingLevel: ERROR
+          DataTraceEnabled: false
+          MetricsEnabled: false
         - ResourcePath: "/*"
           HttpMethod: "*"
           LoggingLevel: ERROR
           DataTraceEnabled: false
           MetricsEnabled: false
-          #ThrottlingBurstLimit: 
-          #ThrottlingRateLimit:
       TracingEnabled: true
       AccessLogSetting:
         DestinationArn: !GetAtt ApiLogGroup.Arn
@@ -71,7 +88,7 @@ Resources:
       RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ApiGatewayResource
       ApiKeyRequired: True
-      HttpMethod: "POST"
+      HttpMethod: "GET"
       AuthorizationType: "NONE"
       Integration:
         Type: "AWS_PROXY"
@@ -89,7 +106,7 @@ Resources:
     Type: "AWS::ApiGateway::ApiKey"
     DependsOn: ApiGatewayDeployment
     Properties:
-      Name: !Sub "${ResourceName}-ApiKey"
+      Name: !Sub "${ApiKeyName}"
       Enabled: True
       StageKeys:
         - RestApiId: !Ref ApiGatewayRestApi
@@ -98,6 +115,7 @@ Resources:
   ApiGatewayUsagePlan:
     Type: "AWS::ApiGateway::UsagePlan"
     Properties:
+      UsagePlanName: !Sub "${UsagePlanName}"
       ApiStages:
         - ApiId: !Ref ApiGatewayRestApi
           Stage: !Ref ApiGatewayStage
@@ -107,7 +125,6 @@ Resources:
       Throttle:
         BurstLimit: 10
         RateLimit: 2
-      UsagePlanName: !Sub "${ResourceName}-UsagePlan"
 
   ApiGatewayUsagePlanKey:
     Type: AWS::ApiGateway::UsagePlanKey
@@ -123,7 +140,7 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       #SourceAccount: !Ref 'AWS::AccountId'  /stg/POST/
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/${ResourceName}
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/${ResourceName}
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
