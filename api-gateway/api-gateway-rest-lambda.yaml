@@ -1,17 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - REST - Integrate with Existing Lambda Function"
+Description: "API Gateway - REST - Integrate with Lambda Function"
 
 Parameters:
 
   ApiGatewayName:
     Type: "String"
-    Default: "rest-proxy-demo"
+    Default: "rest-proxy-lambda"
     Description: "HTTP Api Gateway Name"
-
-  LambdaFunctionName:
-    Description: Lambda Function Name
-    Type: String
-    Default: "my-lambda"
 
   ResourceName:
     Description: Resource Name
@@ -21,14 +16,79 @@ Parameters:
   UsagePlanName:
     Description: Usage Plan Name
     Type: String
-    Default: "rest-proxy-demo-usage-plan"
+    Default: "rest-proxy-lambda-usage-plan"
 
   ApiKeyName:
     Description: Api Key Name
     Type: String
-    Default: "rest-proxy-demo-api-key"
+    Default: "rest-proxy-lambda-api-key"
     
 Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-js-role"
+      Description: "Lambda Service Role - REST"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Tags:
+        - Key: "Name"
+          Value: "lambda-service-role"
+          
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda-js"
+      Description: "Basic Lambda"
+      Runtime: nodejs16.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          DatabaseName: lambdadb
+          DatabaseUser: admin
+      EphemeralStorage: # The size of the functionfs /tmp directory in MB
+        Size: 512
+      MemorySize: 128 #Maximum: 10240
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      #ReservedConcurrentExecutions: 0
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context) => {
+              const message = {
+                  name: "Greetings",
+                  timestamp: Date.now()
+              };
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify(message),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-basic"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+# API
 
   ApiGatewayRestApi:
     Type: "AWS::ApiGateway::RestApi"
@@ -92,7 +152,7 @@ Resources:
       AuthorizationType: "NONE"
       Integration:
         Type: "AWS_PROXY"
-        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}/invocations"
         IntegrationHttpMethod: "POST"
         #IntegrationResponses:
         #  - StatusCode: 200
@@ -136,7 +196,7 @@ Resources:
   ApiInvokeLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       #SourceAccount: !Ref 'AWS::AccountId'  /stg/POST/
