@@ -25,6 +25,8 @@ Parameters:
     
 Resources:
 
+# Lambda Resources
+
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -66,8 +68,9 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = async (event, context) => {
+              name = event.pathParameters?.name || "stranger";
               const message = {
-                  name: "Greetings",
+                  name: `Greetings ${name}`,
                   timestamp: Date.now()
               };
               const response = {
@@ -142,11 +145,38 @@ Resources:
       ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
       PathPart: !Ref ResourceName
 
+  ApiGatewayResourceRootName:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ParentId: !GetAtt ApiGatewayResource.ResourceId
+      PathPart: "{name}"
+
   ApiGatewayMethod:
     Type: "AWS::ApiGateway::Method"
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ApiGatewayResource
+      ApiKeyRequired: True
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      Integration:
+        Type: "AWS_PROXY"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}/invocations"
+        IntegrationHttpMethod: "POST"
+        #IntegrationResponses:
+        #  - StatusCode: 200
+        PassthroughBehavior: WHEN_NO_MATCH
+      MethodResponses:
+          - StatusCode: 200
+            ResponseModels:
+              application/json: Empty
+
+  ApiGatewayMethodRootNameGet:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayResourceRootName
       ApiKeyRequired: True
       HttpMethod: "GET"
       AuthorizationType: "NONE"
@@ -202,6 +232,15 @@ Resources:
       #SourceAccount: !Ref 'AWS::AccountId'  /stg/POST/
       SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/${ResourceName}
 
+  ApiInvokeLambdaPermissionRootName:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      #SourceAccount: !Ref 'AWS::AccountId'  /stg/POST/
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/${ResourceName}/*
+      
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
