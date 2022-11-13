@@ -88,6 +88,19 @@ curl -X POST "https://ddd.execute-api.eu-west-1.amazonaws.com/stg/demo" -d "name
 
 [api-gateway-http-sqs](api-gateway-http-sqs.yaml)
 
+## API Gateway - REST
+
+### CORS
+
+```
+  const response = {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify(message),
+  };
+```
 
 ## API Gateway - REST - Basic
 
@@ -155,7 +168,14 @@ Invoke: curl -X GET https://rest-id.execute-api.eu-west-1.amazonaws.com/stg/demo
 
 [api-gateway-rest](api-gateway-rest.yaml)
 
+## API Gateway - REST - Lambda
 
+Provision REST API that integrates with Lambda.
+
+Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo
+Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo/{name}
+
+[api-gateway-rest-lambda](api-gateway-rest-lambda.yaml)
 
 ## API Gateway - WebSocket
 
@@ -198,3 +218,5 @@ wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 - Internal Server Error if no permission to Invoke Lambda
 - CloudWatch Logs role ARN must be set in account settings to enable logging
 - Currently, an API with a protocol type of HTTP may only be associated with proxy integrations (AWS_PROXY, HTTP_PROXY) 
+- Execution failed due to configuration error: Invalid permissions on Lambda function
+  - ss
