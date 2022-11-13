@@ -1,6 +1,28 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "API Gateway - REST - Integrate with Existing Lambda Function - Input Validation"
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Api Configuration"
+        Parameters:
+          - ApiGatewayName
+          - ResourceName
+      -
+        Label:
+          default: "Backend Lambda Configuration"
+        Parameters:
+          - LambdaFunctionName
+      -
+        Label:
+          default: "Api Key & Usage Plan Configuration"
+        Parameters:
+          - UsagePlanName
+          - ApiKeyName
+
+          
 Parameters:
 
   ApiGatewayName:
@@ -39,6 +61,14 @@ Resources:
       Tags:
         - Key: "Environment"
           Value: "dev"
+
+  ApiGatewayRequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      Name: "rest-proxy-validation-validator"
+      RestApiId: !Ref ApiGatewayRestApi
+      ValidateRequestBody: "false"
+      ValidateRequestParameters: "true"
 
   ApiGatewayDeployment:
     Type: "AWS::ApiGateway::Deployment"
@@ -90,6 +120,10 @@ Resources:
       ApiKeyRequired: True
       HttpMethod: "GET"
       AuthorizationType: "NONE"
+      RequestValidatorId: !Ref ApiGatewayRequestValidator
+      RequestParameters:
+        method.request.querystring.language: true
+        method.request.header.clientid: true
       Integration:
         Type: "AWS_PROXY"
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
