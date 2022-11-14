@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "API Gateway - REST - Integrate with Existing Lambda Function - Input Validation"
+Description: "API Gateway - REST - Integrate with Existing Lambda Function - Request/Response Mapping"
+
+# https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -27,7 +29,7 @@ Parameters:
 
   ApiGatewayName:
     Type: "String"
-    Default: "rest-proxy-validation"
+    Default: "rest-proxy-mapping"
     Description: "HTTP Api Gateway Name"
 
   LambdaFunctionName:
@@ -43,12 +45,12 @@ Parameters:
   UsagePlanName:
     Description: Usage Plan Name
     Type: String
-    Default: "rest-proxy-validation-usage-plan"
+    Default: "rest-proxy-mapping-usage-plan"
 
   ApiKeyName:
     Description: Api Key Name
     Type: String
-    Default: "rest-proxy-validation-api-key"
+    Default: "rest-proxy-mapping-api-key"
     
 Resources:
 
@@ -125,11 +127,16 @@ Resources:
         method.request.querystring.language: true
         method.request.header.clientid: true
       Integration:
-        Type: "AWS_PROXY"
+        Type: "AWS" #AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
         IntegrationHttpMethod: "POST"
-        #IntegrationResponses:
-        #  - StatusCode: 200
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: |
+                {
+                  "body" : $input.json('$.body')
+                }
         PassthroughBehavior: WHEN_NO_MATCH
       MethodResponses:
           - StatusCode: 200
