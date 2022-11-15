@@ -130,6 +130,13 @@ Resources:
         Type: "AWS" #AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
         IntegrationHttpMethod: "POST"
+        PassthroughBehavior: "WHEN_NO_MATCH" #WHEN_NO_MATCH, WHEN_NO_TEMPLATES, and NEVER
+        RequestTemplates:
+          application/json: |
+            {
+              "language": "$util.escapeJavaScript($input.params('language'))",
+              "clientid": "$util.escapeJavaScript($input.params('clientid'))"
+            }
         IntegrationResponses:
           - StatusCode: 200
             ResponseTemplates:
@@ -201,3 +208,9 @@ Outputs:
 
 #  ApiGatewayRestApiEndpoint:
 #    Value: !GetAtt ApiGatewayRestApi.ApiEndpoint
+
+
+# TODO:
+# Add Actual Lambda Resource
+# Test CORS
+# Add Header Integration Mapping to return Access-Control-Allow-Origin
