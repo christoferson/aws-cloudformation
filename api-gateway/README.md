@@ -160,6 +160,56 @@ Provision REST API that integrates with specified Lambda. Cache is enabled on th
 
 [api-gateway-rest-cache](api-gateway-rest-cache.yaml)
 
+### API Gateway - REST - Validation
+
+```
+  ApiGatewayMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ...
+      RequestValidatorId: !Ref ApiGatewayRequestValidator
+      RequestParameters:
+        method.request.querystring.language: true
+        method.request.header.clientid: true
+```
+
+[api-gateway-rest-validation](api-gateway-rest-validation.yaml)
+
+### API Gateway - REST (NonProxy) - Mappings
+
+Specify Integration.Type as AWS instead of AWS_PROXY
+
+```
+  ApiGatewayMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ...
+      Integration:
+        Type: "AWS" #Set to AWS instead of AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/...
+        IntegrationHttpMethod: "POST"
+```
+
+Integration Response for HTTP 200
+
+```
+      Integration:
+        Type: "AWS"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/...
+        IntegrationHttpMethod: "POST"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: |
+                {
+                  "body" : $input.json('$.body')
+                }
+```
+
+[api-gateway-rest-mapping](api-gateway-rest-mapping.yaml)
+
 ## API Gateway - REST
 
 Provision REST API that showcases the different features
