@@ -192,6 +192,23 @@ Specify Integration.Type as AWS instead of AWS_PROXY
         IntegrationHttpMethod: "POST"
 ```
 
+Integration Request Mapping (Path Parameters / Query Parameters / Headers)
+
+```
+  Integration:
+    Type: "AWS" #AWS_PROXY
+    Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/...
+    IntegrationHttpMethod: "POST"
+    PassthroughBehavior: "WHEN_NO_MATCH" #WHEN_NO_MATCH, WHEN_NO_TEMPLATES, and NEVER
+    RequestTemplates:
+      application/json: |
+        {
+          "language": "$util.escapeJavaScript($input.params('language'))",
+          "clientid": "$util.escapeJavaScript($input.params('clientid'))"
+        }
+```
+
+
 Integration Response for HTTP 200
 
 ```
