@@ -225,6 +225,27 @@ Integration Response for HTTP 200
                 }
 ```
 
+CORS
+
+```
+      MethodResponses:
+          - StatusCode: 200
+            ResponseModels:
+              application/json: Empty
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: false
+              method.response.header.Access-Control-Allow-Methods: false
+              method.response.header.Access-Control-Allow-Origin: false
+```
+
+```
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+
+```
+
 [api-gateway-rest-mapping](api-gateway-rest-mapping.yaml)
 
 ## API Gateway - REST
