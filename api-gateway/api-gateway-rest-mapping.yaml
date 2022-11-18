@@ -158,6 +158,43 @@ Resources:
               method.response.header.Access-Control-Allow-Methods: false
               method.response.header.Access-Control-Allow-Origin: false
 
+  ApiGatewayMethodOptions:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayResource
+      ApiKeyRequired: False
+      HttpMethod: "OPTIONS"
+      AuthorizationType: "NONE"
+      #RequestValidatorId: !Ref ApiGatewayRequestValidator
+      #RequestParameters:
+      #  method.request.querystring.language: true
+      #  method.request.header.clientid: true
+      Integration:
+        Type: "MOCK"
+        #Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}/invocations"
+        #IntegrationHttpMethod: "POST"
+        PassthroughBehavior: "WHEN_NO_MATCH" #WHEN_NO_MATCH, WHEN_NO_TEMPLATES, and NEVER
+        RequestTemplates:
+          application/json: |
+            {"statusCode": 200}
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+          - StatusCode: 200
+            ResponseModels:
+              application/json: Empty
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: false
+              method.response.header.Access-Control-Allow-Methods: false
+              method.response.header.Access-Control-Allow-Origin: false
+              
   ApiGatewayKey:
     Type: "AWS::ApiGateway::ApiKey"
     DependsOn: ApiGatewayDeployment
