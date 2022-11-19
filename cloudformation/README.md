@@ -61,3 +61,13 @@ Cause: FindInMap did not resolve any value. No defaulting.
 - [Sample Templates](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-sample-templates.html)
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference.html
+
+- https://github.com/aws-cloudformation/cfn-language-discussion
+
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacks-event-bridge.html
+
+### TODO
+
+- Stack Sets
+
+- EventBridge Events
