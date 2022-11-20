@@ -66,6 +66,23 @@ Provision a DynamoDB DAX Cluster.
 [dynamodb-dax](dynamodb-dax.yaml)
 
 
+### DynamoDB - TTL
+
+Provision a DynamoDB with TTL.
+
+```
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: "mytable"
+      ...
+      TimeToLiveSpecification:
+        AttributeName: !Ref TimeToLiveAttributeName
+        Enabled: true
+```
+
+[dynamodb-ttl](dynamodb-ttl.yaml)
+
 Note
 
 
