@@ -26,7 +26,11 @@ Metadata:
           default: "Lambda URL Origin Configuration"
         Parameters: 
           - LambdaEndpoint
-
+      - Label: 
+          default: "Load Balancer Origin Configuration"
+        Parameters: 
+          - LoadBalancerEndpoint
+          
     ParameterLabels: 
       BucketDomainName: 
         default: "Bucket Domain Name"
@@ -70,6 +74,11 @@ Parameters:
     Description: Enter the Lambda Function URL endpoint
     Default: "w18zapoescpo4gulnbcwarjgha0jamro.lambda-url.us-west-1.on.aws"
 
+  LoadBalancerEndpoint:
+    Type: String
+    Description: Enter the Load Balancer Domain Name endpoint
+    Default: "zzz-alb-728486025.eu-west-1.elb.amazonaws.com"
+    
 Resources:
 
   CloudFrontDistribution:
@@ -97,7 +106,7 @@ Resources:
           ConnectionTimeout: 10
           CustomOriginConfig:
             #HTTPSPort: 443
-            #Amazon S3 doesnÅft support HTTPS connections for static website hosting endpoints.
+            #Amazon S3 doesnÔøΩft support HTTPS connections for static website hosting endpoints.
             OriginProtocolPolicy: http-only #http-only | https-only | match-viewer
             OriginKeepaliveTimeout: 5
             OriginReadTimeout: 30
@@ -125,6 +134,19 @@ Resources:
           OriginCustomHeaders:
             - HeaderName: c_security
               HeaderValue: secret
+        - DomainName: !Ref LoadBalancerEndpoint
+          Id: LoadBalancerOrigin
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            HTTPPort: 80
+            HTTPSPort: 443
+            OriginProtocolPolicy: http-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+          #OriginCustomHeaders: #TODO
+          #  - HeaderName: c_security
+          #    HeaderValue: secret
         CacheBehaviors:
         - PathPattern: bucket-ws/*
           AllowedMethods:
@@ -196,6 +218,24 @@ Resources:
           TargetOriginId: LambdaOrigin
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
+        - PathPattern: elb/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          CachedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          #ForwardedValues:
+          #  QueryString: false
+            #Headers:
+            #- Host
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          TargetOriginId: LoadBalancerOrigin
+          ViewerProtocolPolicy: allow-all #redirect-to-https
+          Compress: true          
         DefaultCacheBehavior:
           TargetOriginId: !Sub "S3BucketOrigin"
           #CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6' #CachingOptimized
