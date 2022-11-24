@@ -1,6 +1,22 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "API Gateway - REST - Integrate with Lambda Function"
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Api Configuration"
+        Parameters:
+          - ApiGatewayName
+          - ResourceName
+      -
+        Label:
+          default: "Api Key & Usage Plan Configuration"
+        Parameters:
+          - UsagePlanName
+          - ApiKeyName
+
 Parameters:
 
   ApiGatewayName:
