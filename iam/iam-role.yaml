@@ -1,12 +1,14 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: 'IAM Role'
+Description: IAM Role
 
 Resources:
 
   RootRole: 
-    Type: "AWS::IAM::Role"
-    Properties: 
-      Path: "/demo/" # must begin and end with / and contain only alphanumeric characters
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName:
+      Description: Developer Role
+      #Path: "/demo/" # must begin and end with / and contain only alphanumeric characters
       AssumeRolePolicyDocument: 
         Version: "2012-10-17"
         Statement: 
@@ -17,9 +19,32 @@ Resources:
                 - "ec2.amazonaws.com"
             Action: 
               - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameters'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue' 
+                Resource: '*' #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                Resource: '*' #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      Tags:
+        - Key: "Name"
+          Value: "developer-role"
 
-  RolePolicies: 
-    Type: "AWS::IAM::Policy"
+  RootRolePolicies: 
+    Type: AWS::IAM::Policy
     Properties: 
       PolicyName: "root"
       PolicyDocument: 
