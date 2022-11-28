@@ -102,6 +102,15 @@ Resources:
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
     PrivateDnsEnabled: true
 
+ VpcEndpointEc2:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2'
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
 
 Outputs:
 
