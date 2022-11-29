@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Transfer - SFTP
+
+Parameters:
+
+  SftpUserPublicKey:
+    Description: SFTP User Public Key
+    Type: String
+    Default: ssh-rsa
+
+Resources:
+
+  SftpBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      #BucketName: !Ref BucketName
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: # SSE-KMS
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'aws:kms'
+            KMSMasterKeyID: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+          BucketKeyEnabled: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "Environment"
+          Value: "dev"
+
+  SftpUserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "transfer.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess #TODO: Custom Policy
+
+  SftpServiceLoggingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "transfer.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSTransferLoggingAccess
+
+  SftpServer:
+    Type: AWS::Transfer::Server
+    Properties:
+      #Certificate: #The Amazon Resource Name (ARN) of the AWS Certificate Manager (ACM) certificate. Required when Protocols is set to FTPS.
+      Domain: S3 #EFS | S3
+      EndpointType: PUBLIC # PUBLIC | VPC | VPC_ENDPOINT
+      Protocols:
+        - SFTP
+      IdentityProviderType: SERVICE_MANAGED # API_GATEWAY | AWS_DIRECTORY_SERVICE | AWS_LAMBDA | SERVICE_MANAGED
+      LoggingRole: !GetAtt SftpServiceLoggingRole.Arn
+      PreAuthenticationLoginBanner: "This system is for the use of authorized users only."
+      PostAuthenticationLoginBanner: "BANNER"
+      #SecurityPolicyName:
+      #WorkflowDetails
+      Tags: 
+        - Key: KeyName
+          Value: ValueName
+
+  SftpServerLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/aws/transfer/${SftpServer.ServerId}"
+      RetentionInDays: 1
+
+  SftpUser:
+    Type: AWS::Transfer::User
+    Properties:
+      UserName: SFTPUSER
+      HomeDirectory: !Sub /${SftpBucket}/SFTPUSER
+      Role: !GetAtt SftpUserRole.Arn
+      ServerId: !GetAtt SftpServer.ServerId
+      SshPublicKeys:
+        - !Ref SftpUserPublicKey
+#      Policy:
+#        Fn::Sub: |
+#          {
+#            "Version": "2012-10-17",
+#            "Statement": {
+#              "Sid": "AllowFullAccessToBucket",
+#              "Action": "s3:*",
+#              "Effect": "Allow",
+#              "Resource": [
+#                "arn:aws:s3:::my-bucket",
+#                "arn:aws:s3:::my-bucket/*"
+#              ]
+#            }
+#          }
+      Tags: 
+        - Key: KeyName
+          Value: ValueName
+
+  WorkflowExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: transfer.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+Outputs:
+
+  SftpServerServerId:
+    Value: !GetAtt SftpServer.ServerId
