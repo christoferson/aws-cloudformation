@@ -8,6 +8,14 @@ Parameters:
     Type: String
     Default: "my-lambda"
 
+  HttpApiLambdaFunctionRouteKeyPath:
+    Description: HTTP API Route Key of the Lambda Function Name
+    Type: String
+    Default: "ping"
+    
+Conditions:
+  IsRouteKeySet: !Not [ !Equals [ !Ref HttpApiLambdaFunctionRouteKeyPath, ""] ]
+
 Resources:
 
   HttpApi:
@@ -17,7 +25,7 @@ Resources:
       Description: Lambda Proxy using Quick Create
       ProtocolType: HTTP
       Target: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}
-      #RouteKey: "GET /ping" # If you don't specify a routeKey, a default route of $default is created
+      RouteKey: !If [IsRouteKeySet, !Sub "GET /${HttpApiLambdaFunctionRouteKeyPath}", AWS::NoValue]  #"GET /ping" # If you don't specify a routeKey, a default route of $default is created
       Version: 1
       Tags:
         "Name": "http-lambda-proxy-quick"
@@ -28,8 +36,7 @@ Resources:
       FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}"
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/$default
-      #SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/ping
+      SourceArn: !If [IsRouteKeySet, !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/${HttpApiLambdaFunctionRouteKeyPath}", !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/$default"] 
 
 Outputs:
 
@@ -38,3 +45,6 @@ Outputs:
 
   HttpApiEndpoint:
     Value: !GetAtt HttpApi.ApiEndpoint
+
+  HttpApiSourceArn:
+    Value: !If [IsRouteKeySet, !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/${HttpApiLambdaFunctionRouteKeyPath}", !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/$default"] 
