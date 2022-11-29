@@ -130,6 +130,22 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
+  Workflow:
+    Type: AWS::Transfer::Workflow
+    Properties: 
+      Description: "MyWorkflow"
+      #OnExceptionSteps: ""
+      Steps:
+        - Type: TAG
+          TagStepDetails:
+            Name: tagFileForArchive
+            Tags:
+              - Key: "MyTag"
+                Value: "Foo"
+              - Key: "MyBar" 
+                Value: "Bar"
+      #Tags:
+          
 Outputs:
 
   SftpServerServerId:
