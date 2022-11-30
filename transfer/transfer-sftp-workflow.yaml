@@ -78,7 +78,11 @@ Resources:
       PreAuthenticationLoginBanner: "This system is for the use of authorized users only."
       PostAuthenticationLoginBanner: "BANNER"
       #SecurityPolicyName:
-      #WorkflowDetails
+      WorkflowDetails:
+        OnUpload:
+          - WorkflowId: !Ref Workflow
+            ExecutionRole: !GetAtt WorkflowExecutionRole.Arn
+        #OnPartialUpload:
       Tags: 
         - Key: KeyName
           Value: ValueName
