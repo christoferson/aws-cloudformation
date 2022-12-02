@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Basic with Inline Source (NodeJS)
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-js-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda-js"
+      Description: "Basic Lambda"
+      Runtime: nodejs16.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          DatabaseName: lambdadb
+          DatabaseUser: admin
+      EphemeralStorage: # The size of the functionfs /tmp directory in MB
+        Size: 512
+      MemorySize: 128 #Maximum: 10240
+      Timeout: 3 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      #ReservedConcurrentExecutions: 0
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context) => {
+              let name = event.pathParameters.name;
+              let {y, ...z} = event.queryStringParameters;
+              let envDatabaseName = process.env.DatabaseName;
+              console.log(`DatabaseName: ${envDatabaseName}`);
+              const message = {
+                  name: `${name}`,
+                  timestamp: Date.now()
+              };
+              const response = {
+                  statusCode: 200,
+                  body: JSON.stringify(message),
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-basic"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+
