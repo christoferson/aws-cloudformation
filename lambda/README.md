@@ -99,6 +99,19 @@ Provision a Lambda and Execution Role using Specified Code in S3. Code in Java. 
 
 [lambda-basic-zip-java](lambda-basic-zip-java.yaml)
 
+### Lambda - Ephemeral Storage - /tmp
+
+Provision a Lambda with specified Ephemeral Storage or /tmp storage size
+
+[lambda-ephemeral-storage](lambda-ephemeral-storage.yaml)
+
+### Lambda Layer
+
+Provision a Lambda Version
+
+[lambda-layer](lambda-layer.yaml)
+
+
 ### Lambda - Trigger - SQS
 
 Provision a Lambda triggered by SQS
@@ -188,7 +201,7 @@ aws application-autoscaling describe-scalable-targets --service-namespace lambda
 
 - Execution role with permissions to create, describe, and delete elastic network interfaces. e.g. AWSLambdaVPCAccessExecutionRole
 
-[todo](xxx)
+[lambda-vpc](lambda-vpc.yaml)
 
 
 ### LogGroup
@@ -234,5 +247,6 @@ Cannot configure provisioned concurrency on both alias and version
 - [Lambda URL CFN](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-url.html)
 - [AutoScale Concurrency](https://aws.amazon.com/jp/blogs/compute/scheduling-aws-lambda-provisioned-concurrency-for-recurring-peak-usage/)
 - [MultiHeader](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-elasticloadbalancingv2-targetgroup-targetgroupattribute.html)
+- https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
 
 
