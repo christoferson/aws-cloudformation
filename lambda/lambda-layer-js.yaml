@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Layer - Node JS
+
+Parameters:
+
+  LambdaLayerBucketName:
+    Description: Bucket Name where Lambda Layer is Stored
+    Type: String
+    Default: "bucket"
+
+  LambdaLayerBucketKey:
+    Description: Bucket Key of Lambda Layer
+    Type: String
+    Default: "lambda-layers/lambda-layer-js.zip"
+
+  LambdaLayerRuntime:
+    Description: Lambda Layer NodeJS Runtime
+    Type: String
+    Default: "nodejs16.x"
+    
+Resources:
+
+  LambdaLayer:
+    Type: "AWS::Lambda::LayerVersion"
+    Properties:
+      LayerName: LambdaLayerJs
+      Description: !Sub "Common Lambda Layer - ${LambdaLayerRuntime}"
+      CompatibleRuntimes: 
+        - !Ref LambdaLayerRuntime #nodejs18.x | nodejs16.x
+      Content: 
+        S3Bucket: !Ref LambdaLayerBucketName
+        S3Key: !Ref LambdaLayerBucketKey
+
+Outputs:
+
+  LambdaLayerArn:
+    Value: !Ref LambdaLayer
+
+
