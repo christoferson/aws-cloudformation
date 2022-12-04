@@ -111,6 +111,30 @@ Provision a Lambda Version
 
 [lambda-layer](lambda-layer.yaml)
 
+### Lambda Layer - JS
+
+Provision a Lambda Version with Javascript SDK
+
+```
+npm init
+npm install aws-sdk
+```
+
+[lambda-layer-js](lambda-layer-js.yaml)
+
+### Lambda Layer - Java
+
+Provision a Lambda Version with Java SDK
+
+```
+<dependency>
+	<groupId>com.amazonaws</groupId>
+	<artifactId>aws-lambda-java-core</artifactId>
+	<version>1.2.2</version>
+</dependency>
+```
+
+[lambda-layer-java](lambda-layer-java.yaml)
 
 ### Lambda - Trigger - SQS
 
