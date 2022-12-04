@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda Layer - Java
+
+Parameters:
+
+  LambdaLayerBucketName:
+    Description: Bucket Name where Lambda Layer is Stored
+    Type: String
+    Default: "bucket"
+
+  LambdaLayerBucketKey:
+    Description: Bucket Key of Lambda Layer
+    Type: String
+    Default: "lambda-layers/lambda-layer-java-0.0.1.jar"
+
+  LambdaLayerRuntime:
+    Description: Lambda Layer Java Runtime
+    Type: String
+    Default: "java11"
+    
+Resources:
+
+  LambdaLayer:
+    Type: "AWS::Lambda::LayerVersion"
+    Properties:
+      LayerName: LambdaLayerJava
+      Description: !Sub "Common Lambda Layer - ${LambdaLayerRuntime}"
+      CompatibleRuntimes: 
+        - !Ref LambdaLayerRuntime #nodejs18.x | nodejs16.x
+      Content: 
+        S3Bucket: !Ref LambdaLayerBucketName
+        S3Key: !Ref LambdaLayerBucketKey
+
+Outputs:
+
+  LambdaLayerArn:
+    Value: !Ref LambdaLayer
+
+
