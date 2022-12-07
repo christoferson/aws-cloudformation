@@ -1,4 +1,12 @@
 Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+
+  CodeBucketName:
+    Type: String
+    Default: my-bucket
+    Description: Bucket containing lambda code
+    
 Resources:
   Api:
     Type: AWS::Serverless::Api
@@ -62,7 +70,9 @@ Resources:
       Description: !Sub
         - Stack ${AWS::StackName} Function ${ResourceName}
         - ResourceName: ListItems
-      CodeUri: src/ListItems
+      CodeUri:
+        Bucket: !Ref CodeBucketName
+        Key: "app-composer-demo/CreateItem.zip"
       Handler: index.handler
       Runtime: nodejs18.x
       MemorySize: 1024
@@ -88,7 +98,9 @@ Resources:
       Description: !Sub
         - Stack ${AWS::StackName} Function ${ResourceName}
         - ResourceName: CreateItem
-      CodeUri: src/CreateItem
+      CodeUri:
+        Bucket: !Ref CodeBucketName
+        Key: "app-composer-demo/CreateItem.zip"      
       Handler: index.handler
       Runtime: nodejs18.x
       MemorySize: 1024
@@ -114,7 +126,9 @@ Resources:
       Description: !Sub
         - Stack ${AWS::StackName} Function ${ResourceName}
         - ResourceName: GetItem
-      CodeUri: src/GetItem
+      CodeUri:
+        Bucket: !Ref CodeBucketName
+        Key: "app-composer-demo/CreateItem.zip"      
       Handler: index.handler
       Runtime: nodejs18.x
       MemorySize: 1024
@@ -140,7 +154,9 @@ Resources:
       Description: !Sub
         - Stack ${AWS::StackName} Function ${ResourceName}
         - ResourceName: UpdateItem
-      CodeUri: src/UpdateItem
+      CodeUri:
+        Bucket: !Ref CodeBucketName
+        Key: "app-composer-demo/CreateItem.zip"      
       Handler: index.handler
       Runtime: nodejs18.x
       MemorySize: 1024
@@ -166,7 +182,9 @@ Resources:
       Description: !Sub
         - Stack ${AWS::StackName} Function ${ResourceName}
         - ResourceName: DeleteItem
-      CodeUri: src/DeleteItem
+      CodeUri:
+        Bucket: !Ref CodeBucketName
+        Key: "app-composer-demo/DeleteItem.zip"      
       Handler: index.handler
       Runtime: nodejs18.x
       MemorySize: 1024
@@ -185,7 +203,8 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref Items
-      ReservedConcurrentExecutions: 1
+      #ReservedConcurrentExecutions: 1
+
 Metadata:
   AWS::Composer::Groups:
     Group:
