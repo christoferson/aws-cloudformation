@@ -5,6 +5,8 @@
 
 Provision a CodeBuild project that pulls source from CodeCommit and pushes to ECR
 
+- Provision EventBridge role and rule to detect changes in CodeCommit and trigger CodeBuild
+
 [code-codebuild-codecommit-ecr](code-codebuild-codecommit-ecr.yaml)
 
 ### Links
