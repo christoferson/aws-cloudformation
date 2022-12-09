@@ -46,6 +46,7 @@ Parameters:
     Default: "ecsdev-container"
 
   ContainerRepositoryName:
+    Description: ECR Repository Name   
     Type: String
     Default: "demo-server-blank-ecr"
 
@@ -76,6 +77,8 @@ Resources:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
       Tags:
+        - Key: "Name"
+          Value: "codepipeline-output-bucket"
         - Key: "application"
           Value: "app"
         - Key: "environment"
@@ -101,6 +104,8 @@ Resources:
       Tags:
         - Key: 'environment'
           Value: common
+        - Key: "Name"
+          Value: "codebuild-role"
 
   CodeBuildRolePolicy:
     Type: 'AWS::IAM::ManagedPolicy'
@@ -262,11 +267,25 @@ Resources:
                 - echo "[{\"name\":\"${CONTAINER_NAME}\",\"imageUri\":\"${REPOSITORY_URI}:${IMAGE_TAG}\"}]" > imagedefinitions.json
           artifacts:
             files: imagedefinitions.json
+          cache:
+            paths:
+              - '/root/.m2/**/*'
+              - '/root/.npm/**/*'
+      Cache:
+        #Type: S3
+        #Location: !Sub "${CodeBuildOutputBucket}/cache"
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_SOURCE_CACHE
       Tags:
         - Key: "application"
           Value: "app"
         - Key: "environment"
           Value: "dev"
+        - Key: "Name"
+          Value: "codebuild-project"
 
   CodePipelinePipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -329,12 +348,17 @@ Resources:
           Value: "dev"
         - Key: "source"
           Value: !Sub "${CodeCommitRepositoryName}"
-
+        - Key: "Name"
+          Value: "codepipeline-project"
+    
   LogGroupCodeBuildProject:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/codebuild/${CodeBuildProject}"
       RetentionInDays: 1
+      Tags:
+        - Key: "Name"
+          Value: "codebuild-log-group"
 
 ## Trigger CodePipeline on Push
 
