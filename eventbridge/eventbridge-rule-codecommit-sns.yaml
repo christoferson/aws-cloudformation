@@ -62,7 +62,7 @@ Resources:
             - main
             - staging
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
       State: "ENABLED"
       Targets:
         -
@@ -99,7 +99,7 @@ Resources:
             - commentOnPullRequestCreated
             - commentOnPullRequestUpdated
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
       State: "ENABLED"
       Targets:
         - 
@@ -143,7 +143,7 @@ Resources:
           pullRequestStatus:
             - "Open"
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
       State: "ENABLED"
       Targets:
         - 
@@ -192,7 +192,7 @@ Resources:
           isMerged: 
             - "False"
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
       State: "ENABLED"
       Targets:
         - 
@@ -245,7 +245,7 @@ Resources:
           pullRequestStatus:
             - "Closed"
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
       State: "ENABLED"
       Targets:
         - 

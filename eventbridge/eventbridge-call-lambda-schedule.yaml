@@ -53,7 +53,7 @@ Resources:
 
   EventBridgeScheduledRule: 
     Type: AWS::Events::Rule
-    Properties: 
+    Properties:
       #Name: xx
       Description: "ScheduledRule to Trigger Lambda"
       #EventBusName: default

@@ -67,6 +67,7 @@ Also includes settings to transform the input Event into a custom output format.
 
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_Events.html
 
+- https://aws.amazon.com/blogs/aws/new-create-point-to-point-integrations-between-event-producers-and-consumers-with-amazon-eventbridge-pipes/?trk=d0c467f8-ee69-4b7d-8e81-bc02ae25d111&sc_channel=el
 
 ### TODO
 

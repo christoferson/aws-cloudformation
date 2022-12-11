@@ -29,7 +29,7 @@ Resources:
     Properties:
       FunctionName : "eventbridge-rule-codecommit-lambda-function"
       Description: "EventBridge CodeCommit Lambda Notification Handler"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:
@@ -71,8 +71,8 @@ Resources:
             - main
             - staging
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository1"
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository2"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-server-blank"
       State: "ENABLED"
       Targets: #up to five (5) targets
         - 
@@ -113,7 +113,7 @@ Resources:
           pullRequestStatus:
             - "Closed"
         resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:repository1"
+          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
       State: "ENABLED"
       Targets:
         - 
