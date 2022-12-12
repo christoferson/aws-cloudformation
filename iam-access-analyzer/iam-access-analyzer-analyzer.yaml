@@ -16,7 +16,10 @@ Resources:
             -
               Property: 'principal.AWS'
               Eq:
-                - '923456789012'
+                - '5057435343'
+            - Property: isPublic
+              Eq:
+                - false
       Tags:
         -
           Key: Kind
