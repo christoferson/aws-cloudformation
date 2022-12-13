@@ -71,4 +71,23 @@ Provision an S3 bucket with WebSite Configuration.
 
 [s3-handler-sns](s3-handler-sns.yaml)
 
+#### S3 EventBridge
+
+  - "Object Created"
+  - "Object Deleted"
+  - "Object Tags Added"
+  - "Object Tags Deleted"
+          
+#### S3 EventBridge - Lambda
+
+Trigger Lambda via EventBridge
+
+[s3-handler-eventbridge](s3-handler-eventbridge.yaml)
+
 #### Resources
+- https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html
+- https://aws.amazon.com/jp/blogs/aws/new-use-amazon-s3-event-notifications-with-amazon-eventbridge/
+
+
+#### TODO
+Learn more about S3 Object Lambda

@@ -68,7 +68,7 @@ Resources:
     Properties:
       FunctionName : "eventbridge-rule-s3-lambda-function"
       Description: "EventBridge S3 Lambda Notification Handler"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:
