@@ -1,6 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Systems Manager - Parameter Store Reference
 
+# this will pickup the latest value of the parameter every time the template is run
+# the parameter value must be the Key for that Parameter. Then CFN will retrieve the value
+# this does not support SecureString SSM Parameter types
 
 Parameters:
 
@@ -54,7 +57,7 @@ Outputs:
 
 # SSM Secure reference is not supported in: Outputs
 #  ResolveDatabasePassword:
-#    Value: "{{resolve:ssm-secure:/xxx/database/password}}"
+#    Value: "{{resolve:ssm-secure:/demo/database/password}}"
 
 #  ResolveDatabasePasswordVersion1:
-#    Value: "{{resolve:ssm-secure:/xxx/database/password:1}}"
+#    Value: "{{resolve:ssm-secure:/demo/database/password:1}}"
