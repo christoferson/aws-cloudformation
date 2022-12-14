@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'IAM Policy Variable'
+
+Resources:
+
+  ManagedPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "Custom Managed Policy with Policy Variable" #The policy description is immutable. After a value is assigned, it cannot be changed.
+      #ManagedPolicyName: "managed-policy-custom"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+              - 's3:DeleteObject'
+              - 's3:DeleteObjectVersion'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::code-demo-bucket/${!aws:username}/*"
+
+Outputs:
+
+  ManagedPolicyArn:
+    Value: !Ref ManagedPolicy
+
+ 
