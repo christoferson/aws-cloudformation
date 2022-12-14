@@ -14,6 +14,12 @@ Provision a User Group with User Group Policy
 
 [iam-user-group](iam-user-group.yaml)
 
+### IAM - Managed Policy
+
+Provision a custom managed policy
+
+[iam-managed-policy](iam-managed-policy.yaml)
+
 ### Errors
 
 
