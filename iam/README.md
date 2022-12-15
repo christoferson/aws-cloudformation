@@ -20,8 +20,20 @@ Provision a custom managed policy
 
 [iam-managed-policy](iam-managed-policy.yaml)
 
+### IAM - Policy Variables
+
+Provision a custom managed policy with Policy Variables.
+
+When using policy variables, you must explicitly specify version 2012-10-17 in the policy. The default version of the IAM policy language, 2008-10-17, does not support policy variables.
+
+- ${!aws:username}
+
+[iam-policy-variable](iam-policy-variable.yaml)
+
 ### Errors
 
+- Unresolved resource dependencies [aws:username] in the Resources block of the template
+  Use ${!aws:username} instead of ${aws:username} arn:aws:iam::${AWS::AccountId}:user/${!aws:username}
 
 ### Resources
 
