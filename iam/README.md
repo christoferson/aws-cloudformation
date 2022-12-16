@@ -24,7 +24,9 @@ Provision a custom managed policy
 
 Provision a custom managed policy with Policy Variables.
 
-When using policy variables, you must explicitly specify version 2012-10-17 in the policy. The default version of the IAM policy language, 2008-10-17, does not support policy variables.
+- When using policy variables, you must explicitly specify version 2012-10-17 in the policy. The default version of the IAM policy language, 2008-10-17, does not support policy variables.
+
+- You can use policy variables in the Resource element and in string comparisons in the Condition element.
 
 - ${!aws:username}
 
