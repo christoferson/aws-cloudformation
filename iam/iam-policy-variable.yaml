@@ -27,7 +27,12 @@ Resources:
               - 's3:DeleteObjectVersion'
             Effect: Allow
             Resource: !Sub "arn:aws:s3:::code-demo-bucket/${!aws:username}/*"
-
+          # bucket that is named the same as the value in the requesting user's department tag
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::code-demo-bucket/${!aws:PrincipalTag/department}/*"
+            
 Outputs:
 
   ManagedPolicyArn:
