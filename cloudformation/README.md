@@ -1,6 +1,18 @@
 
 ## Cloudformation
 
+## Pseudo parameters
+
+- AWS::AccountId
+- AWS::Partition
+- AWS::Region
+- AWS::StackId
+- AWS::StackName
+- AWS::URLSuffix
+- AWS::NotificationARNs
+- AWS::NoValue
+
+
 ## Sections
 
 ### Parameters
@@ -65,6 +77,8 @@ Cause: FindInMap did not resolve any value. No defaulting.
 - https://github.com/aws-cloudformation/cfn-language-discussion
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacks-event-bridge.html
+
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/pseudo-parameter-reference.html
 
 ### TODO
 
