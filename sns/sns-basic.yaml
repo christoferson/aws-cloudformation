@@ -27,6 +27,7 @@ Resources:
       DisplayName: "My Topic"
       FifoTopic: false
       #ContentBasedDeduplication: false
+      #KmsMasterKeyId: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/sns"
       Tags:
         -
           Key: "Environment"

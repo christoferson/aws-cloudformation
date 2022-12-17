@@ -9,6 +9,12 @@ Provisions an SNS Topic with Email Subscription
 
 sns-basic
 
+### SNS Standard
+
+Provisions an SNS Topic (Standard)
+
+[sns-standard](sns-standard.yaml)
+
 ### SNS FIFO
 
 Provisions an FIFO SNS Topic with SQS Subscription
@@ -30,3 +36,5 @@ sns-handler-lambda
 
 ### Resources
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html
+
+- https://docs.aws.amazon.com/ses/latest/dg/configure-sns-notifications.html
