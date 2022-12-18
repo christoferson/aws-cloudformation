@@ -1,7 +1,24 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Pseudo parameters
 
-    
+Parameters:
+
+  InputText:
+    Type: String
+    Default: Text Value
+    Description: "Text Value"
+
+Conditions:
+
+  IsInputTextProduction: !Equals 
+    - !Ref InputText
+    - prd
+
+  IsInputTextNotEmpty: !Not 
+    - !Equals 
+      - !Ref InputText
+      - ''
+
 Resources:
 
   ResourceExample:
@@ -19,6 +36,13 @@ Resources:
       Tags:
         - Key: "Region"
           Value: !Sub "${AWS::Region}"
-
+        - Key: "AccountId"
+          Value: !Sub "${AWS::AccountId}"
+        - Key: "InputText"
+          Value:
+            Fn::If:
+              - IsInputTextNotEmpty
+              - !Ref InputText
+              - !Ref AWS::NoValue
 
 
