@@ -17,7 +17,15 @@
 
 ### Parameters
 
+### Conditions
+
+Within each condition, you can reference another condition, a parameter value, or a mapping. 
+
 ### Mappings
+
+## Cloudformation - Pseudo parameters
+
+[cfn-psuedo-parameters](cfn-psuedo-parameters.yaml)
 
 ## Cloudformation - Intrinsic Functions
 
@@ -69,6 +77,8 @@ Cause: FindInMap did not resolve any value. No defaulting.
 
 
 ## Links
+
+- [Anatomy](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-anatomy.html)
 
 - [Sample Templates](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-sample-templates.html)
 
