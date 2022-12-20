@@ -24,7 +24,11 @@ Resources:
   ResourceExample:
     Type: AWS::IAM::Role
     Properties:
-      Description: !Sub "Example Resource Role"
+      Description:
+        Fn::If:
+          - IsInputTextNotEmpty
+          - !Ref InputText
+          - !Ref AWS::NoValue      
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -38,11 +42,10 @@ Resources:
           Value: !Sub "${AWS::Region}"
         - Key: "AccountId"
           Value: !Sub "${AWS::AccountId}"
-        - Key: "InputText"
-          Value:
-            Fn::If:
-              - IsInputTextNotEmpty
-              - !Ref InputText
-              - !Ref AWS::NoValue
 
 
+Outputs:
+
+  OutResourceExample:
+    Value: !Ref ResourceExample
+                    

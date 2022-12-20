@@ -12,6 +12,21 @@
 - AWS::NotificationARNs
 - AWS::NoValue
 
+## Intrinsic Functions
+
+### Condition intrinsic functions | [link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference-conditions.html)
+
+
+Fn::And
+
+Fn::Equals
+
+Fn::If
+
+Fn::Not
+
+Fn::Or
+
 
 ## Sections
 
@@ -19,7 +34,9 @@
 
 ### Conditions
 
-Within each condition, you can reference another condition, a parameter value, or a mapping. 
+Within each condition, you can reference another condition, a parameter value, or a mapping.
+
+CloudFormation evaluates all the conditions in your template before creating any resources. 
 
 ### Mappings
 
