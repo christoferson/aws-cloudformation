@@ -84,6 +84,12 @@ Trigger Lambda via EventBridge
 
 [s3-handler-eventbridge](s3-handler-eventbridge.yaml)
 
+#### S3 Extra - Conditional Bucket 
+
+Bucket and Bucket Policy Created per Condition
+
+[s3-x-bucket-with-condition](s3-x-bucket-with-condition.yaml)
+
 #### Resources
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html
 - https://aws.amazon.com/jp/blogs/aws/new-use-amazon-s3-event-notifications-with-amazon-eventbridge/
