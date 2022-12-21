@@ -19,13 +19,44 @@
 
 Fn::And
 
+```
+MyAndCondition: !And
+  - !Equals ["sg-mysggroup", !Ref ASecurityGroup]
+  - !Condition SomeOtherCondition
+```
+
 Fn::Equals
+
+```
+UseProdCondition:
+  !Equals [!Ref EnvironmentType, prod]
+```
 
 Fn::If
 
+```
+  Type: 'AWS::EC2::Volume'
+  Properties:
+    Size:
+      'Fn::If':
+        - CreateLargeSize
+        - '100'
+        - '10'
+```
+
 Fn::Not
 
+```
+MyNotCondition:
+  !Not [!Equals [!Ref EnvironmentType, prod]]
+ ```
+
 Fn::Or
+
+```
+MyOrCondition:
+  !Or [!Equals [sg-mysggroup, !Ref ASecurityGroup], Condition: SomeOtherCondition]
+```
 
 
 ## Sections
