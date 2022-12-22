@@ -13,6 +13,8 @@ Launch an ec2 instance inside a the specified public subnet.
 
 [ec2-basic](./ec2-basic.yaml)
 
+
+
 ### EC2 Basic with Options
 
 Launch an ec2 instance inside a the specified public subnet. 
@@ -26,6 +28,12 @@ Launch an ec2 instance inside a the specified public subnet.
     - Need to provide SSH Key
 
 [ec2-basic-options](./ec2-basic-options.yaml)
+
+### EC2 Basic - With Volume
+
+Provision EC2 instance with Volume and Volume Attachment
+
+[ec2-volume](ec2-volume.yaml)
 
 ### EC2 with Unified CloudWatch Agent
 
