@@ -258,12 +258,18 @@ Invoke: curl -X GET https://rest-id.execute-api.eu-west-1.amazonaws.com/stg/demo
 
 ## API Gateway - REST - Lambda
 
-Provision REST API that integrates with Lambda.
+Provision REST API that integrates with Lambda. (IntegrationType=AWS_PROXY)
 
 Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo
 Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo/{name}
 
 [api-gateway-rest-lambda](api-gateway-rest-lambda.yaml)
+
+## API Gateway - REST - S3
+
+Provision REST API that integrates with S3. (IntegrationType=AWS)
+
+[api-gateway-rest-integration-s3](api-gateway-rest-integration-s3.yaml)
 
 ## API Gateway - WebSocket
 
