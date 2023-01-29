@@ -12,9 +12,19 @@ Create Cognito User Pool with Hosted UI
 
 [cognito-domain](cognito-domain.yaml)
 
+### Cognito Identity Pool - Basic
+
+Create Cognito User Pool and Identity Pool
+
+[cognito-identity-pool](cognito-identity-pool.yaml)
+
 ### TODO
 
 - Lambda Handlers - Post Auth, Signup
+- Hosted UI
+- Authenticated / Unauthenticated Roles
+- File name userpool vs identity pool
+- Concepts
 
 ### Resources
 
