@@ -23,6 +23,11 @@ Parameters:
     Description: Private VpcSubnets for Web Servers
     Type: List<AWS::EC2::Subnet::Id>
 
+  JobDefinitionImage:
+    Description: Job Definition Image
+    Type: String
+    Default: "busybox"
+    
 Resources:
 
   BatchServiceRole:
@@ -197,7 +202,7 @@ Resources:
       ContainerProperties:
         FargatePlatformConfiguration:
           PlatformVersion: LATEST
-        Image: busybox
+        Image: !Ref JobDefinitionImage
         Privileged: false # Must be false for Fargate
         ReadonlyRootFilesystem: false
         JobRoleArn: !GetAtt BatchJobRole.Arn  # AM role that the container can assume for AWS permissions. 
