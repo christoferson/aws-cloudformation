@@ -72,64 +72,52 @@ Parameters:
     Default: ecsdev
     Type: String
 
-#VPCID
   VpcId:
     Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
 
-#ALBSubnet1
   ALBSubnetId1:
-    Description : "ALB Subnet 1st"
+    Description : "ALB Subnet 1st - Public Subnet"
     Type : AWS::EC2::Subnet::Id
 
-#ALBSubnet2
   ALBSubnetId2:
-    Description : "ALB Subnet 2st"
+    Description : "ALB Subnet 2nd - Public Subnet"
     Type : AWS::EC2::Subnet::Id
 
-#ECSSubnet1
   ECSSubnetId1:
-    Description : "ECS Subnet 1st"
+    Description : "ECS Subnet 1st - Private Subnet"
     Type : AWS::EC2::Subnet::Id
 
-#ECSSubnet2
   ECSSubnetId2:
-    Description : "ECS Subnet 2st"
+    Description : "ECS Subnet 2nd - Private Subnet"
     Type : AWS::EC2::Subnet::Id
 
-#InternetALB
   InternetALBName:
     Type: String
     Default: "alb"
 
-#TargetGroupName
   TargetGroupName:
     Type: String
     Default: "tg"
 
-#ECSClusterName
   ECSClusterName:
     Type: String
     Default: "cluster"
 
-#ECSTaskName
   ECSTaskName:
     Type: String
     Default: "task"
 
-#ECSTaskCPUUnit
   ECSTaskCPUUnit:
     AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
     Type: String
     Default: "256"
 
-#ECSTaskMemory
   ECSTaskMemory:
     AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
     Type: String
     Default: "512"
 
-#ECSContainerName
   ECSContainerName:
     Type: String
     Default: "container"
@@ -138,17 +126,14 @@ Parameters:
     Type: Number
     Default: 80
 
-#ECSImageName
   ECSImageName:
     Type: String
     Default: "httpd:latest"
 
-#ECSServiceName
   ECSServiceName:
     Type: String
     Default: "service"
 
-#ECSTaskDesiredCount
   ECSTaskDesiredCount:
     Type: Number
     Default: 1
@@ -184,9 +169,8 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref 'VpcId'
-      GroupDescription: allow ICMP via same VPC
+      GroupDescription: Only allow inbound access to ECS from the Load Balancer
       SecurityGroupIngress:
-      # Only allow inbound access to ECS from the ELB
       - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
         IpProtocol: -1
 
@@ -241,17 +225,14 @@ Resources:
       Port: 80
       Protocol: HTTP
 
-# ------------------------------------------------------------#
-# ECS Cluster
-# ------------------------------------------------------------#
   ECSCluster:
     Type: "AWS::ECS::Cluster"
     Properties:
       ClusterName: !Sub "${ProjectName}-${ECSClusterName}"
+      Tags:
+        - Key: environment
+          Value: production
 
-# ------------------------------------------------------------#
-#  ECS LogGroup
-# ------------------------------------------------------------#
   ECSLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
