@@ -27,7 +27,12 @@ Parameters:
     Description: Job Definition Image
     Type: String
     Default: "busybox"
-    
+
+  JobDefinitionCommand:
+    Description: Job Definition Command
+    Type: String
+    Default: "echo fargate;"
+        
 Resources:
 
   BatchServiceRole:
@@ -214,10 +219,10 @@ Resources:
             Value: 0.25
           - Type: MEMORY
             Value: 512
-        Command: # ["echo","hi"]  ["sh","-c","echo fargate;"]
+        Command: # ["echo","hi"]  ["sh","-c","echo fargate;"] ["sh","-c","echo fargate && ls && java -jar batch.jar"]
           - sh 
           - -c 
-          - 'echo fargate;'
+          - !Ref JobDefinitionCommand
         NetworkConfiguration:
           AssignPublicIp: DISABLED # DISABLED | ENABLED
         Environment:
