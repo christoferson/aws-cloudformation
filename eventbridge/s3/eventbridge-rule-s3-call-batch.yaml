@@ -35,6 +35,11 @@ Parameters:
     Default: "arn:aws:s3:::bucket-name"
     Description: "Name of the Source Bucket"
 
+  BucketName:
+    Type: "String"
+    Default: "bucket-name"
+    Description: "Name of the Source Bucket"
+    
   JobDefinitionArn:
     Type: "String"
     Default: "arn:aws:s3:::bucket-name"
@@ -104,8 +109,10 @@ Resources:
           - aws.s3
         detail-type:
           - "Object Created"
-        resources:
-          - !Ref BucketArn
+        detail:
+          bucket:
+            name: 
+              - !Ref BucketName
       State: "ENABLED"
       #"RoleArn" : String, # (ARN) of the role that is used for target invocation.
       Targets:
@@ -120,6 +127,7 @@ Resources:
             JobName: "eventbridge-rule-s3-call-batch-job"
             RetryStrategy:  
               Attempts: 1
+
 
 Outputs:
 
