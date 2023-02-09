@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (S3) - Call Batch
+
+# Bucket must have event bridge notification enabled
+#  Bucket:
+#    Type: "AWS::S3::Bucket"
+#    Properties:
+#      ...
+#      NotificationConfiguration:
+#         EventBridgeConfiguration:
+#            EventBridgeEnabled: true
+
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "S3 Configuration"
+        Parameters: 
+          - BucketArn
+
+    ParameterLabels: 
+      BucketArn: 
+        Default: "BucketArn"
+        MinLength: 5
+        MaxLength: 124
+        
+
+Parameters:
+
+  BucketArn:
+    Type: "String"
+    Default: "arn:aws:s3:::bucket-name"
+    Description: "Name of the Source Bucket"
+
+  JobDefinitionArn:
+    Type: "String"
+    Default: "arn:aws:s3:::bucket-name"
+    Description: "Name of the Destination Job Definition"
+
+  JobQueueArn:
+    Type: "String"
+    Default: "arn:aws:s3:::bucket-name"
+    Description: "Name of the Destination Job Definition"
+    
+Resources:
+
+  EvenBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "code-build-demo-role"
+      Description: !Sub "CodeBuild Role"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref EvenBridgeRolePolicy
+        #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Tags:
+        - Key: 'environment'
+          Value: common
+        - Key: "Name"
+          Value: "codebuild-role"
+
+  EvenBridgeRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeBuild Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'batch:SubmitJob'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+                #"arn:aws:batch:*:916902469227:compute-environment/*",
+                #"arn:aws:batch:*:916902469227:job/*",
+                #"arn:aws:batch:*:916902469227:job-queue/*",
+                #"arn:aws:batch:*:916902469227:job-definition/*:*",          
+              
+  EventBridgeRuleS3CallBatch: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-s3-call-lambda
+      Description: "Demo S3 Trigger Batch"
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        resources:
+          - !Ref BucketArn
+      State: "ENABLED"
+      #"RoleArn" : String, # (ARN) of the role that is used for target invocation.
+      Targets:
+        - 
+          Arn: !Ref JobQueueArn
+          Id: "TargetBatch"
+          RoleArn : !GetAtt EvenBridgeRole.Arn
+          BatchParameters:
+            #ArrayProperties:
+            #  Size: 950 
+            JobDefinition: !Ref JobDefinitionArn
+            JobName: "eventbridge-rule-s3-call-batch-job"
+            RetryStrategy:  
+              Attempts: 1
+
+Outputs:
+
+  EventBridgeRuleS3CallBatchName:
+    Value: !Ref EventBridgeRuleS3CallBatch
