@@ -61,7 +61,7 @@ Also includes settings to transform the input Event into a custom output format.
 
 ### EventBridge - Rule - S3 - Trigger Lambda
 
-[s3/eventbridge-rule-s3](s3/eventbridge-rule-s3.yaml)
+[s3/eventbridge-rule-s3](s3/eventbridge-rule-s3-call-lambda.yaml)
 
 ### References
 
