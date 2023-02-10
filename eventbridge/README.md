@@ -63,6 +63,10 @@ Also includes settings to transform the input Event into a custom output format.
 
 [s3/eventbridge-rule-s3](s3/eventbridge-rule-s3-call-lambda.yaml)
 
+### EventBridge - Rule - S3 - Trigger Batch
+
+[eventbridge-rule-s3-call-batch](s3/eventbridge-rule-s3-call-batch.yaml)
+
 ### References
 
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_Events.html
