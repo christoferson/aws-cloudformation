@@ -120,6 +120,16 @@ Resources:
           Arn: !Ref JobQueueArn
           Id: "TargetBatch"
           RoleArn : !GetAtt EvenBridgeRole.Arn
+          InputTransformer:
+            InputPathsMap:
+              "S3ObjectKey": "$.detail.object.key"
+            InputTemplate: |
+              {
+                "Parameters": {"S3Key" : "<S3ObjectKey>"},
+                "ContainerOverrides": {
+                  "Command": ["sh", "-c", "echo s3rocksv2 && java -jar batch.jar <S3ObjectKey>"]
+                }
+              }
           BatchParameters:
             #ArrayProperties:
             #  Size: 950 
