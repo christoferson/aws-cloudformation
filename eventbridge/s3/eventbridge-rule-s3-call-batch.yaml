@@ -17,23 +17,22 @@ Metadata:
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label: 
-          default: "S3 Configuration"
+          default: "Source Configuration"
         Parameters: 
-          - BucketArn
-
+          - BucketName
+      - Label: 
+          default: "Target Configuration"
+        Parameters: 
+          - JobDefinitionArn
+          - JobQueueArn
     ParameterLabels: 
       BucketArn: 
-        Default: "BucketArn"
+        Default: "BucketName"
         MinLength: 5
         MaxLength: 124
         
 
 Parameters:
-
-  BucketArn:
-    Type: "String"
-    Default: "arn:aws:s3:::bucket-name"
-    Description: "Name of the Source Bucket"
 
   BucketName:
     Type: "String"
@@ -43,20 +42,20 @@ Parameters:
   JobDefinitionArn:
     Type: "String"
     Default: "arn:aws:s3:::bucket-name"
-    Description: "Name of the Destination Job Definition"
+    Description: "Arn of the Target Job Definition"
 
   JobQueueArn:
     Type: "String"
     Default: "arn:aws:s3:::bucket-name"
-    Description: "Name of the Destination Job Definition"
+    Description: "Arn of the Target Job Queue"
     
 Resources:
 
   EvenBridgeRole:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: !Sub "code-build-demo-role"
-      Description: !Sub "CodeBuild Role"
+      #RoleName: !Sub "event-bridge-role"
+      Description: !Sub "Event Bridge Role - S3 Call Batch"
       Path: /
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -72,14 +71,14 @@ Resources:
       Tags:
         - Key: 'environment'
           Value: common
-        - Key: "Name"
-          Value: "codebuild-role"
+        - Key: "name"
+          Value: "event-bridge-role-s3-call-batch"
 
   EvenBridgeRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "CodeBuild Role ManagedPolicy"
-      #ManagedPolicyName: "code-build-demo-policy"
+      Description: "Event Bridge ManagedPolicy - S3 Call Batch"
+      #ManagedPolicyName: "event-bridge-policy"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -101,8 +100,8 @@ Resources:
   EventBridgeRuleS3CallBatch: 
     Type: AWS::Events::Rule
     Properties: 
-      #Name: eventbridge-rule-s3-call-lambda
-      Description: "Demo S3 Trigger Batch"
+      #Name: eventbridge-rule-s3-call-batch
+      Description: "Event Bridge Rule S3 Call Batch"
       EventBusName: default
       EventPattern:
         source:
@@ -135,9 +134,8 @@ Resources:
             #  Size: 950 
             JobDefinition: !Ref JobDefinitionArn
             JobName: "eventbridge-rule-s3-call-batch-job"
-            RetryStrategy:  
+            RetryStrategy:
               Attempts: 1
-
 
 Outputs:
 
