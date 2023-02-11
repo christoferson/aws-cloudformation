@@ -1,5 +1,7 @@
 # AWS Cloudformation Templates
 
+**Collection of Cloudformation templates group by services.**
+
 ##### [API Gateway](api-gateway/README.md)
 
 ##### [Backup](backup/README.md)
@@ -24,6 +26,12 @@
 
 ##### [EFS](efs/README.md)
 
+##### [Elasticache](elasticache/README.md)
+
+##### [ElasticBeanstalk](elasticbeanstalk/README.md)
+
+##### [EventBridge](eventbridge/README.md)
+
 ##### [KMS](kms/README.md)
 
 ##### [Lambda](lambda/README.md)
@@ -45,6 +53,12 @@
 ##### [SQS](sqs/README.md)
 
 ##### [SSM](ssm/README.md)
+
+
+#### [Composite](00-composite/README.md)
+
+
+
 
 #### S3 Notification Handler Lambda
 
