@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (S3) - Call SNS
+
+# Source Bucket must have event bridge notification enabled
+#  Bucket:
+#    Type: "AWS::S3::Bucket"
+#    Properties:
+#      ...
+#      NotificationConfiguration:
+#         EventBridgeConfiguration:
+#            EventBridgeEnabled: true
+
+# Target SQS Queue must define AWS::SQS::QueuePolicy to permit events.amazonaws.com to send message
+
+
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label: 
+          default: "Source Configuration"
+        Parameters: 
+          - BucketName
+      - Label: 
+          default: "Target Configuration"
+        Parameters: 
+          - SqsQueueArn
+          - SqsQueueUrl
+    ParameterLabels: 
+      BucketArn: 
+        Default: "BucketName"
+        MinLength: 5
+        MaxLength: 124
+        
+
+Parameters:
+
+  BucketName:
+    Type: "String"
+    Default: "bucket-name"
+    Description: "Name of the Source Bucket"
+
+  SqsQueueArn:
+    Type: "String"
+    Default: "arn:aws:sqs:us-east-1:90000000000:queue"
+    Description: "Arn of the Target Sqs Queue"
+
+  SqsQueueUrl:
+    Type: "String"
+    Default: "https://sqs.us-east-1.amazonaws.com/90000000000/queue"
+    Description: "URL of the Target Sqs Queue"
+        
+Resources:
+
+  EvenBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "event-bridge-role"
+      Description: !Sub "Event Bridge Role - S3 Call SQS"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref EvenBridgeRolePolicy
+        #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Tags:
+        - Key: 'environment'
+          Value: common
+        - Key: "name"
+          Value: "event-bridge-role-s3-call-sqs"
+
+  EvenBridgeRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Event Bridge ManagedPolicy - S3 Call SQS"
+      #ManagedPolicyName: "event-bridge-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'     
+
+  SqsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: 
+        - !Ref SqsQueueUrl
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "events.amazonaws.com"
+            Action:
+              - "sqs:SendMessage"
+            Resource: !Ref SqsQueueArn
+            Condition:
+              #ArnEquals:
+              #  aws:SourceArn: !Sub "arn:aws:s3:::${BucketName}"
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                
+  EventBridgeRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-s3-call-sqs
+      Description: "Event Bridge Rule S3 Call SQS"
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name: 
+              - !Ref BucketName
+      State: "ENABLED"
+      RoleArn: !GetAtt EvenBridgeRole.Arn
+      Targets:
+        - 
+          Arn: !Ref SqsQueueArn
+          Id: "TargetSQS"
+          #RoleArn : Not Supported. Use Resource Policy AWS::SQS::QueuePolicy
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600 #86400
+            MaximumRetryAttempts: 1 #185
+          #DeadLetterConfig:
+          #   Arn: xx
+          #SqsParameters:
+            #MessageGroupId: # The FIFO message group ID to use as the target.
+
+Outputs:
+
+  EventBridgeRuleName:
+    Value: !Ref EventBridgeRule
