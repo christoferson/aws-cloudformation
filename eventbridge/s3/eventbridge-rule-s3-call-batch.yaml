@@ -119,6 +119,11 @@ Resources:
           Arn: !Ref JobQueueArn
           Id: "TargetBatch"
           RoleArn : !GetAtt EvenBridgeRole.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600 #86400
+            MaximumRetryAttempts: 1 #185
+          #DeadLetterConfig:
+          #   Arn: xx
           InputTransformer:
             InputPathsMap:
               "S3ObjectKey": "$.detail.object.key"
