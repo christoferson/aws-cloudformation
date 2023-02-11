@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: EventBridge Rule (S3) - Call SQS
 
-# Bucket must have event bridge notification enabled
+# Source Bucket must have event bridge notification enabled
 #  Bucket:
 #    Type: "AWS::S3::Bucket"
 #    Properties:
@@ -9,6 +9,9 @@ Description: EventBridge Rule (S3) - Call SQS
 #      NotificationConfiguration:
 #         EventBridgeConfiguration:
 #            EventBridgeEnabled: true
+
+# Target SQS Queue must define AWS::SQS::QueuePolicy to permit events.amazonaws.com to send message
+
 
 Metadata:
 
@@ -24,6 +27,7 @@ Metadata:
           default: "Target Configuration"
         Parameters: 
           - SqsQueueArn
+          - SqsQueueUrl
     ParameterLabels: 
       BucketArn: 
         Default: "BucketName"
@@ -42,7 +46,12 @@ Parameters:
     Type: "String"
     Default: "arn:aws:sqs:us-east-1:90000000000:queue"
     Description: "Arn of the Target Sqs Queue"
-    
+
+  SqsQueueUrl:
+    Type: "String"
+    Default: "https://sqs.us-east-1.amazonaws.com/90000000000/queue"
+    Description: "URL of the Target Sqs Queue"
+        
 Resources:
 
   EvenBridgeRole:
@@ -77,16 +86,33 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'sqs:SendMessage'
-            Effect: Allow
-            Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:*"
-          - Action:
               - 'logs:CreateLogGroup'
               - 'logs:CreateLogStream'
               - 'logs:PutLogEvents'
             Effect: Allow
             Resource: '*'     
-              
+
+  SqsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: 
+        - !Ref SqsQueueUrl
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "events.amazonaws.com"
+            Action:
+              - "sqs:SendMessage"
+            Resource: !Ref SqsQueueArn
+            Condition:
+              #ArnEquals:
+              #  aws:SourceArn: !Sub "arn:aws:s3:::${BucketName}"
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                
   EventBridgeRule: 
     Type: AWS::Events::Rule
     Properties: 
@@ -103,12 +129,12 @@ Resources:
             name: 
               - !Ref BucketName
       State: "ENABLED"
-      #"RoleArn" : String, # (ARN) of the role that is used for target invocation.
+      RoleArn: !GetAtt EvenBridgeRole.Arn
       Targets:
         - 
           Arn: !Ref SqsQueueArn
           Id: "TargetSQS"
-          RoleArn : !GetAtt EvenBridgeRole.Arn
+          #RoleArn : Not Supported. Use Resource Policy AWS::SQS::QueuePolicy
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600 #86400
             MaximumRetryAttempts: 1 #185
