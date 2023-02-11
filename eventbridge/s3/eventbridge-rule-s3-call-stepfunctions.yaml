@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EventBridge Rule (S3) - Call Batch
+Description: EventBridge Rule (S3) - Call StepFunctions
 
 # Bucket must have event bridge notification enabled
 #  Bucket:
@@ -17,46 +17,40 @@ Metadata:
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label: 
-          default: "S3 Configuration"
+          default: "Source Configuration"
         Parameters: 
-          - BucketArn
-
+          - BucketName
+      - Label: 
+          default: "Target Configuration"
+        Parameters: 
+          - StepFunctionArn
     ParameterLabels: 
       BucketArn: 
-        Default: "BucketArn"
+        Default: "BucketName"
         MinLength: 5
         MaxLength: 124
         
 
 Parameters:
 
-  BucketArn:
-    Type: "String"
-    Default: "arn:aws:s3:::bucket-name"
-    Description: "Name of the Source Bucket"
-
   BucketName:
     Type: "String"
     Default: "bucket-name"
     Description: "Name of the Source Bucket"
     
-  JobDefinitionArn:
+  StepFunctionArn:
     Type: "String"
-    Default: "arn:aws:s3:::bucket-name"
-    Description: "Name of the Destination Job Definition"
+    Default: "arn:aws:states:us-east-1:937921569138:stateMachine:StateMachine-AzPfXPRklJX7"
+    Description: "Arn of the Target Job Definition"
 
-  JobQueueArn:
-    Type: "String"
-    Default: "arn:aws:s3:::bucket-name"
-    Description: "Name of the Destination Job Definition"
     
 Resources:
 
   EvenBridgeRole:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: !Sub "code-build-demo-role"
-      Description: !Sub "CodeBuild Role"
+      #RoleName: !Sub "event-bridge-role"
+      Description: !Sub "Event Bridge Role - S3 Call Step Function"
       Path: /
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -72,19 +66,19 @@ Resources:
       Tags:
         - Key: 'environment'
           Value: common
-        - Key: "Name"
-          Value: "codebuild-role"
+        - Key: "name"
+          Value: "event-bridge-role-s3-call-stepfunction"
 
   EvenBridgeRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "CodeBuild Role ManagedPolicy"
-      #ManagedPolicyName: "code-build-demo-policy"
+      Description: "Event Bridge ManagedPolicy - S3 Call Step Function"
+      #ManagedPolicyName: "event-bridge-policy"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'batch:SubmitJob'
+              - 'states:StartExecution'
             Effect: Allow
             Resource: '*'
           - Action:
@@ -92,17 +86,13 @@ Resources:
               - 'logs:CreateLogStream'
               - 'logs:PutLogEvents'
             Effect: Allow
-            Resource: '*'
-                #"arn:aws:batch:*:916902469227:compute-environment/*",
-                #"arn:aws:batch:*:916902469227:job/*",
-                #"arn:aws:batch:*:916902469227:job-queue/*",
-                #"arn:aws:batch:*:916902469227:job-definition/*:*",          
+            Resource: '*'     
               
-  EventBridgeRuleS3CallBatch: 
+  EventBridgeRule: 
     Type: AWS::Events::Rule
     Properties: 
-      #Name: eventbridge-rule-s3-call-lambda
-      Description: "Demo S3 Trigger Batch"
+      #Name: eventbridge-rule-s3-call-batch
+      Description: "Event Bridge Rule S3 Call Batch"
       EventBusName: default
       EventPattern:
         source:
@@ -117,29 +107,11 @@ Resources:
       #"RoleArn" : String, # (ARN) of the role that is used for target invocation.
       Targets:
         - 
-          Arn: !Ref JobQueueArn
-          Id: "TargetBatch"
+          Arn: !Ref StepFunctionArn
+          Id: "TargetStepFunction"
           RoleArn : !GetAtt EvenBridgeRole.Arn
-          InputTransformer:
-            InputPathsMap:
-              "S3ObjectKey": "$.detail.object.key"
-            InputTemplate: |
-              {
-                "Parameters": {"S3Key" : "<S3ObjectKey>"},
-                "ContainerOverrides": {
-                  "Command": ["sh", "-c", "echo s3rocksv2 && java -jar batch.jar <S3ObjectKey>"]
-                }
-              }
-          BatchParameters:
-            #ArrayProperties:
-            #  Size: 950 
-            JobDefinition: !Ref JobDefinitionArn
-            JobName: "eventbridge-rule-s3-call-batch-job"
-            RetryStrategy:  
-              Attempts: 1
-
 
 Outputs:
 
-  EventBridgeRuleS3CallBatchName:
-    Value: !Ref EventBridgeRuleS3CallBatch
+  EventBridgeRuleName:
+    Value: !Ref EventBridgeRule
