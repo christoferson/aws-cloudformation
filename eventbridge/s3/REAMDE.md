@@ -1,5 +1,7 @@
 ## EventBridge Cloudformation - S3
 
+### Event Source Configuration
+
 In order to receive events, source Bucket must have event bridge notification enabled.
 
 ```
@@ -12,8 +14,13 @@ In order to receive events, source Bucket must have event bridge notification en
             EventBridgeEnabled: true
 ```
 
+### Event Target Configuration
+
+When applicable, Targets must also be configured to have correct resource policy to allow EventBridge to perform actions. [link](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-use-resource-based.html)
+
 When target has encryption enabled, make sure EventBridge role has KMS permissions.
-This is only for Customer Managed KMS. Set the KMS Key Policy to allow access.
+This only applies to Customer Managed Keys and not AWS Manages Keys. 
+Set the KMS Key Policy to allow EventBridge to decrypt and generage data keys.
 
 ```
 {
@@ -29,24 +36,37 @@ This is only for Customer Managed KMS. Set the KMS Key Policy to allow access.
 	"Resource": "*"
 }
 ```
+### S3 Trigger Batch
 
+Provision an EventBridge rule that will trigger Batch
+
+[eventbridge-rule-s3-call-batch](eventbridge-rule-s3-call-batch.yaml)
+
+### S3 Trigger Lambda
+
+[eventbridge-rule-s3-call-lambda](eventbridge-rule-s3-call-lambda.yaml)
+
+### S3 Trigger SNS
+
+[sns-policy](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sns-policy.html)
+
+[eventbridge-rule-s3-call-sns](eventbridge-rule-s3-call-sns.yaml)
 
 ### S3 Trigger SQS
 
 [eventbridge-rule-s3-call-sqs](eventbridge-rule-s3-call-sqs.yaml)
 
-### S3 Trigger SNS
+### S3 Trigger StepFunctions
 
-https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sns-policy.html
-
-[eventbridge-rule-s3-call-sns](eventbridge-rule-s3-call-sns.yaml)
-
+[eventbridge-rule-s3-call-stepfunctions](eventbridge-rule-s3-call-stepfunctions.yaml)
 
 ### Links
 
 - [AWS::Events::Rule](https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html)
 
 - https://aws.amazon.com/premiumsupport/knowledge-center/sns-not-getting-eventbridge-notification/
+
+- https://aws.amazon.com/premiumsupport/knowledge-center/batch-parameters-trigger-eventbridge/?nc1=h_ls
 
 ### Errors
 
@@ -56,17 +76,21 @@ https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sn
 RoleArn is not supported for target arn:aws:sqs:us-east-1:foo:bar. (Service: AmazonCloudWatchEvents; Status Code: 400; Error Code: ValidationException; Request ID: zzz; Proxy: null)
 ```
 
+Resource policy should be used instead of IAM Role
+
 #### S3 Call SNS
 
 ```
 Policy statement action out of service scope!
 ```
-SNS policy only supports limited actions
+
+Policy Statement (e.g. SNS policy) only supports limited actions. Specifying unsupported actions will result to this error.
 
 ### TODO
 
-- SNS 
-- SQS
-- Policy Permissions
+- [x] SNS 
+- [x] SQS
+- [ ] Policy Permissions
+- [ ] ECS
 
 
