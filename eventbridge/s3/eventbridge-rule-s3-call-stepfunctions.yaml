@@ -110,7 +110,10 @@ Resources:
           Arn: !Ref StepFunctionArn
           Id: "TargetStepFunction"
           RoleArn : !GetAtt EvenBridgeRole.Arn
-
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600 #86400
+            MaximumRetryAttempts: 1 #185
+            
 Outputs:
 
   EventBridgeRuleName:
