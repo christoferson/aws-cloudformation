@@ -1,19 +1,43 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Batch (EC2)
 
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetListCompute
+      -
+        Label:
+          default: "Job Configuration"
+        Parameters:
+          - JobDefinitionImage
+          - JobDefinitionCommand
+
 Parameters:
 
   VpcId:
     Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
 
-  ComputeSubnetId1:
-    Description : "Compute Subnet 1"
-    Type : AWS::EC2::Subnet::Id
+  VpcSubnetListCompute:
+    Description: Private VpcSubnets for Web Servers
+    Type: List<AWS::EC2::Subnet::Id>
 
-  ComputeSubnetId2:
-    Description : "Compute Subnet 2"
-    Type : AWS::EC2::Subnet::Id
+  JobDefinitionImage:
+    Description: Job Definition Image
+    Type: String
+    Default: "busybox"
+
+  JobDefinitionCommand:
+    Description: Job Definition Command
+    Type: String
+    Default: "echo ec2;"
 
 Resources:
 
@@ -63,7 +87,10 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VpcId
-      GroupDescription: BatchComputeEnvironment
+      GroupDescription: "BatchComputeSecurityGroup (EC2)"
+      Tags:
+        - Key: Name
+          Value: !Sub "batch-ec2-sg"
 
   BatchComputeInstanceRole:
     Type: AWS::IAM::Role
@@ -82,6 +109,9 @@ Resources:
         - arn:aws:iam::aws:policy/AWSCodeCommitFullAccess
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
       Path: "/"
+      Tags:
+        - Key: 'environment'
+          Value: common
 
   BatchComputeInstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
@@ -92,7 +122,7 @@ Resources:
   BatchComputeEnvironment:
     Type: "AWS::Batch::ComputeEnvironment"
     Properties:
-      #ComputeEnvironmentName: cfn-env # (Optional)    
+      #ComputeEnvironmentName: cfn-env # (Optional)
       Type: MANAGED
       State: ENABLED
       ServiceRole: !GetAtt BatchServiceRole.Arn
@@ -103,19 +133,19 @@ Resources:
         DesiredvCpus: 0
         SecurityGroupIds:
           - !Ref BatchComputeSecurityGroup
-        Subnets:
-          - !Ref ComputeSubnetId1
-          - !Ref ComputeSubnetId2
+        Subnets: !Ref VpcSubnetListCompute
+          #- !Ref ComputeSubnetId1
+          #- !Ref ComputeSubnetId2
         InstanceRole: !GetAtt BatchComputeInstanceProfile.Arn
         InstanceTypes:
           - optimal
-        Tags: {"Name": "Batch Compute Environment"}
+        Tags: {"Name": "Batch Compute Environment (EC2)"}
 
   BatchJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      #JobQueueName: cfn-queue # (Optional)
       Priority: 1 # Job queues with a higher priority (or a higher integer value for the priority parameter) are evaluated first
-      #JobQueueName: cfn-queue
       ComputeEnvironmentOrder:
         - Order: 1
           ComputeEnvironment: !Ref BatchComputeEnvironment
@@ -211,8 +241,9 @@ Resources:
       #JobDefinitionName: cfn-def
       #PlatformCapabilities: 
       #  - FARGATE
+      Parameters: {"codec": "mp4"}
       ContainerProperties:
-        Image: busybox
+        Image: !Ref JobDefinitionImage
         Privileged: true
         ReadonlyRootFilesystem: false
         JobRoleArn: !GetAtt BatchJobRole.Arn  # AM role that the container can assume for AWS permissions. 
@@ -225,7 +256,9 @@ Resources:
           - Type: MEMORY
             Value: 1024
         Command:
-          - echo hi
+          - sh 
+          - -c 
+          - !Ref JobDefinitionCommand
         #NetworkConfiguration:
         #  AssignPublicIp: ENABLED
         Environment:
@@ -235,11 +268,14 @@ Resources:
           - Name: DB_URL
             ValueFrom: "/demo/database/endpoint"
         LogConfiguration:
-          LogDriver: awslogs  # Fargate resources are restricted to the awslogs and splunk log drivers.
+          LogDriver: awslogs # Fargate resources are restricted to the awslogs and splunk log drivers.
           Options:
             awslogs-group: !Ref BatchJobLogGroup #/aws/batch/job
             awslogs-region: !Ref "AWS::Region"
             awslogs-stream-prefix: "my-batch"
+          #SecretOptions:
+          #  - Name: LOG_DB_URL
+          #    ValueFrom: "/demo/database/endpoint" # ARN of Secret or SSM
       RetryStrategy:
         Attempts: 1
       Timeout:
