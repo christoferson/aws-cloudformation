@@ -92,10 +92,10 @@ Resources:
   BatchComputeEnvironment:
     Type: "AWS::Batch::ComputeEnvironment"
     Properties:
+      #ComputeEnvironmentName: cfn-env # (Optional)    
       Type: MANAGED
       State: ENABLED
-      ServiceRole: !GetAtt BatchServiceRole.Arn 
-      #ComputeEnvironmentName: cfn-env
+      ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
         Type: EC2
         MinvCpus: 0
@@ -114,19 +114,22 @@ Resources:
   BatchJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
+      Priority: 1 # Job queues with a higher priority (or a higher integer value for the priority parameter) are evaluated first
+      #JobQueueName: cfn-queue
       ComputeEnvironmentOrder:
         - Order: 1
           ComputeEnvironment: !Ref BatchComputeEnvironment
       State: ENABLED # if the job queue state is DISABLED, new jobs can't be added to the queue, but jobs already in the queue can finish.
-      Priority: 1 # Job queues with a higher priority (or a higher integer value for the priority parameter) are evaluated first
-      #JobQueueName: cfn-queue
-      Tags: {"Name": "Batch Job Queue"}
+      Tags: {"Name": "Batch Job Queue EC2"}
 
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
       LogGroupName: !Sub "/batch/logs/my-batch-ec2"
       RetentionInDays: 1
+      Tags: 
+        - Key: "env"
+          Value: "prd"
 
   BatchJobRole:
     Type: 'AWS::IAM::Role'
@@ -232,7 +235,7 @@ Resources:
           - Name: DB_URL
             ValueFrom: "/demo/database/endpoint"
         LogConfiguration:
-          LogDriver: awslogs
+          LogDriver: awslogs  # Fargate resources are restricted to the awslogs and splunk log drivers.
           Options:
             awslogs-group: !Ref BatchJobLogGroup #/aws/batch/job
             awslogs-region: !Ref "AWS::Region"
