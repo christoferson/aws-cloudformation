@@ -66,3 +66,10 @@ Set PlatformVersion: 1.4.0. Error occurs if set to LATEST
 ### Resources
 
 [fargate](https://docs.aws.amazon.com/batch/latest/userguide/fargate.html#fargate-job-queues)
+
+https://docs.aws.amazon.com/batch/latest/userguide/batch-cwe-target.html
+
+### TODO
+
+SNS notify when batch fails
+https://docs.aws.amazon.com/batch/latest/userguide/batch_sns_tutorial.html

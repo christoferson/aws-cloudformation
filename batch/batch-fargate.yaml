@@ -12,7 +12,13 @@ Metadata:
         Parameters:
           - VpcId
           - VpcSubnetListCompute
-
+      -
+        Label:
+          default: "Job Configuration"
+        Parameters:
+          - JobDefinitionImage
+          - JobDefinitionCommand
+          
 Parameters:
 
   VpcId:
@@ -227,6 +233,12 @@ Resources:
           AssignPublicIp: DISABLED # DISABLED | ENABLED
         Environment:
           - Name: APP_ENV
+            Value: "dev"
+          - Name: AWS_KEY
+            Value: "dev"
+          - Name: AWS_SECRET
+            Value: "dev"
+          - Name: AWS_REGION
             Value: "dev"
         Secrets:
           - Name: DB_URL
