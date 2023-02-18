@@ -10,7 +10,7 @@ Description: EventBridge Rule (S3) - Call SNS
 #         EventBridgeConfiguration:
 #            EventBridgeEnabled: true
 
-# Target SQS Queue must define AWS::SQS::QueuePolicy to permit events.amazonaws.com to send message
+# Target SNS Topic must define AWS::SNS::TopicPolicy to permit events.amazonaws.com to publish message
 
 
 Metadata:
@@ -26,8 +26,7 @@ Metadata:
       - Label: 
           default: "Target Configuration"
         Parameters: 
-          - SqsQueueArn
-          - SqsQueueUrl
+          - SnsTopicArn
     ParameterLabels: 
       BucketArn: 
         Default: "BucketName"
@@ -42,15 +41,10 @@ Parameters:
     Default: "bucket-name"
     Description: "Name of the Source Bucket"
 
-  SqsQueueArn:
+  SnsTopicArn:
     Type: "String"
-    Default: "arn:aws:sqs:us-east-1:90000000000:queue"
-    Description: "Arn of the Target Sqs Queue"
-
-  SqsQueueUrl:
-    Type: "String"
-    Default: "https://sqs.us-east-1.amazonaws.com/90000000000/queue"
-    Description: "URL of the Target Sqs Queue"
+    Default: "arn:aws:sns:us-east-1:9000000000:topic"
+    Description: "Arn of the Target Sns Topic"
         
 Resources:
 
@@ -58,7 +52,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "event-bridge-role"
-      Description: !Sub "Event Bridge Role - S3 Call SQS"
+      Description: !Sub "Event Bridge Role - S3 Call SNS"
       Path: /
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -75,12 +69,12 @@ Resources:
         - Key: 'environment'
           Value: common
         - Key: "name"
-          Value: "event-bridge-role-s3-call-sqs"
+          Value: "event-bridge-role-s3-call-sns"
 
   EvenBridgeRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "Event Bridge ManagedPolicy - S3 Call SQS"
+      Description: "Event Bridge ManagedPolicy - S3 Call SNS"
       #ManagedPolicyName: "event-bridge-policy"
       PolicyDocument:
         Version: 2012-10-17
@@ -92,32 +86,26 @@ Resources:
             Effect: Allow
             Resource: '*'     
 
-  SqsQueuePolicy:
-    Type: AWS::SQS::QueuePolicy
+  SnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
     Properties:
-      Queues: 
-        - !Ref SqsQueueUrl
+      Topics:
+        - !Ref SnsTopicArn
       PolicyDocument:
-        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service:
                 - "events.amazonaws.com"
-            Action:
-              - "sqs:SendMessage"
-            Resource: !Ref SqsQueueArn
-            Condition:
-              #ArnEquals:
-              #  aws:SourceArn: !Sub "arn:aws:s3:::${BucketName}"
-              StringEquals:
-                aws:SourceAccount: !Ref AWS::AccountId
-                
+            Action: 
+              - "sns:Publish"
+            Resource: !Ref SnsTopicArn
+
   EventBridgeRule: 
     Type: AWS::Events::Rule
     Properties: 
-      #Name: eventbridge-rule-s3-call-sqs
-      Description: "Event Bridge Rule S3 Call SQS"
+      #Name: eventbridge-rule-s3-call-sns
+      Description: "Event Bridge Rule S3 Call SNS"
       EventBusName: default
       EventPattern:
         source:
@@ -132,16 +120,15 @@ Resources:
       RoleArn: !GetAtt EvenBridgeRole.Arn
       Targets:
         - 
-          Arn: !Ref SqsQueueArn
-          Id: "TargetSQS"
-          #RoleArn : Not Supported. Use Resource Policy AWS::SQS::QueuePolicy
+          Arn: !Ref SnsTopicArn
+          Id: "TargetSNS"
+          #RoleArn : Not Supported. Use Resource Policy AWS::SNS::TopicPolicy
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600 #86400
             MaximumRetryAttempts: 1 #185
           #DeadLetterConfig:
           #   Arn: xx
-          #SqsParameters:
-            #MessageGroupId: # The FIFO message group ID to use as the target.
+
 
 Outputs:
 
