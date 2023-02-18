@@ -47,6 +47,8 @@ https://aws.amazon.com/premiumsupport/knowledge-center/ecs-fargate-mount-efs-con
 ## ECS Instance Role should be an ECS Instance Profile ARN
 Must use AWS::IAM::InstanceProfile instead of AWS::IAM::Role
 
+## CannotStartContainerError: Error response from daemon: failed to create shim task: OCI runtime create failed
+
 ## Exception : Fargate resource requirements (2.00 vCPU, 1024 MiB) not valid.
 Must match memory cpu [combination](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-batch-jobdefinition-resourcerequirement.html)
 

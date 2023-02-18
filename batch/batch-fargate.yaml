@@ -18,7 +18,7 @@ Metadata:
         Parameters:
           - JobDefinitionImage
           - JobDefinitionCommand
-          
+
 Parameters:
 
   VpcId:
@@ -38,7 +38,7 @@ Parameters:
     Description: Job Definition Command
     Type: String
     Default: "echo fargate;"
-        
+
 Resources:
 
   BatchServiceRole:
@@ -87,7 +87,10 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VpcId
-      GroupDescription: BatchComputeEnvironment
+      GroupDescription: BatchComputeEnvironment (Fargate)
+      Tags:
+        - Key: Name
+          Value: !Sub "batch-fargate-sg"
 
   BatchComputeEnvironment:
     Type: "AWS::Batch::ComputeEnvironment"
@@ -95,7 +98,7 @@ Resources:
       #ComputeEnvironmentName: cfn-env # (Optional)
       Type: MANAGED
       State: ENABLED
-      ServiceRole: !GetAtt BatchServiceRole.Arn 
+      ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
         Type: FARGATE #FARGATE or FARGATE_SPOT
         #MinvCpus: 0
@@ -118,7 +121,7 @@ Resources:
         - Order: 1
           ComputeEnvironment: !Ref BatchComputeEnvironment
       State: ENABLED # if the job queue state is DISABLED, new jobs can't be added to the queue, but jobs already in the queue can finish.
-      Tags: {"Name": "Batch Job Queue"}
+      Tags: {"Name": "Batch Job Queue Fargate"}
 
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
