@@ -36,6 +36,31 @@ Set the KMS Key Policy to allow EventBridge to decrypt and generage data keys.
 	"Resource": "*"
 }
 ```
+
+### DeadLetter
+
+```
+DeadLetterConfig:
+  Arn: 'arn:aws:sqs:us-west-2:081035103721:demoDLQ'
+```
+
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-deadletterconfig.html
+
+The ARN of the SQS queue specified as the target for the dead-letter queue.
+
+### Retry Policy
+
+https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-retrypolicy.html
+
+MaximumEventAgeInSeconds
+The maximum amount of time, in seconds, to continue to make retry attempts.
+
+MaximumRetryAttempts
+The maximum number of retry attempts to make before the request fails. Retry attempts continue until either the maximum number of attempts is made or until the duration of the MaximumEventAgeInSeconds is met.
+
+
+---
+
 ### S3 Trigger Batch
 
 Provision an EventBridge rule that will trigger Batch
@@ -44,9 +69,13 @@ Provision an EventBridge rule that will trigger Batch
 
 ### S3 Trigger Lambda
 
+Provision an EventBridge rule that will trigger Lambda
+
 [eventbridge-rule-s3-call-lambda](eventbridge-rule-s3-call-lambda.yaml)
 
 ### S3 Trigger SNS
+
+Provision an EventBridge rule that will trigger SNS
 
 [sns-policy](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sns-policy.html)
 
@@ -54,11 +83,16 @@ Provision an EventBridge rule that will trigger Batch
 
 ### S3 Trigger SQS
 
+Provision an EventBridge rule that will trigger SQS
+
 [eventbridge-rule-s3-call-sqs](eventbridge-rule-s3-call-sqs.yaml)
 
 ### S3 Trigger StepFunctions
 
+Provision an EventBridge rule that will trigger StepFunctions
+
 [eventbridge-rule-s3-call-stepfunctions](eventbridge-rule-s3-call-stepfunctions.yaml)
+
 
 ### Links
 
@@ -73,7 +107,9 @@ Provision an EventBridge rule that will trigger Batch
 #### S3 Call SQS
 
 ```
-RoleArn is not supported for target arn:aws:sqs:us-east-1:foo:bar. (Service: AmazonCloudWatchEvents; Status Code: 400; Error Code: ValidationException; Request ID: zzz; Proxy: null)
+RoleArn is not supported for target arn:aws:sqs:us-east-1:foo:bar. 
+(Service: AmazonCloudWatchEvents; Status Code: 400; 
+Error Code: ValidationException; Request ID: zzz; Proxy: null)
 ```
 
 Resource policy should be used instead of IAM Role
@@ -84,13 +120,20 @@ Resource policy should be used instead of IAM Role
 Policy statement action out of service scope!
 ```
 
-Policy Statement (e.g. SNS policy) only supports limited actions. Specifying unsupported actions will result to this error.
+Policy Statement (e.g. SNS policy) only supports limited actions. 
+Specifying unsupported actions will result to this error.
 
 ### TODO
 
+- [x] Batch https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-batchparameters.html
 - [x] SNS 
-- [x] SQS
+- [x] SQS https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-sqsparameters.html
 - [ ] Policy Permissions
-- [ ] ECS
+- [ ] ECS https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-ecsparameters.html
+- [ ] HTTPS https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-httpparameters.html
+- [ ] Kinesis https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-kinesisparameters.html
+- [ ] Redshift https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-redshiftdataparameters.html
+- [ ] RunCommand https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-runcommandparameters.html
+- [ ] SageMaker https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-sagemakerpipelineparameters.html
 
 
