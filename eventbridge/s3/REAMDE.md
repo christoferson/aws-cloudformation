@@ -16,11 +16,13 @@ In order to receive events, source Bucket must have event bridge notification en
 
 ### Event Target Configuration
 
-When applicable, Targets must also be configured to have correct resource policy to allow EventBridge to perform actions. [link](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-use-resource-based.html)
+When applicable, targets must also be configured to have correct resource policy to allow EventBridge to perform actions. [link](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-use-resource-based.html)
 
-When target has encryption enabled, make sure EventBridge role has KMS permissions.
+### KMS Encryption - Key Policy Configuration
+
+When target e.g. SQS has encryption enabled, make sure EventBridge has KMS permissions.
 This only applies to Customer Managed Keys and not AWS Manages Keys. 
-Set the KMS Key Policy to allow EventBridge to decrypt and generage data keys.
+Set the KMS Key Policy to allow EventBridge to Decrypt and Generate data keys. [link](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-key-management.html)
 
 ```
 {
@@ -44,19 +46,42 @@ DeadLetterConfig:
   Arn: 'arn:aws:sqs:us-west-2:081035103721:demoDLQ'
 ```
 
-https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-deadletterconfig.html
+[link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-deadletterconfig.html)
 
-The ARN of the SQS queue specified as the target for the dead-letter queue.
+- Arn
+    
+    - The ARN of the SQS queue specified as the target for the dead-letter queue.
 
 ### Retry Policy
 
-https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-retrypolicy.html
 
-MaximumEventAgeInSeconds
-The maximum amount of time, in seconds, to continue to make retry attempts.
+```
+  EventBridgeRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: eventbridge-rule-s3-call-batch
+      ...
+      Targets:
+        - 
+          Arn: !Ref JobQueueArn
+          Id: "TargetBatch"
+          RoleArn : !GetAtt EvenBridgeRole.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600 #86400
+            MaximumRetryAttempts: 1 #185
+```
+       
 
-MaximumRetryAttempts
-The maximum number of retry attempts to make before the request fails. Retry attempts continue until either the maximum number of attempts is made or until the duration of the MaximumEventAgeInSeconds is met.
+[link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-events-rule-retrypolicy.html)
+
+- MaximumEventAgeInSeconds
+
+    - The maximum amount of time, in seconds, to continue to make retry attempts.
+
+- MaximumRetryAttempts
+
+    - The maximum number of retry attempts to make before the request fails. 
+    - Retry attempts continue until either the maximum number of attempts is made or until the duration of the MaximumEventAgeInSeconds is met.
 
 
 ---
@@ -93,6 +118,7 @@ Provision an EventBridge rule that will trigger StepFunctions
 
 [eventbridge-rule-s3-call-stepfunctions](eventbridge-rule-s3-call-stepfunctions.yaml)
 
+---
 
 ### Links
 
