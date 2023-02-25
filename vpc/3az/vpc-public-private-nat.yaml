@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'VPC with Public and Private Subnets spanning 2 Availability Zones'
+Description: 'VPC with Public and Private Subnets spanning 3 Availability Zones'
 
 
 Metadata:
@@ -19,9 +19,11 @@ Metadata:
           - VpcBlock
           - PublicSubnet01Block
           - PublicSubnet02Block
+          - PublicSubnet03Block
           - PrivateSubnet01Block
           - PrivateSubnet02Block
-
+          - PrivateSubnet03Block
+          
 Parameters:
 
   Application:
@@ -49,6 +51,11 @@ Parameters:
     Default: 10.0.144.0/24
     Description: CidrBlock for public subnet 02 within the VPC
 
+  PublicSubnet03Block:
+    Type: String
+    Default: 10.0.160.0/24
+    Description: CidrBlock for public subnet 03 within the VPC
+
   PrivateSubnet01Block:
     Type: String
     Default: 10.0.0.0/20
@@ -59,24 +66,30 @@ Parameters:
     Default: 10.0.32.0/20
     Description: CidrBlock for private subnet 02 within the VPC
 
+  PrivateSubnet03Block:
+    Type: String
+    Default: 10.0.64.0/20
+    Description: CidrBlock for private subnet 03 within the VPC
+    
 Resources:
 
   VPC:
-    Type: AWS::EC2::VPC
+    Type: "AWS::EC2::VPC"
     Properties:
-      CidrBlock:  !Ref VpcBlock
+      CidrBlock: !Ref VpcBlock
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      InstanceTenancy: "default"
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-vpc'
+        Value: !Sub "${Application}-${Environment}-vpc"
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-igw'
+        Value: !Sub "${Application}-${Environment}-igw"
 
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -85,19 +98,27 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
-      - Key: Name
+      - Key: Description
         Value: Public Subnet Route Table
       - Key: Network
         Value: Public
-      - Key: Data
-        Value: !Sub '${Application}-${Environment}-public-route'
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
 
   PrivateRouteTable01:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
@@ -116,13 +137,15 @@ Resources:
       - Key: Network
         Value: Private02
 
-  PublicRoute:
-    DependsOn: VPCGatewayAttachment
-    Type: AWS::EC2::Route
+  PrivateRouteTable03:
+    Type: AWS::EC2::RouteTable
     Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private Subnet AZ3
+      - Key: Network
+        Value: Private03
 
   PrivateRoute01:
     DependsOn:
@@ -199,7 +222,7 @@ Resources:
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - 0
+        - "0"
         - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PublicSubnet01Block
@@ -227,7 +250,25 @@ Resources:
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
       - Key: kubernetes.io/role/elb
         Value: 1
-
+   
+  PublicSubnet03:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet 03
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+        - 2
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PublicSubnet03Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-3"
+        
   PrivateSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
@@ -264,6 +305,24 @@ Resources:
       - Key: kubernetes.io/role/internal-elb
         Value: 1
 
+  PrivateSubnet03:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Private Subnet 03
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone:
+        Fn::Select:
+        - "2"
+        - Fn::GetAZs: !Ref "AWS::Region"
+      CidrBlock:
+        Ref: PrivateSubnet02Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-3"
+      - Key: kubernetes.io/role/internal-elb
+        Value: 1
+        
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -274,6 +333,12 @@ Resources:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet02
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet03
       RouteTableId: !Ref PublicRouteTable
 
   PrivateSubnet01RouteTableAssociation:
@@ -287,6 +352,12 @@ Resources:
     Properties:
       SubnetId: !Ref PrivateSubnet02
       RouteTableId: !Ref PrivateRouteTable02
+
+  PrivateSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet03
+      RouteTableId: !Ref PrivateRouteTable03
 
 # Parameters
 
@@ -314,8 +385,8 @@ Resources:
 Outputs:
 
   VpcId:
-    Description: The VPC Id
-    Value: !Ref VPC
+    Description: VPC ID
+    Value: !Ref "VPC"
 
   VpcDefaultNetworkAcl:
     Description: The ID of the default network ACL for the VPC.
@@ -333,6 +404,10 @@ Outputs:
     Description: Public Subnet 2 ID
     Value: !Ref PublicSubnet02
 
+  PublicSubnet03Id:
+    Description: Public Subnet 3 ID
+    Value: !Ref PublicSubnet03
+
   PrivateSubnet01Id:
     Description: Private Subnet 1 ID
     Value: !Ref PrivateSubnet01
@@ -340,3 +415,7 @@ Outputs:
   PrivateSubnet02Id:
     Description: Private Subnet 2 ID
     Value: !Ref PrivateSubnet02
+
+  PrivateSubnet03Id:
+    Description: Private Subnet 3 ID
+    Value: !Ref PrivateSubnet03
