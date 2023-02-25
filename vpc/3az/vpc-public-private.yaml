@@ -146,7 +146,7 @@ Resources:
         Value: Private Subnet AZ3
       - Key: Network
         Value: Private03
-        
+
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
@@ -156,8 +156,8 @@ Resources:
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - 0
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - "0"
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PublicSubnet01Block
       Tags:
@@ -208,7 +208,7 @@ Resources:
       AvailabilityZone:
         Fn::Select:
         - '0'
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet01Block
       Tags:
@@ -225,8 +225,8 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone:
         Fn::Select:
-        - '1'
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - "1"
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet02Block
       Tags:
@@ -243,8 +243,8 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone:
         Fn::Select:
-        - '2'
-        - Fn::GetAZs: !Ref 'AWS::Region'
+        - "2"
+        - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PrivateSubnet02Block
       Tags:
