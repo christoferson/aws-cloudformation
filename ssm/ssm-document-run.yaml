@@ -6,8 +6,11 @@ Resources:
   CommandDocument: 
     Type: AWS::SSM::Document
     Properties:
-      Name: 'CFN_2.2_command_example'
-      DocumentType: Command
+      #Name: 'CFN_2.2_command_example' # Cannot start with aws amazon amzn
+      DocumentType: Command # ApplicationConfigurationSchema | Automation | Automation.ChangeTemplate | Command | DeploymentStrategy | Package | Policy | Session
+      DocumentFormat: YAML # JSON | TEXT | YAML
+      #VersionName: "Release12.1"
+      TargetType: "/AWS::EC2::Instance"
       Content:
         schemaVersion: '2.2'
         description: 'Run a script on Linux instances.'
@@ -19,6 +22,10 @@ Resources:
         mainSteps:
         - action: aws:runShellScript
           name: runCommands
+          precondition:
+            StringEquals:
+            - platformType
+            - Linux          
           inputs:
             timeoutSeconds: '60'
             runCommand:
@@ -32,7 +39,12 @@ Resources:
             - 'sudo systemctl start httpd'
             - 'sudo systemctl enable httpd'
             - 'echo "Hi from $(hostname -f)" > /var/www/html/index.html'
-
+      Tags:
+        - Key: "keyname1"
+          Value: "value1"
+        - Key: "keyname2"
+          Value: "value2"
+      
 Outputs:
 
   CommandDocumentName:
