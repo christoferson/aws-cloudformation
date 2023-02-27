@@ -11,12 +11,31 @@
 
 To create an SSM parameter, you must have the AWS Identity and Access Management (IAM) permissions ssm:PutParameter and ssm:AddTagsToResource. ssm:RemoveTagsFromResource
 
+
+
+### SSM Parameter - Standard Tier - String
+
+(ssm-parameter-std-string)[ssm-parameter-std-string.yaml]
+
+### SSM Parameter - Reference
+
+(ssm-parameter)[ssm-parameter.yaml)
+
 ### Links
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-document.html
 
 - (ssm-document-schema)[https://docs.aws.amazon.com/systems-manager/latest/userguide/document-schemas-features.html]
 
+### Links (SSM Parameter)
+
+- https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-parameter.html
+
+### Errors (Parameter Registration)
+
+- Parameter name: can't be prefixed with "ssm" (case-insensitive). If formed as a path, it can consist of sub-paths divided by slash symbol; each sub-path can be formed as a mix of letters, numbers and the following 3 symbols .-_ 
+
+- Parameter value, cannot be validated against allowedPattern: ^[a-zA-Z]{1,10}$
 
 ### TODO
 
