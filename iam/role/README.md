@@ -1,25 +1,41 @@
 ## IAM Role Cloudformation
 
-### IAM - Role - EC2 Cloudwatch Agent
+### IAM - Role - EC2 CloudWatch Agent
 
-##### Install Cloudwatch Agent
+Provision a Role and a Profile for EC2 instance where Unified CloudWatch Agent will be installed.
+
+Also, creates an SSM Parameter where the CloudWatch Agent Configuration will be stored.
+
+
+----------
+
+After provisioning the roles and SSM Parameter, login to the EC2 instance then install and apply CloudWatch configuration.
+
+##### Install CloudWatch Agent
 wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm 
 sudo rpm -U ./amazon-cloudwatch-agent.rpm
 
-##### Apply Cloudwatch Configuration from SSM Parameter
+##### Apply CloudWatch Configuration from SSM Parameter
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c ssm:AmazonCloudWatch-ec2-cloudwatch-agent-config -s
 
-##### AWS Cloudwatch Console
-
-https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#metricsV2:graph=~();namespace=~'CWAgent
-
-##### Check cloudwatch agent process
+##### Check CloudWatch Agent Process is Running
 
 ps -ef | grep cloudwatch
 
 ```
 root      4096     1  0 14:38 ?        00:00:01 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent -config /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.toml -envconfig /opt/aws/amazon-cloudwatch-agent/etc/env-config.json -pidfile /opt/aws/amazon-cloudwatch-agent/var/amazon-cloudwatch-agent.pid
 ```
+
+
+----------
+
+After enabling the Agent, you should be able to see metrics under the CWAgent category
+
+##### AWS CloudWatch Console
+
+https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#metricsV2:graph=~();namespace=~'CWAgent
+
+You should be able to check the available memory is consistent with the CWAgent/mem_used_percent metric.
 
 ##### Command to show available memory
 
@@ -32,6 +48,8 @@ Swap:             0           0           0
 ```
 
 [iam-role-cloudwatch-agent](iam-role-cloudwatch-agent.yaml)
+
+
 
 ### Install HTTPD on EC2
 
