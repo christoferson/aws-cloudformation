@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IAM Role - CloudWatch - Agent
+
+Resources:
+
+  RootRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: CloudWatchAgentServerRole
+      Description: CloudWatch Agent Role
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        #- arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy
+      Policies:
+        - PolicyName: "cloudwatch-logs-retention"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:PutRetentionPolicy'
+                Resource: '*'
+      Tags:
+        - Key: "Name"
+          Value: "ec2-cloudwatch-agent-role"
+
+  RootRoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      #InstanceProfileName: String
+      Path: /
+      Roles:
+      - !Ref RootRole
+      
+  SsmParameterCloudwatchAgentConfiguration: 
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "AmazonCloudWatch-ec2-cloudwatch-agent-config" # Must begin with AmazonCloudWatch- if using CloudWatchAgentServerPolicy
+      Type: String
+      Value: !Sub |
+        {
+          "metrics": {
+            "append_dimensions": {
+              "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
+              "ImageId": "${!aws:ImageId}",
+              "InstanceId": "${!aws:InstanceId}",
+              "InstanceType": "${!aws:InstanceType}"
+            },
+            "metrics_collected": {
+              "mem": {
+                "measurement": [
+                  "mem_used_percent"
+                ],
+                "metrics_collection_interval": 60
+              },
+              "cpu": {
+                "measurement": [
+                  {"name": "cpu_usage_idle", "unit": "Percent"},
+                  {"name": "cpu_usage_nice", "unit": "Percent"}
+                ],
+                "metrics_collection_interval": 60
+              },
+              "processes": {
+                "measurement": [
+                  "total"
+                ],
+                "metrics_collection_interval": 60
+              },
+              "netstat": {
+                "measurement": [
+                  "tcp_established"
+                ],
+                "metrics_collection_interval": 60
+              },
+              "disk": {
+                "measurement": [
+                  "used_percent"
+                ],
+                "resources": [
+                  "/"
+                ],
+                "ignore_file_system_types": [
+                  "xfs"
+                ],
+                "metrics_collection_interval": 300
+              },
+              "swap": {
+                "measurement": [
+                  "swap_used_percent"
+                ],
+                "metrics_collection_interval": 300
+              }
+            }
+          }
+        }
+
+Outputs:
+
+  RootRoleArn:
+    Value: !GetAtt RootRole.Arn
