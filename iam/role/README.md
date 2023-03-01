@@ -63,6 +63,15 @@ Swap:             0           0           0
 
 - sudo systemctl enable httpd
 
+### Troubleshooting CloudWatch Agent
+
+##### Agent fails to start
+
+/opt/aws/amazon-cloudwatch-agent/logs/configuration-validation.log
+
+##### Metrics does not appear in the Board
+
+Check the configuration file amazon-cloudwatch-agent.json
 
 ### Links
 
@@ -73,3 +82,9 @@ Swap:             0           0           0
 - https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/create-cloudwatch-agent-configuration-file.html
 
 - https://github.com/awslabs/aws-cloudformation-templates/tree/master/aws/solutions/AmazonCloudWatchAgent
+
+### TODO
+
+- Configuration to push logs
+
+- CF template to provision everything from scratch
