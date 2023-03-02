@@ -56,6 +56,7 @@ Resources:
               Service: batch.amazonaws.com
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+        #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
         - !Ref BatchServiceRolePolicy
       Path: "/" #/
       Tags:
@@ -77,20 +78,9 @@ Resources:
             Effect: Allow
             Resource: '*'
           - Action:
-              - 's3:ListAllMyBuckets'
+              - "s3:*"
             Effect: Allow
             Resource: '*'
-          - Action:
-              - 's3:ListBucket'
-            Effect: Allow
-            Resource: '*'            
-          - Action:
-              - 's3:GetObject'
-              - 's3:PutObject'
-              - 's3:GetObjectVersion'
-            Effect: Allow
-            Resource: "*"
-            #Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
 
   BatchComputeSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -182,6 +172,7 @@ Resources:
             Resource: '*'
           - Action:
               - 's3:ListBucket'
+              - "s3:GetBucketLocation"
             Effect: Allow
             Resource: '*'
           - Action:
