@@ -77,17 +77,26 @@ Resources:
             Effect: Allow
             Resource: '*'
           - Action:
+              - 's3:ListAllMyBuckets'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:ListBucket'
+            Effect: Allow
+            Resource: '*'            
+          - Action:
               - 's3:GetObject'
               - 's3:PutObject'
               - 's3:GetObjectVersion'
             Effect: Allow
-            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+            Resource: "*"
+            #Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
 
   BatchComputeSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VpcId
-      GroupDescription: BatchComputeEnvironment (Fargate)
+      GroupDescription: "BatchComputeEnvironment (Fargate)"
       Tags:
         - Key: Name
           Value: !Sub "batch-fargate-sg"
@@ -136,7 +145,7 @@ Resources:
     Type: 'AWS::IAM::Role'
     Properties:
       #RoleName: !Sub "code-build-demo-role"
-      Description: !Sub "Batch Job Role"
+      Description: !Sub "Batch Job Role (Fargate)"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -162,17 +171,17 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'eks:Describe*'
-            Effect: Allow
-            Resource: '*'
-          - Action:
               - 'logs:CreateLogGroup'
               - 'logs:CreateLogStream'
               - 'logs:PutLogEvents'
             Effect: Allow
             Resource: '*'
           - Action:
-              - 'ecr:GetAuthorizationToken'
+              - 's3:ListAllMyBuckets'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:ListBucket'
             Effect: Allow
             Resource: '*'
           - Action:
@@ -180,7 +189,12 @@ Resources:
               - 's3:PutObject'
               - 's3:GetObjectVersion'
             Effect: Allow
-            Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+            Resource: "*"
+            #Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
+          - Action:
+              - 'ecr:GetAuthorizationToken'
+            Effect: Allow
+            Resource: '*'
           - Action:
               - 'ecr:GetDownloadUrlForLayer'
               - 'ecr:BatchGetImage'
