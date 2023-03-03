@@ -1,6 +1,22 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CodeCommit
 
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Code Configuration"
+        Parameters:
+          - RepositoryName
+          - RepositoryDescription
+
+    ParameterLabels:
+      RepositoryName:
+        default: "Repository Name"
+      RepositoryDescription:
+        default: "Reporistory Description"
+
 Parameters:
 
   RepositoryName:
