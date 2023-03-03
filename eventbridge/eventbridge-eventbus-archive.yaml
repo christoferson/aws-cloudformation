@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge - EventBus - Archive
+
+Parameters:
+
+  EventBusName: 
+    Description: Event Bus Name
+    Type: String
+    Default: custom-event-bus-archive
+
+Resources:
+
+  EventBridgeEventBus:
+    Type: AWS::Events::EventBus
+    Properties: 
+      Name: !Ref EventBusName
+      Tags:
+        - Key: "Name"
+          Value: "custom-event-bus-archive"
+
+  EventBridgeEventBusPolicy: 
+      Type: AWS::Events::EventBusPolicy
+      Properties: 
+          EventBusName: !Ref EventBridgeEventBus
+          StatementId: "statement"
+          Statement:
+              Effect: "Allow"
+              Principal: "*"
+              Action: "events:PutEvents"
+              Resource: !GetAtt "EventBridgeEventBus.Arn"
+              Condition:
+                  StringEquals:
+                      "aws:PrincipalOrgID": "o-1234567890"
+
+  EventBridgeArchive:
+    Type: AWS::Events::Archive
+    Properties: 
+      #ArchiveName: MyArchive
+      Description: Archive for all Custom events
+      #EventPattern: # Archive for all EC2 events
+      #  source:
+      #    - "aws.ec2"
+      RetentionDays: 3 #  Default value is 0. If set to 0, events are retained indefinitely
+      SourceArn: !GetAtt EventBridgeEventBus.Arn
+
+Outputs:
+
+  EventBridgeEventBusArn:
+    Value: !GetAtt EventBridgeEventBus.Arn
+
+  EventBridgeEventBusPolicyId:
+    Value: !Ref EventBridgeEventBusPolicy
