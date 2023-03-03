@@ -18,6 +18,9 @@ https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_Logs.ht
 
 - https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
 
+- https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data-start.html
+  https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-loggroup.html#cfn-logs-loggroup-dataprotectionpolicy
+
 ### TODO
 
 - Alarm View EventBridge rule
