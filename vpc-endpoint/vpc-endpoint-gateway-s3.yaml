@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Vpc Endpoint (Gateway Endpoint) - S3'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - RouteTableIdList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  RouteTableIdList:
+    Description : "VPC ID"
+    Type: CommaDelimitedList
+    Default: "rtb-xxxxx,rtb-yyy"
+
+Resources:
+
+  VpcEndpointS3:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Gateway # Gateway | GatewayLoadBalancer | Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VpcId
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - "s3:*Object*" # s3:GetObject
+            Resource:
+              - "arn:aws:s3:::*/*" # arn:aws:s3:::examplebucket/*
+      RouteTableIds: !Ref RouteTableIdList  # (Optional) The IDs of the route tables. Routing is supported only for gateway endpoints.
+      #  - rtb-xxxxx
+      #SecurityGroupIds:
+
+
+Outputs:
+
+  VpcEndpointId:
+    Description: The Endpoint Id
+    Value: !Ref VpcEndpointS3
+    
