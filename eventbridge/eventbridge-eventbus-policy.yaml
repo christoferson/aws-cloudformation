@@ -18,6 +18,12 @@ Resources:
         - Key: "Name"
           Value: "custom-event-bus"
 
+  #EventBridgePartnerEventBus: # Create a partner event bus
+  #    Type: AWS::Events::EventBus
+  #    Properties: 
+  #        EventSourceName: "aws.partner/PartnerName/acct1/repo1"
+  #        Name: "aws.partner.repo1"
+
   EventBridgeEventBusPolicy: 
       Type: AWS::Events::EventBusPolicy
       Properties: 
@@ -31,6 +37,60 @@ Resources:
               Condition:
                   StringEquals:
                       "aws:PrincipalOrgID": "o-1234567890"
+
+  EventBridgeEventBusPolicy2: # Grant Permission to an Account (111122223333)
+      Type: AWS::Events::EventBusPolicy
+      Properties: 
+          StatementId: "statement"
+          Statement: 
+              Effect: "Allow"
+              Principal: 
+                  AWS: "arn:aws:iam::111122223333:root"
+              Action: "events:PutEvents"
+              Resource: "arn:aws:events:us-east-1:111122223333:event-bus/default"
+
+  EventBridgeEventBusPolicy3: # Grant Permission to an Organization (o-1234567890)
+      Type: AWS::Events::EventBusPolicy
+      Properties: 
+          StatementId: "statement"
+          Statement: 
+              Effect: "Allow"
+              Principal: "*"
+              Action: "events:PutEvents"
+              Resource: "arn:aws:events:us-east-1:111122223333:event-bus/default"
+              Condition:
+                  StringEquals:
+                      "aws:PrincipalOrgID": "o-1234567890"
+
+  EventBridgeEventBusPolicy4: # Deny policy using multiple principals and actions
+      Type: AWS::Events::EventBusPolicy
+      Properties: 
+          StatementId: "denystatement"
+          Statement: 
+              Effect: "Deny"
+              Principal: 
+                  AWS: 
+                      - "arn:aws:iam::111122223333:user/alice"
+                      - "arn:aws:iam::111122223333:user/bob"
+              Action: 
+                  - "events:PutEvents"
+                  - "events:PutRule"
+              Resource: "arn:aws:events:us-east-1:111122223333:event-bus/default"
+
+  EventBridgeEventBusPolicy5: # Grant Permission to an Organization using a custom event bus
+      Type: AWS::Events::EventBusPolicy
+      Properties: 
+          EventBusName:
+              Ref: "EventBridgeEventBus"
+          StatementId: "statement"
+          Statement:
+              Effect: "Allow"
+              Principal: "*"
+              Action: "events:PutEvents"
+              Resource: !GetAtt "EventBridgeEventBus.Arn"
+              Condition:
+                  StringEquals:
+                      "aws:PrincipalOrgID": "o-1234567890"  
 
 Outputs:
 
