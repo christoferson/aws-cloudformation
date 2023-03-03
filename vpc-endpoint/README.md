@@ -7,6 +7,11 @@
 Provision a VPC Gateway Endpoint for S3
 
 [vpc-endpoint-s3](vpc-endpoint-s3.yaml)
+[vpc-endpoint-gateway-s3](vpc-endpoint-gateway-s3.yaml)
+
+### Vpc Endpoint - Gateway Endpoint - DynamoDB
+
+[vpc-endpoint-gateway-dynamodb](vpc-endpoint-gateway-dynamodb.yaml)
 
 ### Vpc Endpoint Interface Endpoints
 
