@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Cloudwatch - Log Group
+Description: Cloudwatch - Log Group with KMS
 
 Parameters:
 
@@ -8,11 +8,18 @@ Parameters:
     Default: "logs/my-log-group"
     Description: "Log Group name"
 
+  KmsKeyId:
+    Type: "String"
+    Default: "my-key-alias"
+    Description: "KMS Key ID"
+
+
 Resources:
 
   LogGroup:
     Type: AWS::Logs::LogGroup
-    Properties:
+    Properties: 
+      KmsKeyId: !Ref KmsKeyId # Key Policy must give kms permissions to "Service": "logs.<region>.amazonaws.com"
       LogGroupName: !Ref LogGroupName
       RetentionInDays: 3
       Tags:
