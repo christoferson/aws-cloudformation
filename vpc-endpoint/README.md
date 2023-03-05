@@ -40,5 +40,9 @@ Provision a VPC Gateway Endpoint for S3.
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpcendpoint.html
 
 ### TODO
-Dynamo
-Privatelink
+
+- [ ] Dynamo
+
+- [ ] Privatelink
+
+- [ ] aws:PrincipalOrgId condition

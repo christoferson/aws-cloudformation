@@ -52,7 +52,7 @@ Resources:
           - Effect: Allow
             Principal: '*'
             Action:
-dp              - "s3:*Object*" # s3:GetObject
+              - "s3:*Object*" # s3:GetObject
             Resource:
               - "arn:aws:s3:::*/*" # arn:aws:s3:::examplebucket/*
       RouteTableIds: !Ref RouteTableIdList  # (Optional) The IDs of the route tables. Routing is supported only for gateway endpoints.
