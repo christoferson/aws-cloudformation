@@ -34,7 +34,7 @@ Parameters:
     Type: AWS::EC2::VPC::Id
 
   RouteTableIdList:
-    Description : "VPC ID"
+    Description : "Route Table ID List (Comma Delimited)"
     Type: CommaDelimitedList
     Default: "rtb-xxxxx,rtb-yyy"
 
@@ -44,7 +44,7 @@ Resources:
     Type: 'AWS::EC2::VPCEndpoint'
     Properties:
       VpcEndpointType: Gateway # Gateway | GatewayLoadBalancer | Interface
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
       VpcId: !Ref VpcId
       PolicyDocument:
         Version: 2012-10-17
@@ -59,10 +59,8 @@ Resources:
       #  - rtb-xxxxx
       #SecurityGroupIds:
 
-
 Outputs:
 
   VpcEndpointId:
     Description: The Endpoint Id
     Value: !Ref VpcEndpointS3
-    
