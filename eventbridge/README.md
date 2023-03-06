@@ -6,6 +6,18 @@ Provision a Custom Event Bus with Custom Policy.
 
 [eventbridge-eventbus](eventbridge-eventbus.yaml)
 
+### EventBridge - EventBus with Archive
+
+Provision a Custom Event Bus with Custom Policy and Archive.
+
+[eventbridge-eventbus-archive](eventbridge-eventbus-archive.yaml)
+
+### EventBridge - EventBus Policy
+
+EventBus Policy Examples
+
+[eventbridge-eventbus-policy](eventbridge-eventbus-policy.yaml)
+
 ### EventBridge - Periodic - Trigger Lambda
 
 Provision an EventBridge rule that periodically triggers a Lambda Function.
@@ -78,6 +90,8 @@ Also includes settings to transform the input Event into a custom output format.
 - https://aws.amazon.com/blogs/aws/new-create-point-to-point-integrations-between-event-producers-and-consumers-with-amazon-eventbridge-pipes/?trk=d0c467f8-ee69-4b7d-8e81-bc02ae25d111&sc_channel=el
 
 - https://github.com/aws-samples/amazon-s3-object-lambda-default-configuration/blob/main/template/s3objectlambda_defaultconfig.yaml
+
+- [event-bus-policy](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-eventbuspolicy.html)
 
 ### TODO
 
