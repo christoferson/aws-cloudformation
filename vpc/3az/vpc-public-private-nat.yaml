@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'VPC with Public and Private Subnets spanning 3 Availability Zones'
+Description: 'VPC with Public and Private Subnets spanning 3 Availability Zones plus NAT Gateway'
 
 
 Metadata:
@@ -33,7 +33,7 @@ Parameters:
     
   Environment:
     Type: String
-    Default: stg
+    Default: dev
     Description: Environment
 
   VpcBlock:
@@ -167,6 +167,16 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGateway02
 
+  PrivateRoute03:
+    DependsOn:
+    - VPCGatewayAttachment
+    - NatGateway03
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable03
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway03
+      
   NatGateway01:
     DependsOn:
     - NatGatewayEIP1
@@ -193,6 +203,19 @@ Resources:
       - Key: Name
         Value: !Sub '${Application}-${Environment}-vpc-nat-gateway-2'
 
+  NatGateway03:
+    DependsOn:
+    - NatGatewayEIP3
+    - PublicSubnet03
+    - VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NatGatewayEIP3.AllocationId'
+      SubnetId: !Ref PublicSubnet03
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-${Environment}-vpc-nat-gateway-3'
+        
   NatGatewayEIP1:
     DependsOn:
     - VPCGatewayAttachment
@@ -213,6 +236,16 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-nat-eip-2"
 
+  NatGatewayEIP3:
+    DependsOn:
+    - VPCGatewayAttachment
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-nat-eip-3"
+        
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
@@ -381,6 +414,13 @@ Resources:
       Name: !Sub "/${Application}/${Environment}/vpc/subnet/private-subnet-2/id"
       Type: String
       Value: !Ref PrivateSubnet02
+
+  PrivateSubnet03IdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/subnet/private-subnet-3/id"
+      Type: String
+      Value: !Ref PrivateSubnet03
 
 Outputs:
 
