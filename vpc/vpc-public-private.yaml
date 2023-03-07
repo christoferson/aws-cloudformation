@@ -31,7 +31,7 @@ Parameters:
     
   Environment:
     Type: String
-    Default: stg
+    Default: dev
     Description: Environment
 
   VpcBlock:
@@ -62,21 +62,22 @@ Parameters:
 Resources:
 
   VPC:
-    Type: AWS::EC2::VPC
+    Type: "AWS::EC2::VPC"
     Properties:
       CidrBlock:  !Ref VpcBlock
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      InstanceTenancy: "default"
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-vpc'
+        Value: !Sub "${Application}-${Environment}-vpc"
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-igw'
+        Value: !Sub "${Application}-${Environment}-igw"
 
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -85,19 +86,27 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
-      - Key: Name
+      - Key: Description
         Value: Public Subnet Route Table
       - Key: Network
         Value: Public
-      - Key: Data
-        Value: !Sub '${Application}-${Environment}-public-route'
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
 
   PrivateRouteTable01:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
@@ -116,14 +125,6 @@ Resources:
       - Key: Network
         Value: Private02
 
-  PublicRoute:
-    DependsOn: VPCGatewayAttachment
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
@@ -133,7 +134,7 @@ Resources:
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - 0
+        - "0"
         - Fn::GetAZs: !Ref "AWS::Region"
       CidrBlock:
         Ref: PublicSubnet01Block
@@ -225,8 +226,8 @@ Resources:
 Outputs:
 
   VpcId:
-    Description: The VPC Id
-    Value: !Ref VPC
+    Description: VPC ID
+    Value: !Ref "VPC"
 
   VpcDefaultNetworkAcl:
     Description: The ID of the default network ACL for the VPC.
