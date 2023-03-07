@@ -128,7 +128,7 @@ Resources:
         Value: Private01
 
   PrivateRouteTable02:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
@@ -138,7 +138,7 @@ Resources:
         Value: Private02
 
   PrivateRouteTable03:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
