@@ -50,21 +50,22 @@ Parameters:
 Resources:
 
   VPC:
-    Type: AWS::EC2::VPC
+    Type: "AWS::EC2::VPC"
     Properties:
       CidrBlock: !Ref VpcBlock
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      InstanceTenancy: "default"
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-vpc'
+        Value: !Sub "${Application}-${Environment}-vpc"
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
       Tags:
       - Key: Name
-        Value: !Sub '${Application}-${Environment}-igw'
+        Value: !Sub "${Application}-${Environment}-igw"
 
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -73,19 +74,19 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
-    Type: AWS::EC2::RouteTable
+    Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
-      - Key: Name
+      - Key: Description
         Value: Public Subnet Route Table
       - Key: Network
         Value: Public
-      - Key: Data
-        Value: !Sub '${Application}-${Environment}-public-route'
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
 
   PublicRoute:
-    Type: AWS::EC2::Route
+    Type: "AWS::EC2::Route"
     DependsOn: VPCGatewayAttachment
     Properties:
       RouteTableId: !Ref PublicRouteTable
