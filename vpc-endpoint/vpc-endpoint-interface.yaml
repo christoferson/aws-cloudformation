@@ -34,10 +34,11 @@ Parameters:
     Type: AWS::EC2::VPC::Id
 
   VpcSubnetList:
-    Description: Private VpcSubnets for Endpoint
+    Description: "Private VpcSubnets for Endpoint"
     Type: List<AWS::EC2::Subnet::Id>
 
   VpcEndpointSecurityGroupIdList:
+    Description: "Security Groups"
     Type: List<AWS::EC2::SecurityGroup::Id>
 
 Resources:

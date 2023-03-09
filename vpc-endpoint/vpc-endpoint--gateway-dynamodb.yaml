@@ -34,7 +34,7 @@ Parameters:
     Type: AWS::EC2::VPC::Id
 
   RouteTableIdList:
-    Description : "VPC ID"
+    Description : "Private Subnet Route Table ID List (Comma Delimited)"
     Type: CommaDelimitedList
     Default: "rtb-xxxxx,rtb-yyy"
 

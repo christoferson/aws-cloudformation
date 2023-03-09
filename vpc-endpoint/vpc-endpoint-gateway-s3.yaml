@@ -34,7 +34,7 @@ Parameters:
     Type: AWS::EC2::VPC::Id
 
   RouteTableIdList:
-    Description : "Route Table ID List (Comma Delimited)"
+    Description : "Private Subnet Route Table ID List (Comma Delimited)"
     Type: CommaDelimitedList
     Default: "rtb-xxxxx,rtb-yyy"
 
@@ -52,7 +52,7 @@ Resources:
           - Effect: Allow
             Principal: '*'
             Action:
-              - "s3:*Object*" # s3:GetObject
+              - "s3:*" # s3:GetObject
             Resource:
               - "arn:aws:s3:::*/*" # arn:aws:s3:::examplebucket/*
       RouteTableIds: !Ref RouteTableIdList  # (Optional) The IDs of the route tables. Routing is supported only for gateway endpoints.
