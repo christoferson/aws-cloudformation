@@ -40,7 +40,7 @@ Resources:
           Action:
           - sts:AssumeRole
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Path: /
       Policies: !Ref 'AWS::NoValue'
       RoleName: !Ref 'AWS::NoValue'

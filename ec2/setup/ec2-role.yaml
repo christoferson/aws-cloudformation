@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: EC2 - Role
 
+# arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM is deprecated
+
 Resources:
 
   InstanceRole:
@@ -18,7 +20,7 @@ Resources:
           Action:
           - sts:AssumeRole
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies: !Ref 'AWS::NoValue'
 
   InstanceRolePolicy:
