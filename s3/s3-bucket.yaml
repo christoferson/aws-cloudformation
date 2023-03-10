@@ -60,6 +60,9 @@ Resources:
             NoncurrentVersionExpiration:
               NewerNoncurrentVersions: 1 #0 newest noncurrent versions are retained
               NoncurrentDays: 3 #All other noncurrent versions are permanently deleted
+      NotificationConfiguration:
+         EventBridgeConfiguration:
+            EventBridgeEnabled: true
       Tags:
         - Key: "management"
           Value: "manual"

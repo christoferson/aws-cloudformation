@@ -96,4 +96,6 @@ Bucket and Bucket Policy Created per Condition
 
 
 #### TODO
-Learn more about S3 Object Lambda
+- [ ] Learn more about S3 Object Lambda
+
+- [ ] aws:SecureTransport
