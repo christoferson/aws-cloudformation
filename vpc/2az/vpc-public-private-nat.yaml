@@ -1,0 +1,343 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC with Public and Private Subnets spanning 2 Availability Zones'
+
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcBlock
+          - PublicSubnet01Block
+          - PublicSubnet02Block
+          - PrivateSubnet01Block
+          - PrivateSubnet02Block
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
+
+  PublicSubnet01Block:
+    Type: String
+    Default: 10.0.128.0/24
+    Description: CidrBlock for public subnet 01 within the VPC
+
+  PublicSubnet02Block:
+    Type: String
+    Default: 10.0.144.0/24
+    Description: CidrBlock for public subnet 02 within the VPC
+
+  PrivateSubnet01Block:
+    Type: String
+    Default: 10.0.0.0/20
+    Description: CidrBlock for private subnet 01 within the VPC
+
+  PrivateSubnet02Block:
+    Type: String
+    Default: 10.0.32.0/20
+    Description: CidrBlock for private subnet 02 within the VPC
+
+Resources:
+
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock:  !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: "default"
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc"
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-igw"
+
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Description
+        Value: Public Subnet Route Table
+      - Key: Network
+        Value: Public
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateRouteTable01:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-private-1"
+      - Key: Network
+        Value: Private01
+
+  PrivateRouteTable02:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-private-2"
+      - Key: Network
+        Value: Private02
+
+  PrivateRoute01:
+    DependsOn:
+    - VPCGatewayAttachment
+    - NatGateway01
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable01
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway01
+
+  PrivateRoute02:
+    DependsOn:
+    - VPCGatewayAttachment
+    - NatGateway02
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable02
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway02
+
+  NatGateway01:
+    DependsOn:
+    - NatGatewayEIP1
+    - PublicSubnet01
+    - VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NatGatewayEIP1.AllocationId'
+      SubnetId: !Ref PublicSubnet01
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-${Environment}-vpc-nat-gateway-1'
+
+  NatGateway02:
+    DependsOn:
+    - NatGatewayEIP2
+    - PublicSubnet02
+    - VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NatGatewayEIP2.AllocationId'
+      SubnetId: !Ref PublicSubnet02
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-${Environment}-vpc-nat-gateway-2'
+
+  NatGatewayEIP1:
+    DependsOn:
+    - VPCGatewayAttachment
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-nat-eip-1"
+        
+  NatGatewayEIP2:
+    DependsOn:
+    - VPCGatewayAttachment
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-nat-eip-2"
+
+  PublicSubnet01:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet 01
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+        - "0"
+        - Fn::GetAZs: !Ref "AWS::Region"
+      CidrBlock:
+        Ref: PublicSubnet01Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
+      #- Key: kubernetes.io/role/elb
+      #  Value: 1
+
+  PublicSubnet02:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet 02
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock:
+        Ref: PublicSubnet02Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
+      #- Key: kubernetes.io/role/elb
+      #  Value: 1
+
+  PrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Private Subnet 01
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs: !Ref "AWS::Region"
+      CidrBlock:
+        Ref: PrivateSubnet01Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-1"
+      - Key: kubernetes.io/role/internal-elb
+        Value: 1
+
+  PrivateSubnet02:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Private Subnet 02
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone:
+        Fn::Select:
+        - "1"
+        - Fn::GetAZs: !Ref "AWS::Region"
+      CidrBlock:
+        Ref: PrivateSubnet02Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-2"
+      - Key: kubernetes.io/role/internal-elb
+        Value: 1
+
+  PublicSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet01
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet02
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet01
+      RouteTableId: !Ref PrivateRouteTable01
+
+  PrivateSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet02
+      RouteTableId: !Ref PrivateRouteTable02
+
+# Parameters
+
+  VpcIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/id"
+      Type: String
+      Value: !Ref VPC
+
+  PrivateSubnet01IdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/subnet/private-subnet-1/id"
+      Type: String
+      Value: !Ref PrivateSubnet01
+
+  PrivateSubnet02IdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/vpc/subnet/private-subnet-2/id"
+      Type: String
+      Value: !Ref PrivateSubnet02
+
+Outputs:
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref "VPC"
+
+  VpcDefaultNetworkAcl:
+    Description: The ID of the default network ACL for the VPC.
+    Value: !GetAtt VPC.DefaultNetworkAcl
+
+  VpcDefaultSecurityGroup:
+    Description: The ID of the default security group for the VPC. 
+    Value: !GetAtt VPC.DefaultSecurityGroup
+
+  PublicSubnet01Id:
+    Description: Public Subnet 1 ID
+    Value: !Ref PublicSubnet01
+
+  PublicSubnet02Id:
+    Description: Public Subnet 2 ID
+    Value: !Ref PublicSubnet02
+
+  PrivateSubnet01Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet01
+
+  PrivateSubnet02Id:
+    Description: Private Subnet 2 ID
+    Value: !Ref PrivateSubnet02
