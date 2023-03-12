@@ -1,6 +1,23 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: KMS Symmetric Key
 
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  KeyAliasName:
+    Type: String
+    Default: "kms-symmetric-key"
+    Description: Key Alias Name
+    
 Resources:
 
   KmsKey:
@@ -26,11 +43,15 @@ Resources:
       Tags:
       - Key: Name
         Value: "kms-symmetric-key"
-
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+        
   KmsKeyAlias:
     Type: AWS::KMS::Alias
     Properties:
-      AliasName: alias/kms-symmetric-key
+      AliasName: !Sub "alias/${KeyAliasName}"
       TargetKeyId: !Ref KmsKey
 
 Outputs:
