@@ -16,6 +16,12 @@ Metadata:
 
   "AWS::CloudFormation::Interface":
     ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
       - Label: 
           default: "Source Configuration"
         Parameters: 
@@ -33,17 +39,26 @@ Metadata:
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
   BucketName:
     Type: "String"
     Default: "bucket-name"
     Description: "Name of the Source Bucket"
-    
+
   StepFunctionArn:
     Type: "String"
     Default: "arn:aws:states:us-east-1:937921569138:stateMachine:StateMachine-AzPfXPRklJX7"
     Description: "Arn of the Target Job Definition"
 
-    
 Resources:
 
   EvenBridgeRole:
