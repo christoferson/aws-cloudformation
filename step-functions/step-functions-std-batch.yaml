@@ -1,7 +1,39 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Step Functions - Standard - Batch
 
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment    
+      - Label: 
+          default: "Batch Job Configuration"
+        Parameters: 
+          - BatchJobName
+      - Label: 
+          default: "Target Batch Configuration"
+        Parameters: 
+          - BatchJobQueueArn
+          - BatchJobDefinitionArn
+                    
 Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
 
   BatchJobName:
     Description : "Job Name"
@@ -143,24 +175,32 @@ Resources:
         IncludeExecutionData: true
         Level: ERROR
       Tags:
-        - Key: Environment
-          Value: dev
-        - Key: Application
-          Value: app
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   LogGroupStateMachine:
     Type: 'AWS::Logs::LogGroup'
     Properties:
       RetentionInDays: 1
-
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+          
   StepFunctionSnsTopicSuccess:
     Type: "AWS::SNS::Topic"
     Properties:
       DisplayName: "Step Function Notification - Success"
       Tags:
         -
+          Key: "Application"
+          Value: !Ref Application
+        -
           Key: "Environment"
-          Value: "dev"
+          Value: !Ref Environment
 
   StepFunctionSnsTopicFailure:
     Type: "AWS::SNS::Topic"
@@ -168,8 +208,11 @@ Resources:
       DisplayName: "Step Function Notification - Failure"
       Tags:
         -
+          Key: "Application"
+          Value: !Ref Application
+        -
           Key: "Environment"
-          Value: "dev"
+          Value: !Ref Environment
 
 Outputs:
 
