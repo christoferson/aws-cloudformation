@@ -16,6 +16,12 @@ Metadata:
 
   "AWS::CloudFormation::Interface":
     ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment    
       - Label: 
           default: "Source Configuration"
         Parameters: 
@@ -34,6 +40,16 @@ Metadata:
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+    
   BucketName:
     Type: "String"
     Default: "bucket-name"
@@ -48,7 +64,7 @@ Parameters:
     Type: "String"
     Default: "arn:aws:s3:::bucket-name"
     Description: "Arn of the Target Job Queue"
-    
+
 Resources:
 
   EvenBridgeRole:
@@ -69,8 +85,10 @@ Resources:
         - !Ref EvenBridgeRolePolicy
         #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Tags:
-        - Key: 'environment'
-          Value: common
+        - Key: "Application"
+          Value: !Ref Application      
+        - Key: "Environment"
+          Value: !Ref Environment
         - Key: "name"
           Value: "event-bridge-role-s3-call-batch"
 
