@@ -119,7 +119,10 @@ Resources:
                 "Parameters": {
                   "JobName": "${BATCH_JOB_NAME}",
                   "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
-                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}"
+                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}",
+                  "ContainerOverrides": {
+                    "Command.$": "States.Array('sh', '-c', States.Format('echo s3rocksv2 && java -jar batch.jar {}', $.detail.object.key))"
+                  }
                 },
                 "Next": "Notify Success",
                 "Retry": [
