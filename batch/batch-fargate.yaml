@@ -8,6 +8,12 @@ Metadata:
     ParameterGroups:
       -
         Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
           default: "Network Configuration"
         Parameters:
           - VpcId
@@ -20,6 +26,16 @@ Metadata:
           - JobDefinitionCommand
 
 Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
 
   VpcId:
     Description : "VPC ID"
@@ -44,7 +60,7 @@ Resources:
   BatchServiceRole:
     Type: 'AWS::IAM::Role'
     Properties:
-      #RoleName: !Sub ""
+      #RoleName: !Sub "BatchServiceRole"
       Description: "Batch Service Role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -60,8 +76,10 @@ Resources:
         - !Ref BatchServiceRolePolicy
       Path: "/" #/
       Tags:
-        - Key: 'environment'
-          Value: common
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   BatchServiceRolePolicy:
     Type: 'AWS::IAM::ManagedPolicy'
@@ -120,7 +138,7 @@ Resources:
         - Order: 1
           ComputeEnvironment: !Ref BatchComputeEnvironment
       State: ENABLED # if the job queue state is DISABLED, new jobs can't be added to the queue, but jobs already in the queue can finish.
-      Tags: {"Name": "Batch Job Queue Fargate"}
+      Tags: { "Name": "Batch Job Queue Fargate", "Application": !Ref Application, "Environment": !Ref Environment }
 
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
@@ -128,13 +146,15 @@ Resources:
       LogGroupName: !Sub "/batch/logs/my-batch-fargate"
       RetentionInDays: 1
       Tags: 
-        - Key: "env"
-          Value: "prd"
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   BatchJobRole:
     Type: 'AWS::IAM::Role'
     Properties:
-      #RoleName: !Sub "code-build-demo-role"
+      #RoleName: !Sub "BatchInstanceRole"
       Description: !Sub "Batch Job Role (Fargate)"
       AssumeRolePolicyDocument:
         Statement:
@@ -149,14 +169,16 @@ Resources:
         #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
       Path: /
       Tags:
-        - Key: 'environment'
-          Value: common
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   BatchJobRolePolicy:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
       Description: "Batch Role ManagedPolicy"
-      #ManagedPolicyName: "code-build-demo-policy"
+      #ManagedPolicyName: "batch-job-role-policy"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -214,7 +236,7 @@ Resources:
     Type: AWS::Batch::JobDefinition
     Properties:
       Type: container # container | multinode - multinode isn't supported for Fargate
-      #JobDefinitionName: cfn-def # (Optional)
+      #JobDefinitionName: "JobDefinitionName" # (Optional)
       PlatformCapabilities: 
         - FARGATE
       Parameters: {"codec": "mp4"}
@@ -248,6 +270,8 @@ Resources:
             Value: "dev"
           - Name: AWS_REGION
             Value: "dev"
+          - Name: APP_AWS_OUT_BUCKET_NAME
+            Value: ""
         Secrets:
           - Name: DB_URL
             ValueFrom: "/demo/database/endpoint"
