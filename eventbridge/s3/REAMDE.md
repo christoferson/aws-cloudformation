@@ -88,7 +88,28 @@ DeadLetterConfig:
 
 ### S3 Trigger Batch
 
-Provision an EventBridge rule that will trigger Batch
+Provision an EventBridge rule that will trigger Batch.
+
+Container Overrides [link](https://docs.aws.amazon.com/batch/latest/APIReference/API_ContainerOverrides.html)
+
+```
+InputTemplate: |
+  {
+    "Parameters": {"S3Key" : "<S3ObjectKey>", "S3Bucket" : "<S3BucketName>"},
+    "ContainerOverrides": {
+      "Command": ["sh", "-c", "echo s3rocksv5 && java -jar batch.jar '<S3BucketName>' '<S3ObjectKey>'"],
+      "Environment": [
+        {"Name": "AWS_KEY", "Value": "<S3ObjectKey>"},
+        {"Name": "APP_S3_BUCKET_OBJECT_KEY", "Value": "<S3ObjectKey>"}
+      ]
+    }
+  }
+```
+
+If ContainerOverrides with Environment does not seem to work. Error=Unknown SDK Error.
+Make sure Case is correct. e.g. name should be Name
+
+
 
 [eventbridge-rule-s3-call-batch](eventbridge-rule-s3-call-batch.yaml)
 
@@ -127,6 +148,10 @@ Provision an EventBridge rule that will trigger StepFunctions
 - https://aws.amazon.com/premiumsupport/knowledge-center/sns-not-getting-eventbridge-notification/
 
 - https://aws.amazon.com/premiumsupport/knowledge-center/batch-parameters-trigger-eventbridge/?nc1=h_ls
+
+- https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-patterns-content-based-filtering.html#eb-filtering-prefix-matching
+
+- https://aws.amazon.com/blogs/compute/reducing-custom-code-by-using-advanced-rules-in-amazon-eventbridge/
 
 ### Errors
 
