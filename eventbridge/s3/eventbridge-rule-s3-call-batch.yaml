@@ -21,11 +21,12 @@ Metadata:
           default: "Application Configuration"
         Parameters:
           - Application
-          - Environment    
+          - Environment
       - Label: 
           default: "Source Configuration"
         Parameters: 
           - BucketName
+          - BucketObjectKeyPrefix
       - Label: 
           default: "Target Configuration"
         Parameters: 
@@ -44,25 +45,30 @@ Parameters:
     Type: String
     Default: myapp
     Description: Application Name
-    
+
   Environment:
     Type: String
     Default: dev
     Description: Environment
-    
+
   BucketName:
     Type: "String"
     Default: "bucket-name"
     Description: "Name of the Source Bucket"
-    
+
+  BucketObjectKeyPrefix:
+    Type: "String"
+    Default: "" #prefix/
+    Description: "(Optional) Name Prefix of the Source Object Key"
+
   JobDefinitionArn:
     Type: "String"
-    Default: "arn:aws:s3:::bucket-name"
+    Default: "arn:aws:batch:us-east-1:9000000000:job-definition/BatchJobDefinition-BZe963866c726db:11"
     Description: "Arn of the Target Job Definition"
 
   JobQueueArn:
     Type: "String"
-    Default: "arn:aws:s3:::bucket-name"
+    Default: "arn:aws:batch:us-east-1:9000000000:job-queue/BatchJobQueue-ZD75D0jJcnsxSG9P"
     Description: "Arn of the Target Job Queue"
 
 Resources:
@@ -115,7 +121,7 @@ Resources:
                 #"arn:aws:batch:*:916902469227:job-queue/*",
                 #"arn:aws:batch:*:916902469227:job-definition/*:*",          
               
-  EventBridgeRuleS3CallBatch: 
+  EventBridgeRule: 
     Type: AWS::Events::Rule
     Properties: 
       #Name: eventbridge-rule-s3-call-batch
@@ -130,6 +136,9 @@ Resources:
           bucket:
             name: 
               - !Ref BucketName
+          object:
+            key: #suffix
+              - prefix: !Sub "${BucketObjectKeyPrefix}"
       State: "ENABLED"
       #"RoleArn" : String, # (ARN) of the role that is used for target invocation.
       Targets:
@@ -162,5 +171,5 @@ Resources:
 
 Outputs:
 
-  EventBridgeRuleS3CallBatchName:
-    Value: !Ref EventBridgeRuleS3CallBatch
+  EventBridgeRuleName:
+    Value: !Ref EventBridgeRule
