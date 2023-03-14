@@ -53,7 +53,7 @@ Parameters:
 Resources:
 
   StateMachineExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
         Version: 2012-10-17
@@ -61,7 +61,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - !Sub 'states.${AWS::Region}.amazonaws.com'
+                - !Sub "states.${AWS::Region}.amazonaws.com"
             Action: 'sts:AssumeRole'
       Path: /
       Policies:
@@ -100,6 +100,11 @@ Resources:
                   - 'xray:GetSamplingRules'
                   - 'xray:GetSamplingTargets'
                 Resource: '*'
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   StateMachine:
     Type: 'AWS::StepFunctions::StateMachine'
@@ -121,7 +126,21 @@ Resources:
                   "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
                   "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}",
                   "ContainerOverrides": {
-                    "Command.$": "States.Array('sh', '-c', States.Format('echo s3rocksv2 && java -jar batch.jar {}', $.detail.object.key))"
+                    "Command.$": "States.Array('sh', '-c', States.Format('echo s3rocksv3 && java -jar batch.jar \\'{}\\' \\'{}\\'', $.detail.bucket.name, $.detail.object.key))",
+                    "Environment": [
+                      {
+                        "Name": "APP_AWS_REGION",
+                        "Value.$": "$.region"
+                      },
+                      {
+                        "Name": "APP_AWS_BUCKET_NAME",
+                        "Value.$": "$.detail.bucket.name"
+                      },
+                      {
+                        "Name": "APP_AWS_BUCKET_OBJECT_KEY",
+                        "Value.$": "$.detail.object.key"
+                      }
+                    ]
                   }
                 },
                 "Next": "Notify Success",
