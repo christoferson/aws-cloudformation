@@ -159,7 +159,11 @@ Resources:
               {
                 "Parameters": {"S3Key" : "<S3ObjectKey>", "S3Bucket" : "<S3BucketName>"},
                 "ContainerOverrides": {
-                  "Command": ["sh", "-c", "echo s3rocksv5 && java -jar batch.jar '<S3BucketName>' '<S3ObjectKey>'"]
+                  "Command": ["sh", "-c", "echo s3rocksv5 && java -jar batch.jar '<S3BucketName>' '<S3ObjectKey>'"],
+                  "Environment": [
+                    {"Name": "AWS_KEY", "Value": "<S3ObjectKey>"},
+                    {"Name": "APP_S3_BUCKET_OBJECT_KEY", "Value": "<S3ObjectKey>"}
+                  ]
                 }
               }
           BatchParameters:
