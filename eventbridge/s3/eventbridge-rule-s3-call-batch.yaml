@@ -63,7 +63,7 @@ Parameters:
 
   JobDefinitionArn:
     Type: "String"
-    Default: "arn:aws:batch:us-east-1:9000000000:job-definition/BatchJobDefinition-BZe963866c726db:11"
+    Default: "arn:aws:batch:us-east-1:9000000000:job-definition/BatchJobDefinition-BZe963866c726db:18"
     Description: "Arn of the Target Job Definition"
 
   JobQueueArn:
@@ -153,12 +153,13 @@ Resources:
           #   Arn: xx
           InputTransformer:
             InputPathsMap:
-              "S3ObjectKey": "$.detail.object.key"
+              S3BucketName: $.detail.bucket.name
+              S3ObjectKey: $.detail.object.key
             InputTemplate: |
               {
-                "Parameters": {"S3Key" : "<S3ObjectKey>"},
+                "Parameters": {"S3Key" : "<S3ObjectKey>", "S3Bucket" : "<S3BucketName>"},
                 "ContainerOverrides": {
-                  "Command": ["sh", "-c", "echo s3rocksv2 && java -jar batch.jar <S3ObjectKey>"]
+                  "Command": ["sh", "-c", "echo s3rocksv3 && java -jar batch.jar"]
                 }
               }
           BatchParameters:
