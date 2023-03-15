@@ -12,6 +12,7 @@ Metadata:
         Parameters:
           - Application
           - Environment
+          - Service
       -
         Label:
           default: "Network Configuration"
@@ -37,6 +38,11 @@ Parameters:
     Type: String
     Default: dev
     Description: Environment
+
+  Service:
+    Type: String
+    Default: demo
+    Description: Service Name
 
   VpcId:
     Description : "VPC ID"
@@ -149,13 +155,15 @@ Resources:
   BatchJobLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Sub "/batch/logs/my-batch-fargate"
+      LogGroupName: !Sub "/batch/logs/batch-fargate/${Service}"
       RetentionInDays: 1
       Tags: 
         - Key: "Application"
           Value: !Ref Application
         - Key: "Environment"
           Value: !Ref Environment
+        - Key: "Service"
+          Value: !Ref Service
 
   BatchJobRole:
     Type: 'AWS::IAM::Role'
@@ -283,7 +291,7 @@ Resources:
       #JobDefinitionName: "JobDefinitionName" # (Optional)
       PlatformCapabilities: 
         - FARGATE
-      Parameters: {"codec": "mp4"}
+      Parameters: { "Service": !Ref Service }
       ContainerProperties:
         FargatePlatformConfiguration:
           PlatformVersion: LATEST
@@ -307,7 +315,9 @@ Resources:
           AssignPublicIp: DISABLED # DISABLED | ENABLED
         Environment:
           - Name: APP_ENV
-            Value: "dev"
+            Value: !Ref Environment
+          - Name: APP_SERVICE_NAME
+            Value: !Ref Service
           - Name: APP_AWS_OUT_BUCKET_NAME
             Value: !Ref JobDefinitionBucketOutputName
         Secrets:
@@ -328,6 +338,20 @@ Resources:
         AttemptDurationSeconds: 60 #minimum value for the timeout is 60 seconds.
 
 Outputs:
+
+
+  BatchServiceRoleArn:
+    Value: !GetAtt BatchServiceRole.Arn
+
+  BatchJobRoleArn:
+    Value: !GetAtt BatchJobRole.Arn
+
+  BatchJobExecutionRoleArn:
+    Value: !GetAtt BatchJobExecutionRole.Arn
+
+
+  BatchJobQueueArn:
+    Value: !Ref BatchJobQueue
 
   BatchServiceRoleArn:
     Value: !Ref BatchServiceRole
