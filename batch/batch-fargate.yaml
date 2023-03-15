@@ -24,6 +24,7 @@ Metadata:
         Parameters:
           - JobDefinitionImage
           - JobDefinitionCommand
+          - JobDefinitionBucketOutputName
 
 Parameters:
 
@@ -54,6 +55,11 @@ Parameters:
     Description: Job Definition Command
     Type: String
     Default: "echo fargate;"
+
+  JobDefinitionBucketOutputName:
+    Description: Job Definition Output Bucket Name
+    Type: String
+    Default: ""
 
 Resources:
 
@@ -302,14 +308,8 @@ Resources:
         Environment:
           - Name: APP_ENV
             Value: "dev"
-          - Name: AWS_KEY
-            Value: "dev"
-          - Name: AWS_SECRET
-            Value: "dev"
-          - Name: AWS_REGION
-            Value: "dev"
           - Name: APP_AWS_OUT_BUCKET_NAME
-            Value: ""
+            Value: !Ref JobDefinitionBucketOutputName
         Secrets:
           - Name: DB_URL
             ValueFrom: "/demo/database/endpoint"
