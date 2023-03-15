@@ -32,6 +32,10 @@ Metadata:
         Parameters: 
           - JobDefinitionArn
           - JobQueueArn
+      - Label: 
+          default: "Batch Configuration"
+        Parameters: 
+          - JobName
     ParameterLabels: 
       BucketArn: 
         Default: "BucketName"
@@ -70,6 +74,11 @@ Parameters:
     Type: "String"
     Default: "arn:aws:batch:us-east-1:9000000000:job-queue/BatchJobQueue-ZD75D0jJcnsxSG9P"
     Description: "Arn of the Target Job Queue"
+
+  JobName:
+    Type: "String"
+    Default: "eventbridge-rule-s3-call-batch-job"
+    Description: "Name of the Job that will be launched"
 
 Resources:
 
@@ -172,7 +181,7 @@ Resources:
             #ArrayProperties:
             #  Size: 950 
             JobDefinition: !Ref JobDefinitionArn
-            JobName: "eventbridge-rule-s3-call-batch-job"
+            JobName: !Ref JobName
             RetryStrategy:
               Attempts: 1
 
