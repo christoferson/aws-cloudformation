@@ -61,6 +61,7 @@ Example of Express Step Functions
 
 ## Errors
 - StateMachineExecutionRole-1K0YP4X5NK8ON' is not authorized to create managed-rule. (Service: AWSStepFunctions; Status Code: 400; Error Code: AccessDeniedException;
+
 ```yaml
               - Effect: Allow
                 Action:
@@ -68,11 +69,15 @@ Example of Express Step Functions
                   - 'events:PutRule'
                   - 'events:DescribeRule'
                 Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForBatchJobsRule"
-                
+```
+
 ## References
 
 - https://docs.aws.amazon.com/step-functions/latest/dg/service-integration-iam-templates.html
 - https://docs.aws.amazon.com/step-functions/latest/dg/tutorials.html
 - https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-intrinsic-functions.html
 
-```
+
+### TODO
+
+- ContainerOverrides, Batch, Env Vars

@@ -45,7 +45,7 @@ Resources:
           - Effect: "Allow"
             Principal:
               Service:
-                - !Sub states.${AWS::Region}.amazonaws.com
+                - !Sub states.amazonaws.com
             Action: "sts:AssumeRole"
       Path: "/"
       Policies:
