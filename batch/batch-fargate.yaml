@@ -58,7 +58,7 @@ Parameters:
 Resources:
 
   BatchServiceRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       #RoleName: !Sub "BatchServiceRole"
       Description: "Batch Service Role"
@@ -232,6 +232,44 @@ Resources:
             Resource: 
               - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
 
+  BatchJobExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      #RoleName: !Sub "BatchInstanceRole"
+      Description: !Sub "Batch Job Execution Role (Fargate)"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - !Ref BatchJobExecutionRolePolicy
+      Path: /
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+
+  BatchJobExecutionRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "Batch Job Execution Role ManagedPolicy"
+      #ManagedPolicyName: "batch-job-execution-role-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'ssm:GetParameter'
+              - 'ssm:GetParameters'
+              - 'ssm:GetParametersByPath'
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
+              
   BatchJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -247,7 +285,7 @@ Resources:
         Privileged: false # Must be false for Fargate
         ReadonlyRootFilesystem: false
         JobRoleArn: !GetAtt BatchJobRole.Arn  # AM role that the container can assume for AWS permissions. 
-        ExecutionRoleArn: !GetAtt BatchJobRole.Arn #execution role that AWS Batch can assume.
+        ExecutionRoleArn: !GetAtt BatchJobExecutionRole.Arn #execution role that AWS Batch can assume.
         #Memory: 1024 # This parameter is deprecated, use resourceRequirements to specify the memory requirements for the job definition.
         #Vcpus: 2 #Deprecated. For jobs running on EC2 resources, it specifies the number of vCPUs reserved for the job.
         ResourceRequirements:
