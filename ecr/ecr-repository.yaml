@@ -7,23 +7,26 @@ Parameters:
     Type: "String"
     Default: "ecr-repository-demo"
     Description: "ECR Repository Name"
-    
+
 Resources:
 
   EcrRepository: 
     Type: AWS::ECR::Repository
-    Properties: 
+    Properties:
       RepositoryName: !Ref RepositoryName
       EncryptionConfiguration:
-        EncryptionType: AES256     
+        EncryptionType: AES256
       ImageTagMutability: MUTABLE
       ImageScanningConfiguration: 
         ScanOnPush: true
+      #LifecyclePolicy:
+      #  RegistryId: 
+      #  LifecyclePolicyText:
       Tags: 
-        - Key: "owner"
-          Value: "me"
-        - Key: "environment"
+        - Key: "Environment"
           Value: "dev"
+        - Key: "Name"
+          Value: !Ref RepositoryName
 
 Outputs:
 
@@ -31,4 +34,4 @@ Outputs:
     Value: !GetAtt EcrRepository.RepositoryUri
  
   EcrRepositoryArn:
-    Value: !GetAtt EcrRepository.Arn    
+    Value: !GetAtt EcrRepository.Arn

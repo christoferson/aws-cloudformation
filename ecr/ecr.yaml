@@ -5,7 +5,7 @@ Resources:
 
   EcrRepository: 
     Type: AWS::ECR::Repository
-    Properties: 
+    Properties:
       #RepositoryName: "ecr-repository-demo"
       EncryptionConfiguration:
         EncryptionType: AES256
@@ -22,7 +22,6 @@ Outputs:
 
   EcrRepositoryUri:
     Value: !GetAtt EcrRepository.RepositoryUri
-    
+
   EcrRepositoryArn:
     Value: !GetAtt EcrRepository.Arn
-        
