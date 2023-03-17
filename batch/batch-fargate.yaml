@@ -15,8 +15,9 @@ Metadata:
           - Service
       -
         Label:
-          default: "Network Configuration"
+          default: "Batch / Network Configuration"
         Parameters:
+          - BatchComputeMaxVCpu
           - VpcId
           - VpcSubnetListCompute
       -
@@ -46,6 +47,11 @@ Parameters:
     Type: String
     Default: demo
     Description: Service Name
+
+  BatchComputeMaxVCpu:
+    Description: Batch Compute Environment Max vCPU
+    Type: Number
+    Default: "8"
 
   VpcId:
     Description : "VPC ID"
@@ -91,7 +97,7 @@ Resources:
     Type: "AWS::IAM::Role"
     Properties:
       #RoleName: !Sub "BatchServiceRole"
-      Description: "Batch Service Role"
+      Description: !Sub "Batch Service Role ${Application}-${Environment}"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -112,10 +118,10 @@ Resources:
           Value: !Ref Environment
 
   BatchServiceRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "Batch Service Role ManagedPolicy"
-      #ManagedPolicyName: "code-build-demo-policy"
+      Description: !Sub "Batch Service Role ManagedPolicy ${Application}-${Environment}"
+      #ManagedPolicyName: "batch-service-role-policy"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -131,13 +137,13 @@ Resources:
             Resource: '*'
 
   BatchComputeSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+    Type: "AWS::EC2::SecurityGroup"
     Properties:
       VpcId: !Ref VpcId
-      GroupDescription: "BatchComputeEnvironment (Fargate)"
+      GroupDescription: "BatchComputeEnvironment (Fargate) ${Application}-${Environment}-${Service}"
       Tags:
         - Key: Name
-          Value: !Sub "batch-fargate-sg"
+          Value: !Sub "batch-fargate-${Application}-${Environment}-${Service}-sg"
 
   BatchComputeEnvironment:
     Type: "AWS::Batch::ComputeEnvironment"
@@ -149,7 +155,7 @@ Resources:
       ComputeResources:
         Type: FARGATE #FARGATE or FARGATE_SPOT
         #MinvCpus: 0
-        MaxvCpus: 8
+        MaxvCpus: !Ref BatchComputeMaxVCpu #16?
         #DesiredvCpus: 0
         SecurityGroupIds:
           - !Ref BatchComputeSecurityGroup
@@ -160,7 +166,7 @@ Resources:
         #Tags: {"Name": "Batch (Fargate) Compute Environment"} #tags is not applicable for Fargate
 
   BatchJobQueue:
-    Type: AWS::Batch::JobQueue
+    Type: "AWS::Batch::JobQueue"
     Properties:
       #JobQueueName: cfn-queue # (Optional)
       Priority: 1 # Job queues with a higher priority (or a higher integer value for the priority parameter) are evaluated first
@@ -184,10 +190,10 @@ Resources:
           Value: !Ref Service
 
   BatchJobRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       #RoleName: !Sub "BatchInstanceRole"
-      Description: !Sub "Batch Job Role (Fargate)"
+      Description: !Sub "Batch Job Role (Fargate) ${Application}-${Environment}-${Service}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -207,7 +213,7 @@ Resources:
           Value: !Ref Environment
 
   BatchJobRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: "Batch Role ManagedPolicy"
       #ManagedPolicyName: "batch-job-role-policy"
@@ -265,10 +271,10 @@ Resources:
               - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
 
   BatchJobExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       #RoleName: !Sub "BatchInstanceRole"
-      Description: !Sub "Batch Job Execution Role (Fargate)"
+      Description: !Sub "Batch Job Execution Role (Fargate) ${Application}-${Environment}-${Service}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -287,7 +293,7 @@ Resources:
           Value: !Ref Environment
 
   BatchJobExecutionRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: "Batch Job Execution Role ManagedPolicy"
       #ManagedPolicyName: "batch-job-execution-role-policy"
@@ -303,7 +309,7 @@ Resources:
               - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
               
   BatchJobDefinition:
-    Type: AWS::Batch::JobDefinition
+    Type: "AWS::Batch::JobDefinition"
     Properties:
       Type: container # container | multinode - multinode isn't supported for Fargate
       #JobDefinitionName: "JobDefinitionName" # (Optional)
@@ -357,7 +363,6 @@ Resources:
 
 Outputs:
 
-
   BatchServiceRoleArn:
     Value: !GetAtt BatchServiceRole.Arn
 
@@ -367,9 +372,8 @@ Outputs:
   BatchJobExecutionRoleArn:
     Value: !GetAtt BatchJobExecutionRole.Arn
 
-
   BatchJobQueueArn:
     Value: !Ref BatchJobQueue
 
-  BatchServiceRoleArn:
-    Value: !Ref BatchServiceRole
+  BatchJobDefinitionArn:
+    Value: !Ref BatchJobDefinition
