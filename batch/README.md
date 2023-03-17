@@ -27,6 +27,8 @@ Fargate or EC2 - Amazon EC2 if your jobs require any of the following:
 - A custom Amazon Machine Image (AMI)
 - Any of the linuxParameters parameters
 
+-----------------------------------------------------------------------------------------------------------------------
+
 ### Batch - EC2
 
 Provision a Compute Environment, Job Queue, Definition
@@ -44,6 +46,12 @@ Provision a Compute Environment, Job Queue, Definition
 Provision a Compute Environment (Fargate), Job Queue, Definition
 
 [batch-fargate](batch-fargate.yaml)
+
+### Batch - Fargate - Extra Service
+
+Provision additional Job Queue, Job Definition and assign to an existing Compute Environment
+
+[batch-fargate-xtra-service](batch-fargate-xtra-service.yaml)
 
 ### Batch - Fargate with EFS
 
