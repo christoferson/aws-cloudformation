@@ -26,6 +26,9 @@ Metadata:
           - JobDefinitionImage
           - JobDefinitionCommand
           - JobDefinitionBucketOutputName
+          - JobDefinitionResourceVcpu
+          - JobDefinitionResourceMemory
+          - JobDefinitionTimeoutSeconds
 
 Parameters:
 
@@ -66,6 +69,21 @@ Parameters:
     Description: Job Definition Output Bucket Name
     Type: String
     Default: ""
+
+  JobDefinitionResourceVcpu:
+    Description: Job Definition Resource Requirement VCPU
+    Type: Number
+    Default: "0.25"
+    
+  JobDefinitionResourceMemory:
+    Description: Job Definition Resource Requirement Memory
+    Type: Number
+    Default: "512"
+
+  JobDefinitionTimeoutSeconds:
+    Description: Job Definition Resource Timeout Seconds
+    Type: Number
+    Default: "1200"
 
 Resources:
 
@@ -304,9 +322,9 @@ Resources:
         #Vcpus: 2 #Deprecated. For jobs running on EC2 resources, it specifies the number of vCPUs reserved for the job.
         ResourceRequirements:
           - Type: VCPU
-            Value: 0.25
+            Value: !Ref JobDefinitionResourceVcpu
           - Type: MEMORY
-            Value: 512
+            Value: !Ref JobDefinitionResourceMemory
         Command: # ["echo","hi"]  ["sh","-c","echo fargate;"] ["sh","-c","echo fargate && ls && java -jar batch.jar"]
           - sh 
           - -c 
@@ -335,7 +353,7 @@ Resources:
       RetryStrategy:
         Attempts: 1
       Timeout:
-        AttemptDurationSeconds: 60 #minimum value for the timeout is 60 seconds.
+        AttemptDurationSeconds: !Ref JobDefinitionTimeoutSeconds #minimum value for the timeout is 60 seconds.
 
 Outputs:
 
