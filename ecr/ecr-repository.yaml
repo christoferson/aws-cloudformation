@@ -3,6 +3,11 @@ Description: "ECR"
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
   RepositoryName:
     Type: "String"
     Default: "ecr-repository-demo"
@@ -15,16 +20,17 @@ Resources:
     Properties:
       RepositoryName: !Ref RepositoryName
       EncryptionConfiguration:
-        EncryptionType: AES256
-      ImageTagMutability: MUTABLE
+        EncryptionType: AES256 #AES256 | KMS
+        #KmsKey
+      ImageTagMutability: MUTABLE #IMMUTABLE | MUTABLE
       ImageScanningConfiguration: 
         ScanOnPush: true
       #LifecyclePolicy:
       #  RegistryId: 
       #  LifecyclePolicyText:
       Tags: 
-        - Key: "Environment"
-          Value: "dev"
+        - Key: "Application"
+          Value: !Ref Application
         - Key: "Name"
           Value: !Ref RepositoryName
 
