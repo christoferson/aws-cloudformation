@@ -11,11 +11,12 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: lambda.amazonaws.com
+              Service: "lambda.amazonaws.com"
             Action: "sts:AssumeRole"
       Path: "/"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaFunction:
     Type: "AWS::Lambda::Function"
@@ -29,9 +30,14 @@ Resources:
           };
       Runtime: "nodejs16.x"
       Timeout: "25"
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "step-functions-lambda"
 
   LambdaLogGroup:
-    Type: AWS::Logs::LogGroup
+    Type: "AWS::Logs::LogGroup"
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
@@ -45,7 +51,7 @@ Resources:
           - Effect: "Allow"
             Principal:
               Service:
-                - !Sub states.amazonaws.com
+                - states.amazonaws.com
             Action: "sts:AssumeRole"
       Path: "/"
       Policies:
@@ -66,7 +72,7 @@ Resources:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
       #StateMachineName: StateMachine
-      StateMachineType: STANDARD  # STANDARD |  EXPRESS 
+      StateMachineType: STANDARD  # STANDARD |  EXPRESS
       RoleArn: !GetAtt StateMachineExecutionRole.Arn
       #Definition: xxx
       #DefinitionS3Location: xxx
@@ -189,7 +195,7 @@ Resources:
           Value: "app"
 
   LogGroupStateMachine:
-      Type: AWS::Logs::LogGroup
+      Type: "AWS::Logs::LogGroup"
       Properties:
         #LogGroupName: !Sub "/stepfunctions"
         RetentionInDays: 1
