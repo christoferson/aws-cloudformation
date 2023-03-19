@@ -6,6 +6,14 @@
 
 Example with a single step that invokes a lambda function
 
+Input JSON:
+
+```
+{
+  "foo": 1
+}
+```
+
 [step-functions-std-basic](step-functions-std-basic.yaml)
 
 ### Step Functions Demo
@@ -76,7 +84,7 @@ Example of Express Step Functions
 - https://docs.aws.amazon.com/step-functions/latest/dg/service-integration-iam-templates.html
 - https://docs.aws.amazon.com/step-functions/latest/dg/tutorials.html
 - https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-intrinsic-functions.html
-
+- https://aws.amazon.com/about-aws/whats-new/2021/03/aws-step-functions-adds-tooling-support-for-yaml/?nc1=h_ls
 
 ### TODO
 

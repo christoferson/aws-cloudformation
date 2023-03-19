@@ -1,6 +1,31 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Example template for a Step Functions state machine.
 
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+    
 Resources:
 
   LambdaExecutionRole:
@@ -51,9 +76,11 @@ Resources:
           - Effect: "Allow"
             Principal:
               Service:
-                - states.amazonaws.com
+                - "states.amazonaws.com"
             Action: "sts:AssumeRole"
       Path: "/"
+      ManagedPolicyArns:
+        - !Ref StateMachineExecutionRolePolicy
       Policies:
         - PolicyName: StatesExecutionPolicy
           PolicyDocument:
@@ -67,6 +94,26 @@ Resources:
                 Action:
                   - "logs:*"
                 Resource: "*"
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+
+  StateMachineExecutionRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "StateMachine Role ManagedPolicy"
+      #ManagedPolicyName: "statemachine-job-role-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
 
   StateMachine:
     Type: "AWS::StepFunctions::StateMachine"
@@ -185,20 +232,23 @@ Resources:
           - CloudWatchLogsLogGroup:
               LogGroupArn: !GetAtt LogGroupStateMachine.Arn
         IncludeExecutionData: true
-        Level: 'ERROR'
+        Level: "ERROR"
       Tags:
-        -
-          Key: "Environment"
-          Value: "dev"
-        -
-          Key: "Application"
-          Value: "app"
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   LogGroupStateMachine:
       Type: "AWS::Logs::LogGroup"
       Properties:
         #LogGroupName: !Sub "/stepfunctions"
         RetentionInDays: 1
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
 Outputs:
 
