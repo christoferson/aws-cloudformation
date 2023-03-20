@@ -43,6 +43,31 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunctionStep1}"
       RetentionInDays: 1
 
+  LambdaFunctionStep2:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = (event, context, callback) => {
+              console.log(event);
+              callback(null, event);
+          };
+      Runtime: "nodejs18.x"
+      Timeout: "25"
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "step-functions-lambda"
+
+  LambdaStep2LogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionStep2}"
+      RetentionInDays: 1
+      
   StateMachineExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -85,12 +110,22 @@ Resources:
               "States": {
                 "Step1": {
                   "Type": "Task",
-                  "Resource": "${LambdaStep1Arn}",
+                  "Resource": "${LambdaFunctionStep1.Arn}",
+                  "Parameters": {
+                    "foo": "bar"
+                  },
                   "TimeoutSeconds" : 30,
                   "HeartbeatSeconds" : 6,
                   "Next": "Step2"
                 },
                 "Step2": {
+                  "Type": "Task",
+                  "Resource": "${LambdaStep2Arn}",
+                  "TimeoutSeconds" : 30,
+                  "HeartbeatSeconds" : 6,
+                  "Next": "Step3"
+                },
+                "Step3": {
                   "Type": "Task",
                   "Resource": "${LambdaStep1Arn}",
                   "End": true,
@@ -99,7 +134,7 @@ Resources:
                 }
               }
             }
-          - {LambdaStep1Arn: !GetAtt [ LambdaFunctionStep1, Arn ]}
+          - {LambdaStep1Arn: !GetAtt [ LambdaFunctionStep1, Arn ], LambdaStep2Arn: !GetAtt [ LambdaFunctionStep2, Arn ]}
       TracingConfiguration:
         Enabled: true
       LoggingConfiguration:
