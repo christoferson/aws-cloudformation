@@ -1,6 +1,21 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "ECR"
 
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Repository Configuration"
+        Parameters:
+          - Application
+          - RepositoryName
+    ParameterLabels:
+      RepositoryName:
+        default: "Repository Name"
+      RepositoryDescription:
+        default: "Reporistory Description"
+
 Parameters:
 
   Application:
@@ -15,8 +30,9 @@ Parameters:
 
 Resources:
 
-  EcrRepository: 
-    Type: AWS::ECR::Repository
+  EcrRepository:
+    Type: "AWS::ECR::Repository"
+    DeletionPolicy: Delete # Delete Retain
     Properties:
       RepositoryName: !Ref RepositoryName
       EncryptionConfiguration:
@@ -28,7 +44,7 @@ Resources:
       #LifecyclePolicy:
       #  RegistryId: 
       #  LifecyclePolicyText:
-      Tags: 
+      Tags:
         - Key: "Application"
           Value: !Ref Application
         - Key: "Name"
@@ -36,8 +52,11 @@ Resources:
 
 Outputs:
 
+  EcrRepositoryName:
+    Value: !Ref EcrRepository
+
   EcrRepositoryUri:
     Value: !GetAtt EcrRepository.RepositoryUri
- 
+
   EcrRepositoryArn:
     Value: !GetAtt EcrRepository.Arn
