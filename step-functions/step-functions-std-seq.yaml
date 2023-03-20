@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Step Functions - Standard - Sequence
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunctionStep1:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = (event, context, callback) => {
+              console.log(event);
+              callback(null, event);
+          };
+      Runtime: "nodejs18.x"
+      Timeout: "25"
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "step-functions-lambda"
+
+  LambdaStep1LogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionStep1}"
+      RetentionInDays: 1
+
+  StateMachineExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: "*"
+
+  StateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      #StateMachineName: StateMachine
+      StateMachineType: STANDARD  # STANDARD |  EXPRESS
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "Call Lambda",
+              "StartAt": "Step1",
+              "TimeoutSeconds": 60,
+              "States": {
+                "Step1": {
+                  "Type": "Task",
+                  "Resource": "${LambdaStep1Arn}",
+                  "TimeoutSeconds" : 30,
+                  "HeartbeatSeconds" : 6,
+                  "Next": "Step2"
+                },
+                "Step2": {
+                  "Type": "Task",
+                  "Resource": "${LambdaStep1Arn}",
+                  "End": true,
+                  "TimeoutSeconds" : 30,
+                  "HeartbeatSeconds" : 6 
+                }
+              }
+            }
+          - {LambdaStep1Arn: !GetAtt [ LambdaFunctionStep1, Arn ]}
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt LogGroupStateMachine.Arn
+        IncludeExecutionData: true
+        Level: 'ERROR'
+      Tags:
+        -
+          Key: "Environment"
+          Value: "dev"
+        -
+          Key: "Application"
+          Value: "app"
+
+  LogGroupStateMachine:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        #LogGroupName: !Sub "/stepfunctions"
+        RetentionInDays: 1
+
+Outputs:
+
+  StateMachineArn:
+    Value: !Ref StateMachine
+
+  StateMachineName:
+    Value: !GetAtt StateMachine.Name
