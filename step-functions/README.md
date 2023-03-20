@@ -65,7 +65,44 @@ Example of Express Step Functions
 
 [step-functions-express](step-functions-express.yaml)
 
+### Step Functions Integration
 
+#### Step Functions Integration - Lambda
+
+https://docs.aws.amazon.com/step-functions/latest/dg/connect-lambda.html
+
+Optimized Lambda integration
+
+```
+{  
+   "StartAt":"CallLambda",
+   "States":{  
+      "CallLambda":{  
+         "Type":"Task",
+         "Resource":"arn:aws:states:::lambda:invoke",
+         "Parameters":{  
+            "FunctionName":"MyFunction"
+         },
+         "End":true
+      }
+   }
+}
+```
+
+Lambda AWS SDK integration
+
+```
+{  
+   "StartAt":"CallFunction",
+   "States":{  
+      "CallFunction": {  
+         "Type":"Task",
+         "Resource":"arn:aws:lambda:us-east-1:123456789012:function:HelloFunction",
+         "End": true
+      }
+   }
+}     
+```
 
 ## Errors
 - StateMachineExecutionRole-1K0YP4X5NK8ON' is not authorized to create managed-rule. (Service: AWSStepFunctions; Status Code: 400; Error Code: AccessDeniedException;
@@ -85,6 +122,9 @@ Example of Express Step Functions
 - https://docs.aws.amazon.com/step-functions/latest/dg/tutorials.html
 - https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-intrinsic-functions.html
 - https://aws.amazon.com/about-aws/whats-new/2021/03/aws-step-functions-adds-tooling-support-for-yaml/?nc1=h_ls
+- https://docs.aws.amazon.com/step-functions/latest/dg/connect-lambda.html
+
+
 
 ### TODO
 
