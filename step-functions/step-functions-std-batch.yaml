@@ -12,7 +12,11 @@ Metadata:
           default: "Application Configuration"
         Parameters:
           - Application
-          - Environment    
+          - Environment
+      - Label:
+          default: "State Machine Configuration"
+        Parameters: 
+          - StateMachineTimeoutSeconds
       - Label: 
           default: "Batch Job Configuration"
         Parameters: 
@@ -35,6 +39,11 @@ Parameters:
     Default: dev
     Description: Environment
 
+  StateMachineTimeoutSeconds:
+    Description : "StateMachine Timeout in Seconds"
+    Type: Number
+    Default: "3600"
+    
   BatchJobName:
     Description : "Job Name"
     Type: String
@@ -56,29 +65,29 @@ Resources:
     Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: "2012-10-17"
         Statement:
-          - Effect: Allow
+          - Effect: "Allow"
             Principal:
               Service:
-                - !Sub "states.amazonaws.com" #states.amazonaws.com # states.${AWS::Region}.amazonaws.com
-            Action: 'sts:AssumeRole'
-      Path: /
+                - "states.amazonaws.com" #states.amazonaws.com # states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
       ManagedPolicyArns:
-        - !Ref StateMachineExecutionRolePolicy      
+        - !Ref StateMachineExecutionRolePolicy
       Policies:
         - PolicyName: StatesExecutionPolicy
           PolicyDocument:
-            Version: 2012-10-17
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - 'lambda:InvokeFunction'
-                Resource: '*'
+                  - "lambda:InvokeFunction"
+                Resource: "*"
               - Effect: Allow
                 Action:
-                  - 'logs:*'
-                Resource: '*'
+                  - "logs:*"
+                Resource: "*"
               - Effect: Allow
                 Action:
                   - 'batch:SubmitJob'
@@ -109,7 +118,7 @@ Resources:
           Value: !Ref Environment
 
   StateMachineExecutionRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: "StateMachine Role ManagedPolicy"
       #ManagedPolicyName: "statemachine-job-role-policy"
@@ -139,16 +148,16 @@ Resources:
             Resource: "*"
               
   StateMachine:
-    Type: 'AWS::StepFunctions::StateMachine'
+    Type: "AWS::StepFunctions::StateMachine"
     Properties:
       StateMachineType: STANDARD
       RoleArn: !GetAtt StateMachineExecutionRole.Arn
-      DefinitionString: !Sub 
+      DefinitionString: !Sub
         - |-
           {
             "Comment": "Submit Batch Job",
             "StartAt": "Submit Batch Job",
-            "TimeoutSeconds": 3600,
+            "TimeoutSeconds": "${StateMachineTimeoutSeconds}",
             "States": {
               "Submit Batch Job": {
                 "Type": "Task",
@@ -227,7 +236,7 @@ Resources:
           - CloudWatchLogsLogGroup:
               LogGroupArn: !GetAtt LogGroupStateMachine.Arn
         IncludeExecutionData: true
-        Level: ERROR
+        Level: "ERROR"
       Tags:
         - Key: "Application"
           Value: !Ref Application
@@ -235,7 +244,7 @@ Resources:
           Value: !Ref Environment
 
   LogGroupStateMachine:
-    Type: 'AWS::Logs::LogGroup'
+    Type: "AWS::Logs::LogGroup"
     Properties:
       RetentionInDays: 1
       Tags:
@@ -243,7 +252,7 @@ Resources:
           Value: !Ref Application
         - Key: "Environment"
           Value: !Ref Environment
-          
+
   StepFunctionSnsTopicSuccess:
     Type: "AWS::SNS::Topic"
     Properties:
