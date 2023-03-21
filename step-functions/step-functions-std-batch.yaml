@@ -157,7 +157,7 @@ Resources:
           {
             "Comment": "Submit Batch Job",
             "StartAt": "Submit Batch Job",
-            "TimeoutSeconds": "${StateMachineTimeoutSeconds}",
+            "TimeoutSeconds": ${StateMachineTimeoutSeconds},
             "States": {
               "Submit Batch Job": {
                 "Type": "Task",

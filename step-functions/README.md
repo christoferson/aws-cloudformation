@@ -67,9 +67,18 @@ Example of Express Step Functions
 
 ### Step Functions Integration
 
+You can call AWS SDK services directly from the Amazon States Language in the Resource field of a task state. To do this, use the following syntax:
+
+arn:aws:states:::aws-sdk:serviceName:apiAction.[serviceIntegrationPattern]
+
+If an AWS SDK integration encounters an error, the resulting Error field will be composed of the service name and the error name, separated by a period character: ServiceName.ErrorName. Both the service name and error name are in Pascal case. You can also see the service name, in lowercase, in the Task state's Resource field.
+
+[link](https://docs.aws.amazon.com/step-functions/latest/dg/supported-services-awssdk.html)
+
 #### Step Functions Integration - Lambda
 
 https://docs.aws.amazon.com/step-functions/latest/dg/connect-lambda.html
+https://docs.aws.amazon.com/lambda/latest/dg/API_Invoke.html#API_Invoke_RequestParameters
 
 Optimized Lambda integration
 
