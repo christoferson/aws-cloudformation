@@ -93,6 +93,7 @@ Resources:
                   - 'batch:SubmitJob'
                   - 'batch:DescribeJobs'
                   - 'batch:TerminateJob'
+                  - "batch:TagResource"
                 Resource: '*'
               - Effect: Allow
                 Action:
@@ -150,12 +151,12 @@ Resources:
   StateMachine:
     Type: "AWS::StepFunctions::StateMachine"
     Properties:
-      StateMachineType: STANDARD
+      StateMachineType: "STANDARD"
       RoleArn: !GetAtt StateMachineExecutionRole.Arn
       DefinitionString: !Sub
         - |-
           {
-            "Comment": "Submit Batch Job",
+            "Comment": "Submit Batch Job ${BatchJobName}",
             "StartAt": "Submit Batch Job",
             "TimeoutSeconds": ${StateMachineTimeoutSeconds},
             "States": {
@@ -182,6 +183,9 @@ Resources:
                         "Value.$": "$.detail.object.key"
                       }
                     ]
+                  },
+                  "Tags": {
+                    "Application": "${Application}"
                   }
                 },
                 "Next": "Notify Success",
