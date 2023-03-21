@@ -67,6 +67,31 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunctionStep2}"
       RetentionInDays: 1
+
+  LambdaFunctionStep3:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = (event, context, callback) => {
+              console.log(event);
+              callback(null, event);
+          };
+      Runtime: "nodejs18.x"
+      Timeout: "25"
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "step-functions-lambda"
+
+  LambdaStep3LogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionStep3}"
+      RetentionInDays: 1
       
   StateMachineExecutionRole:
     Type: "AWS::IAM::Role"
@@ -104,30 +129,30 @@ Resources:
         !Sub
           - |-
             {
-              "Comment": "Call Lambda",
+              "Comment": "Call Lambda in Sequence",
               "StartAt": "Step1",
-              "TimeoutSeconds": 60,
+              "TimeoutSeconds": 120,
               "States": {
                 "Step1": {
                   "Type": "Task",
+                  "Comment": "Step 1",
                   "Resource": "${LambdaFunctionStep1.Arn}",
-                  "Parameters": {
-                    "foo": "bar"
-                  },
                   "TimeoutSeconds" : 30,
                   "HeartbeatSeconds" : 6,
-                  "Next": "Step2"
+                  "Next": "Step2",
+                  "InputPath": "$.library",
+                  "ResultPath": "$.TaskResult"                  
                 },
                 "Step2": {
                   "Type": "Task",
-                  "Resource": "${LambdaStep2Arn}",
+                  "Resource": "${LambdaFunctionStep2.Arn}",
                   "TimeoutSeconds" : 30,
                   "HeartbeatSeconds" : 6,
                   "Next": "Step3"
                 },
                 "Step3": {
                   "Type": "Task",
-                  "Resource": "${LambdaStep1Arn}",
+                  "Resource": "${LambdaFunctionStep3.Arn}",
                   "End": true,
                   "TimeoutSeconds" : 30,
                   "HeartbeatSeconds" : 6 
