@@ -153,6 +153,23 @@ Resources:
                 "Step3": {
                   "Type": "Task",
                   "Resource": "${LambdaFunctionStep3.Arn}",
+                  "TimeoutSeconds" : 30,
+                  "HeartbeatSeconds" : 6,
+                  "Next": "Step4"
+                },
+                "Step4": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters":{  
+                    "FunctionName":"${LambdaFunctionStep3.Arn}"
+                  },
+                  "TimeoutSeconds" : 30,
+                  "HeartbeatSeconds" : 6,
+                  "Next": "Final"
+                },
+                "Final": {
+                  "Type": "Task",
+                  "Resource": "${LambdaFunctionStep1.Arn}",
                   "End": true,
                   "TimeoutSeconds" : 30,
                   "HeartbeatSeconds" : 6 
