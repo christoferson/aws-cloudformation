@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeCommit
+Description: "CodeCommit"
 
 Metadata:
 
@@ -8,9 +8,9 @@ Metadata:
       - Label:
           default: "Code Configuration"
         Parameters:
+          - Application
           - RepositoryName
           - RepositoryDescription
-
     ParameterLabels:
       RepositoryName:
         default: "Repository Name"
@@ -18,6 +18,11 @@ Metadata:
         default: "Reporistory Description"
 
 Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
 
   RepositoryName:
     Type: "String"
@@ -32,17 +37,17 @@ Parameters:
 Resources:
 
   CodeCommitRepository:
-    Type: AWS::CodeCommit::Repository
-    DeletionPolicy: Retain
+    Type: "AWS::CodeCommit::Repository"
+    DeletionPolicy: Retain # Delete Retain
     Properties:
       RepositoryName: !Ref RepositoryName
       RepositoryDescription: !Ref RepositoryDescription
       Tags:
-        - Key: Environment
-          Value: dev
-        - Key: Name
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Name"
           Value: !Ref RepositoryName
-          
+
 Outputs:
 
   CodeCommitRepositoryArn:
