@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ECR
+Parameters:
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+  RepositoryName:
+    Type: String
+    Default: ecr-repository-demo
+    Description: ECR Repository Name
+Resources:
+  EcrRepository:
+    Type: 'AWS::ECR::Repository'
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "action": {
+                  "type": "expire"
+                },
+                "selection": {
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10,
+                  "tagStatus": "any"
+                },
+                "description": "Keep latest 10 images",
+                "rulePriority": 1
+              }
+            ]
+          }
+        RegistryId: !Ref 'AWS::AccountId'
+      RepositoryPolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowPushPull
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - 'ecr:GetAuthorizationToken'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:GetRepositoryPolicy'
+              - 'ecr:DescribeRepositories'
+              - 'ecr:ListImages'
+              - 'ecr:DescribeImages'
+              - 'ecr:BatchGetImage'
+              - 'ecr:GetLifecyclePolicy'
+              - 'ecr:GetLifecyclePolicyPreview'
+              - 'ecr:ListTagsForResource'
+              - 'ecr:DescribeImageScanFindings'
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Name
+          Value: !Ref RepositoryName
+Outputs:
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+  EcrRepositoryArn:
+    Value: !GetAtt EcrRepository.Arn
