@@ -93,6 +93,9 @@ Set PlatformVersion: 1.4.0. Error occurs if set to LATEST
 
 https://docs.aws.amazon.com/batch/latest/userguide/batch-cwe-target.html
 
+https://aws.amazon.com/about-aws/whats-new/2022/10/aws-batch-increases-compute-memory-resource-configurations-fargate-type-jobs-4x/?nc1=h_ls
+
+- https://pages.awscloud.com/Running-Cost-Effective-Batch-Workloads-with-AWS-Batch-and-Amazon-EC2-Spot-Instances_1022-CMP_OD.html
 
 ### TODO
 
