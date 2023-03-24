@@ -107,10 +107,9 @@ Resources:
             Principal:
               Service: batch.amazonaws.com
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
-        #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
         - !Ref BatchServiceRolePolicy
-      Path: "/" #/
+      Path: "/"
       Tags:
         - Key: "Application"
           Value: !Ref Application
@@ -126,15 +125,15 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
-            Effect: Allow
-            Resource: '*'
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: "Allow"
+            Resource: "*"
           - Action:
-              - "s3:*"
-            Effect: Allow
-            Resource: '*'
+              - "s3:*"  #TODO CHECK 
+            Effect: "Allow"
+            Resource: "*"
 
   BatchComputeSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
@@ -197,14 +196,12 @@ Resources:
       AssumeRolePolicyDocument:
         Statement:
           - Action:
-              - 'sts:AssumeRole'
-            Effect: Allow
+              - "sts:AssumeRole"
+            Effect: "Allow"
             Principal:
-              Service: ecs-tasks.amazonaws.com
+              Service: "ecs-tasks.amazonaws.com"
       ManagedPolicyArns:
         - !Ref BatchJobRolePolicy
-        #- 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
-        #- 'arn:aws:iam::aws:policy/AmazonElasticFileSystemFullAccess'
       Path: /
       Tags:
         - Key: "Application"
