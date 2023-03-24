@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Resource Group"
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+Resources:
+
+  ResourceGroup:
+    Type: "AWS::ResourceGroups::Group"
+    Properties:
+      Name: !Sub "resource-group-${Application}"
+      Description: !Sub "Resource Group for Application ${Application}"
+      ResourceQuery:
+        Type: "TAG_FILTERS_1_0"
+        Query:
+          TagFilters:
+            -
+              Key: "Application" 
+              Values:
+                - !Sub "${Application}"
