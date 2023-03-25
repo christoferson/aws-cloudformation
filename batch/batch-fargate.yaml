@@ -99,15 +99,16 @@ Resources:
       #RoleName: !Sub "BatchServiceRole"
       Description: !Sub "Batch Service Role ${Application}-${Environment}"
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
             Effect: Allow
             Principal:
               Service: batch.amazonaws.com
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
+        - "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole" #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
+        - "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
         - !Ref BatchServiceRolePolicy
       Path: "/"
       Tags:
@@ -202,6 +203,7 @@ Resources:
               Service: "ecs-tasks.amazonaws.com"
       ManagedPolicyArns:
         - !Ref BatchJobRolePolicy
+        - "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Path: /
       Tags:
         - Key: "Application"
@@ -218,51 +220,51 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 's3:ListAllMyBuckets'
+              - "s3:ListAllMyBuckets"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 's3:ListBucket'
+              - "s3:ListBucket"
               - "s3:GetBucketLocation"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 's3:GetObject'
-              - 's3:PutObject'
-              - 's3:GetObjectVersion'
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:GetObjectVersion"
             Effect: Allow
             Resource: "*"
             #Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
           - Action:
-              - 'ecr:GetAuthorizationToken'
+              - "ecr:GetAuthorizationToken"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 'ecr:GetDownloadUrlForLayer'
-              - 'ecr:BatchGetImage'
-              - 'ecr:BatchCheckLayerAvailability'
-              - 'ecr:PutImage'
-              - 'ecr:InitiateLayerUpload'
-              - 'ecr:UploadLayerPart'
-              - 'ecr:CompleteLayerUpload'
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:PutImage"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
             Effect: Allow
             Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-demo"
           - Action:
-              - 'ecr:BatchGetImage'
-              - 'ecr:GetDownloadUrlForLayer'
+              - "ecr:BatchGetImage"
+              - "ecr:GetDownloadUrlForLayer"
             Effect: Allow
             Resource: 
               - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/code-image-repository-cmn/*"
           - Action:
-              - 'ssm:GetParameter'
-              - 'ssm:GetParameters'
-              - 'ssm:GetParametersByPath'
+              - "ssm:GetParameter"
+              - "ssm:GetParameters"
+              - "ssm:GetParametersByPath"
             Effect: Allow
             Resource: 
               - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
@@ -275,12 +277,13 @@ Resources:
       AssumeRolePolicyDocument:
         Statement:
           - Action:
-              - 'sts:AssumeRole'
-            Effect: Allow
+              - "sts:AssumeRole"
+            Effect: "Allow"
             Principal:
-              Service: ecs-tasks.amazonaws.com
+              Service: "ecs-tasks.amazonaws.com"
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        - "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
         - !Ref BatchJobExecutionRolePolicy
       Path: /
       Tags:
@@ -298,10 +301,10 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'ssm:GetParameter'
-              - 'ssm:GetParameters'
-              - 'ssm:GetParametersByPath'
-            Effect: Allow
+              - "ssm:GetParameter"
+              - "ssm:GetParameters"
+              - "ssm:GetParametersByPath"
+            Effect: "Allow"
             Resource: 
               - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/*"
               
