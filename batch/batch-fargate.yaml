@@ -226,6 +226,10 @@ Resources:
             Effect: Allow
             Resource: "*"
           - Action:
+              - "cloudwatch:PutMetricData"
+            Effect: Allow
+            Resource: "*"            
+          - Action:
               - "s3:ListAllMyBuckets"
             Effect: Allow
             Resource: "*"
