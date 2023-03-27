@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ECR - Registry Policy - Replicate Repository"
+
+# Register this rule in the destination repository to permit source account
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  RepositoryReplicationSourceAccountID:
+    Type: String
+    Default: myapp
+    Description: Account ID where Source Repository is Located
+
+Resources:
+
+  PrivateRegistryPolicy:
+    Type: "AWS::ECR::RegistryPolicy"
+    Properties:
+      PolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: replicate-repository
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${RepositoryReplicationSourceAccountID}:root" #Source
+            Action:
+              - "ecr:CreateRepository"
+              - "ecr:ReplicateImage"
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*" #Destination
+
+Outputs:
+
+  PrivateRegistryPolicyRegistryId:
+    Value: !GetAtt PrivateRegistryPolicy.RegistryId
