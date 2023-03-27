@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "S3 Basic with Policy for Organization"
+
+
+Resources:
+
+  Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      #BucketName: !Ref BucketName
+      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      #BucketEncryption: # SSE-S3
+      #  ServerSideEncryptionConfiguration: 
+      #  - ServerSideEncryptionByDefault:
+      #      SSEAlgorithm: AES256
+      BucketEncryption: # SSE-KMS
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'aws:kms'
+            KMSMasterKeyID: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+          BucketKeyEnabled: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      #NotificationConfiguration:
+      #   EventBridgeConfiguration:
+      #      EventBridgeEnabled: true
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+        - Action: "s3:GetObject"
+          Effect: Allow
+          Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+          Principal: '*'
+          Condition:
+            StringEquals: 
+              aws:PrincipalOrgID: "093837373"
+              
+              
