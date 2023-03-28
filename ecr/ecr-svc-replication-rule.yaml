@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ECR Replication"
+
+#AWSServiceRoleForECRReplication
+# When configuring cross-account replication, the destination account must grant the source account permission to replicate. 
+# This permission is controlled using a private registry permissions policy. For more information, see AWS::ECR::RegistryPolicy.
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Repository Configuration"
+        Parameters:
+          - Application
+          - RepositoryName
+      - Label:
+          default: "Destination Repository Configuration (STG)"
+        Parameters:
+          - RepositoryStgAccountID
+          - RepositoryStgRegionID
+      - Label:
+          default: "Destination Repository Configuration (PRD)"
+        Parameters:
+          - RepositoryPrdAccountID
+          - RepositoryPrdRegionID
+    ParameterLabels:
+      RepositoryName:
+        default: "Repository Name"
+      RepositoryDescription:
+        default: "Reporistory Description"
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  RepositoryStgAccountID:
+    Type: "String"
+    Default: "93938484"
+    Description: "ECR Replication Destination Account ID (STG)"
+
+  RepositoryStgRegionID:
+    Type: "String"
+    Default: "ap-northeast-1"
+    Description: "ECR Replication Destination Region ID (STG)"
+
+  RepositoryPrdAccountID:
+    Type: "String"
+    Default: "93938484"
+    Description: "ECR Replication Destination Account ID (PRD)"
+
+  RepositoryPrdRegionID:
+    Type: "String"
+    Default: "us-east-2"
+    Description: "ECR Replication Destination Region ID (PRD)"
+
+Resources:
+
+  EcrReplicationConfiguration:
+    Type: "AWS::ECR::ReplicationConfiguration"
+    Properties:
+      ReplicationConfiguration: 
+          Rules:
+            - 
+              Destinations:
+                - 
+                  Region: !Ref RepositoryStgRegionID
+                  RegistryId: !Ref RepositoryStgAccountID #AWS account ID of the Amazon ECR private registry to replicate to.
+              #  -
+              #    Region: !Ref RepositoryPrdRegionID
+              #    RegistryId: !Ref RepositoryPrdRegionID
+              #RepositoryFilters:
+              #  - 
+              #    FilterType: "PREFIX_MATCH" 
+              #    Filter: "123456789012" #repository name prefix           
+                  
