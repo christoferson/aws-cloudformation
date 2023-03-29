@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ECR"
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Organization Configuration"
+        Parameters:
+          - OrganizationId
+      - Label:
+          default: "Repository Configuration"
+        Parameters:
+          - Application
+          - RepositoryName
+    ParameterLabels:
+      RepositoryName:
+        default: "Repository Name"
+      RepositoryDescription:
+        default: "Reporistory Description"
+
+Parameters:
+
+  OrganizationId:
+    Type: String
+    Default: o-1234567890
+    Description: Organization ID
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  RepositoryName:
+    Type: "String"
+    Default: "ecr-repository-demo"
+    Description: "ECR Repository Name"
+
+Resources:
+
+  EcrRepository:
+    Type: "AWS::ECR::Repository"
+    DeletionPolicy: Delete # Delete Retain
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      EncryptionConfiguration:
+        EncryptionType: AES256 #AES256 | KMS
+        #KmsKey
+      ImageTagMutability: MUTABLE #IMMUTABLE | MUTABLE
+      ImageScanningConfiguration: 
+        ScanOnPush: true
+      #LifecyclePolicy:
+      #  RegistryId: 
+      #  LifecyclePolicyText:
+      RepositoryPolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowPushPull
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              #- "ecr:PutImage"
+              #- "ecr:InitiateLayerUpload"
+              #- "ecr:UploadLayerPart"
+              #- "ecr:CompleteLayerUpload"
+            Condition:
+              StringEquals:
+                "aws:PrincipalOrgID": !Ref OrganizationId                 
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Name"
+          Value: !Ref RepositoryName
+
+Outputs:
+
+  EcrRepositoryName:
+    Value: !Ref EcrRepository
+
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+
+  EcrRepositoryArn:
+    Value: !GetAtt EcrRepository.Arn
