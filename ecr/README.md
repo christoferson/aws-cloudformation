@@ -13,6 +13,13 @@ TODO
 
 [ecr-private-policy](ecr-private-policy.yaml)
 
+### ECR - Pull Through Cache Rule
+
+Define the prefix 'ecr-public' for 'public.ecr.aws'.
+
+You can set the permissions on what repositories and who can use the pull through cache by defining RepositoryPolicy. see [ecr-policy-pull-through-cache](ecr-policy-pull-through-cache.yaml)
+
+[ecr-svc-pull-through-cache-rule](ecr-svc-pull-through-cache-rule.yaml)
 
 ### Links
 

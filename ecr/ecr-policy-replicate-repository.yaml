@@ -31,8 +31,3 @@ Resources:
               - "ecr:CreateRepository"
               - "ecr:ReplicateImage"
             Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*" #Destination
-
-Outputs:
-
-  PrivateRegistryPolicyRegistryId:
-    Value: !GetAtt PrivateRegistryPolicy.RegistryId
