@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge - Archive - S3
+
+Resources:
+
+  EventBridgeArchive:
+    Type: AWS::Events::Archive
+    Properties: 
+      #ArchiveName: "archive-s3-put-invoice"
+      Description: Archive S3 PUT on invoice/
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        detail:
+          #bucket:
+          #  name: 
+          #    - !Ref BucketName
+          object:
+            key: #suffix
+              - prefix: !Sub "invoice/"
+      RetentionDays: 3 #  Default value is 0. If set to 0, events are retained indefinitely
+      SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
