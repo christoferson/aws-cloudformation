@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudWatch - Metric Filter"
+
+Parameters:
+
+  LogGroupName:
+    Description: "Log Group Name"
+    Type: "String"
+    Default: "/batch/logs/batch-fargate/demo"
+
+  LogFilterPattern:
+    Description: "Log Group Name"
+    Type: "String"
+    Default: "APP_AWS_BUCKET_OBJECT_KEY"
+
+  MetricNamespace:
+    Description: "Name of the Metric Namespace"
+    Type: "String"
+    Default: "DemoCloudwatchMetricFilter"    
+
+  MetricName:
+    Description: "Name of the Metric"
+    Type: "String"
+    Default: "MetricCount"   
+
+Resources:
+
+  CloudWatchMetricFilter: 
+    Type: "AWS::Logs::MetricFilter"
+    Properties:
+    #FilterName:
+      LogGroupName:
+        Ref: LogGroupName
+      FilterPattern: !Ref LogFilterPattern #"[ip, identity, user_id, timestamp, request, status_code = 404, size]"
+      MetricTransformations: 
+        - 
+          MetricValue: "1"
+          MetricNamespace: !Ref MetricNamespace #"WebServer/404s"
+          MetricName: !Ref MetricName #"404Count"
+          Unit: "Count"
