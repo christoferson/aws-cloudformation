@@ -1,4 +1,3 @@
-
 ## CloudFormation VPC Examples
 
 ### Concepts
@@ -19,17 +18,23 @@ VPC with Public Subnets only and spans 2 Availability Zones
 
 [vpc-public](vpc-public.yaml)
 
-### Vpc - 3 Public Subnets Only
-
-VPC with Public Subnets only and spans 3 Availability Zones
-
-[vpc-public](3az/vpc-public.yaml)
-
 ### Vpc - 2 Public and Private Subnets + NAT Gateways
 
 VPC with 2 Public and Private Subnets. Spans 2 Availability Zone. NAT Gateways in each AZ.
 
 [vpc-public-private-nat](vpc-public-private-nat.yaml)
+
+### Vpc - 3 Public Subnets Only
+
+VPC with Public Subnets only and spans 3 Availability Zones
+
+[vpc-3-public](3az/vpc-public.yaml)
+
+### Vpc - 3 Public and Private Subnets
+
+VPC with Public Subnets only and spans 3 Availability Zones
+
+[vpc-3-public-private](3az/vpc-public-private.yaml)
 
 ### Vpc FlowLogs - CloudWatch
 
