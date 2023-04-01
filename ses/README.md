@@ -2,11 +2,15 @@
 
 ### SES - Configuration Set
 
+Provision a Configuration Set plus SNS Event Destination.
+
 [ses-configuration-set](ses-configuration-set.yaml)
 
 ### SES - Identity - Email
 
-Provision and SES Identity (Email)
+Provision and SES Identity (Email). 
+When you verify an email address, SES sends an email to the address. 
+Your email address is verified as soon as you follow the link in the verification email.
 
 [ses-identity-email](ses-identity-email.yaml)
 

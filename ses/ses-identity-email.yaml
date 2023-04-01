@@ -21,7 +21,7 @@ Parameters:
 Resources:
 
   VerifiedIdentity:
-    Type: AWS::SES::EmailIdentity
+    Type: "AWS::SES::EmailIdentity"
     Properties:
       EmailIdentity: !Ref VerifiedIdentityName
       #ConfigurationSetAttributes:

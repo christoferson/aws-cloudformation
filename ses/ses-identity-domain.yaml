@@ -27,11 +27,11 @@ Resources:
       #ConfigurationSetAttributes:
       #  ConfigurationSetName: xxx
       DkimAttributes:
-        SigningEnabled: true
-      DkimSigningAttributes:
+        SigningEnabled: true #messages that are sent from the identity are signed using DKIM.
+      DkimSigningAttributes: #[Easy DKIM] The key length of the future DKIM key pair to be generated. This can be changed at most once per day.
         NextSigningKeyLength: RSA_2048_BIT # RSA_1024_BIT | RSA_2048_BIT
       FeedbackAttributes:
-        EmailForwardingEnabled: true
+        EmailForwardingEnabled: true #eceive email notifications when bounce or complaint events occur. These notifications are sent to the address that you specified in the Return-Path header of the original email.
       MailFromAttributes:
         BehaviorOnMxFailure: REJECT_MESSAGE # USE_DEFAULT_VALUE | REJECT_MESSAGE
         MailFromDomain: !Sub "mailer.${VerifiedIdentityName}"
