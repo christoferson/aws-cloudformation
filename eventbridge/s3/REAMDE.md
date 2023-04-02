@@ -65,7 +65,7 @@ DeadLetterConfig:
         - 
           Arn: !Ref JobQueueArn
           Id: "TargetBatch"
-          RoleArn : !GetAtt EvenBridgeRole.Arn
+          RoleArn : !GetAtt EventBridgeRole.Arn
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600 #86400
             MaximumRetryAttempts: 1 #185
@@ -138,6 +138,21 @@ Provision an EventBridge rule that will trigger SQS
 Provision an EventBridge rule that will trigger StepFunctions
 
 [eventbridge-rule-s3-call-stepfunctions](eventbridge-rule-s3-call-stepfunctions.yaml)
+
+### S3 Trigger ECS
+
+Provision an EventBridge rule that will trigger Ecs Tasks
+
+```
+#Resource:
+#  - !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${EcsTaskDefinitionName}:*
+#  - !Sub arn:aws:ecs:*:${AWS::AccountId}:task-definition/${EcsTaskDefinitionName}
+#Condition:
+#  ArnLike:
+#    ecs:cluster: !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${EcsClusterName}
+```
+
+[eventbridge-rule-s3-call-ecs](eventbridge-rule-s3-call-ecs.yaml)
 
 ---
 
