@@ -1,5 +1,5 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Vpc Endpoint (Interface Endpoint)'
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Vpc Endpoint (Interface Endpoint)"
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -47,7 +47,7 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
@@ -57,7 +57,7 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.events'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.events"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
@@ -67,7 +67,7 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
@@ -77,7 +77,7 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
@@ -87,7 +87,7 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
@@ -97,7 +97,17 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.kms'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.kms"
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
+    PrivateDnsEnabled: true
+
+ VpcEndpointSecretsManager:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
@@ -107,7 +117,7 @@ Resources:
   Type: AWS::EC2::VPCEndpoint
   Properties:
     VpcEndpointType: Interface
-    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2'
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2"
     VpcId: !Ref VpcId
     SubnetIds: !Ref VpcSubnetList
     SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
