@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Vpc Endpoint (Interface Endpoint) - SSM"
+
+# https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-create-vpc.html
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnetList:
+    Description: "Private VpcSubnets for Endpoint"
+    Type: List<AWS::EC2::Subnet::Id>
+
+Resources:
+
+ VpcEndpointSSM: #The endpoint for the Systems Manager service.
+  Type: "AWS::EC2::VPCEndpoint"
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    PrivateDnsEnabled: true
+
+ VpcEndpointSSMMessages: #This endpoint is required only if you're connecting to your instances through a secure data channel using Session Manager. 
+  Type: "AWS::EC2::VPCEndpoint"
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssmmessages"
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    PrivateDnsEnabled: true
+
+ VpcEndpointEc2Messages: #Systems Manager uses this endpoint to make calls from SSM Agent to the Systems Manager service.
+  Type: "AWS::EC2::VPCEndpoint"
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2messages"
+    VpcId: !Ref VpcId
+    SubnetIds: !Ref VpcSubnetList
+    PrivateDnsEnabled: true
+
+Outputs:
+
+  VpcEndpointSSMId:
+    Description: The Endpoint Id
+    Value: !Ref VpcEndpointSSM
+
+  VpcEndpointSSMMessagesId:
+    Description: The Endpoint Id
+    Value: !Ref VpcEndpointSSMMessages
+
+  VpcEndpointEc2MessagesId:
+    Description: The Endpoint Id
+    Value: !Ref VpcEndpointEc2Messages
