@@ -39,7 +39,37 @@ Provision a VPC Gateway Endpoint for DynamoDB.
 
 - Leverage Security Groups
 
-[List of Interface Endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html)
+
+- [List of Interface Endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html)
+
+#### Vpc Endpoint Interface Endpoint - SSM
+
+Provision Vpc Interface Endpoints for SSM
+
+##### Endpoints
+- com.amazonaws.${AWS::Region}.ssm
+- com.amazonaws.${AWS::Region}.ssmmessages
+- com.amazonaws.${AWS::Region}.ec2messages
+
+##### Test
+- aws s3 ls --region eu-west-1
+- aws s3 ls s3://bucket --region eu-west-1
+
+##### Troubleshoot
+- Make sure the InstanceRole has S3 permissions
+- Make sure route table has route entry to VPC endpoint
+- Make sure the VPC Endpoint policy allows access. Error AccessDenied if not allowed.
+- Make sure s3 command explicitly specify region
+
+[vpc-endpoint-interface-ssm](vpc-endpoint-interface-ssm.yaml)
+
+#### Vpc Endpoint Interface Endpoint - ECR
+
+Provision Vpc Interface Endpoints for ECR
+
+aws ecr describe-repositories --region eu-west-1
+
+[vpc-endpoint-interface-ecr](vpc-endpoint-interface-ecr.yaml)
 
 ### Vpc Endpoint Interface Endpoint - xxx
 
@@ -53,6 +83,8 @@ Provision a VPC Gateway Endpoint for DynamoDB.
 - https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpcendpoint.html
 - https://aws.amazon.com/blogs/networking-and-content-delivery/integrating-aws-transit-gateway-with-aws-privatelink-and-amazon-route-53-resolver/
+- https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpcendpoint.html
+- https://aws.amazon.com/blogs/containers/using-vpc-endpoint-policies-to-control-amazon-ecr-access/
 
 ### TODO
 
