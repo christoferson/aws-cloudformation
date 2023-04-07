@@ -59,7 +59,7 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
             Effect: Allow
             Principal:
               Service: events.amazonaws.com
@@ -67,7 +67,7 @@ Resources:
         - !Ref EventBridgeRolePolicy
         #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Tags:
-        - Key: 'environment'
+        - Key: "environment"
           Value: common
         - Key: "name"
           Value: "event-bridge-role-s3-call-sns"
@@ -81,11 +81,11 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
             Effect: Allow
-            Resource: '*'     
+            Resource: "*"     
 
   EventBridgeTargetSnsTopic:
     Type: "AWS::SNS::Topic"
@@ -130,6 +130,9 @@ Resources:
           bucket:
             name: 
               - !Ref BucketName
+          object:
+            key: #suffix
+              - prefix: !Sub "zprefix-"
       State: "ENABLED"
       RoleArn: !GetAtt EventBridgeRole.Arn
       Targets:
