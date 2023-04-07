@@ -23,10 +23,6 @@ Metadata:
           default: "Source Configuration"
         Parameters: 
           - BucketName
-      - Label: 
-          default: "Target Configuration"
-        Parameters: 
-          - SnsTopicArn
     ParameterLabels: 
       BucketArn: 
         Default: "BucketName"
@@ -36,19 +32,24 @@ Metadata:
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
   BucketName:
     Type: "String"
     Default: "bucket-name"
     Description: "Name of the Source Bucket"
 
-  SnsTopicArn:
-    Type: "String"
-    Default: "arn:aws:sns:us-east-1:9000000000:topic"
-    Description: "Arn of the Target Sns Topic"
-        
 Resources:
 
-  EvenBridgeRole:
+  EventBridgeRole:
     Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "event-bridge-role"
@@ -63,7 +64,7 @@ Resources:
             Principal:
               Service: events.amazonaws.com
       ManagedPolicyArns:
-        - !Ref EvenBridgeRolePolicy
+        - !Ref EventBridgeRolePolicy
         #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Tags:
         - Key: 'environment'
@@ -71,7 +72,7 @@ Resources:
         - Key: "name"
           Value: "event-bridge-role-s3-call-sns"
 
-  EvenBridgeRolePolicy:
+  EventBridgeRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: "Event Bridge ManagedPolicy - S3 Call SNS"
@@ -86,11 +87,24 @@ Resources:
             Effect: Allow
             Resource: '*'     
 
-  SnsTopicPolicy:
+  EventBridgeTargetSnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "My Topic Standard"
+      FifoTopic: false
+      Tags:
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+        -
+          Key: "Application"
+          Value: !Ref Application
+
+  EventBridgeTargetSnsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Properties:
       Topics:
-        - !Ref SnsTopicArn
+        - !GetAtt EventBridgeTargetSnsTopic.TopicArn
       PolicyDocument:
         Statement:
           - Effect: Allow
@@ -99,7 +113,7 @@ Resources:
                 - "events.amazonaws.com"
             Action: 
               - "sns:Publish"
-            Resource: !Ref SnsTopicArn
+            Resource: !GetAtt EventBridgeTargetSnsTopic.TopicArn
 
   EventBridgeRule: 
     Type: AWS::Events::Rule
@@ -117,10 +131,10 @@ Resources:
             name: 
               - !Ref BucketName
       State: "ENABLED"
-      RoleArn: !GetAtt EvenBridgeRole.Arn
+      RoleArn: !GetAtt EventBridgeRole.Arn
       Targets:
         - 
-          Arn: !Ref SnsTopicArn
+          Arn: !GetAtt EventBridgeTargetSnsTopic.TopicArn
           Id: "TargetSNS"
           #RoleArn : Not Supported. Use Resource Policy AWS::SNS::TopicPolicy
           RetryPolicy:
@@ -128,7 +142,6 @@ Resources:
             MaximumRetryAttempts: 1 #185
           #DeadLetterConfig:
           #   Arn: xx
-
 
 Outputs:
 
