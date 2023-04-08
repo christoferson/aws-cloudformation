@@ -67,7 +67,7 @@ Parameters:
 
 Resources:
 
-  EvenBridgeRole:
+  EventBridgeRole:
     Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "event-bridge-role"
@@ -82,7 +82,7 @@ Resources:
             Principal:
               Service: events.amazonaws.com
       ManagedPolicyArns:
-        - !Ref EvenBridgeRolePolicy
+        - !Ref EventBridgeRolePolicy
         #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Tags:
         - Key: "Application"
@@ -92,7 +92,7 @@ Resources:
         - Key: "name"
           Value: "event-bridge-role-s3-call-stepfunction"
 
-  EvenBridgeRolePolicy:
+  EventBridgeRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: "Event Bridge ManagedPolicy - S3 Call Step Function"
@@ -135,7 +135,7 @@ Resources:
         - 
           Arn: !Ref StepFunctionArn
           Id: "TargetStepFunction"
-          RoleArn : !GetAtt EvenBridgeRole.Arn
+          RoleArn : !GetAtt EventBridgeRole.Arn
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600 #86400
             MaximumRetryAttempts: 1 #185
