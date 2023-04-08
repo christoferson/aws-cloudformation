@@ -12,9 +12,13 @@ sqs-queue-standard
 
 Example FIFO Queue
 
-- High throughput for a FIFO queue enabled. 
+[sqs-queue-fifo](sqs-queue-fifo.yaml)
 
-sqs-queue-fifo
+## SQS Queue - FIFO - High Throughput
+
+High throughput FIFO Queue
+
+[sqs-queue-fifo-ht](sqs-queue-fifo-ht.yaml)
 
 ## SQS Queue - Synchronous Lambda Trigger
 

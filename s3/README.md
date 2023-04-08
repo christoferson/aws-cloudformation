@@ -94,8 +94,12 @@ Bucket and Bucket Policy Created per Condition
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html
 - https://aws.amazon.com/jp/blogs/aws/new-use-amazon-s3-event-notifications-with-amazon-eventbridge/
 
+##### Errors (S3)
+- KMS key must be in the same region as the destination bucket.
 
 #### TODO
 - [ ] Learn more about S3 Object Lambda
 
 - [ ] aws:SecureTransport
+
+- [ ] Organization

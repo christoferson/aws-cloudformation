@@ -39,7 +39,7 @@ To create an SSM parameter, you must have the AWS Identity and Access Management
 
 ### TODO
 
-- [ ] Create Parameter - Standard - String
+- [X] Create Parameter - Standard - String
 
 - [ ] Create Parameter - Standard - List of Strings
 
@@ -50,3 +50,5 @@ To create an SSM parameter, you must have the AWS Identity and Access Management
 - [ ] Create Parameter - Advanced - List of Strings
 
 - [ ] Create Parameter - Advanced - Secret (Not Supported in CF)
+
+- [ ] ssm:StartSession Condition StringLike ssm:resourceTag/Environment : ["Dev"]
