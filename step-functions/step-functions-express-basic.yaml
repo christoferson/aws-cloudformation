@@ -27,7 +27,7 @@ Resources:
           exports.handler = (event, context, callback) => {
               callback(null, event);
           };
-      Runtime: "nodejs16.x"
+      Runtime: "nodejs18.x"
       Timeout: "25"
 
   LambdaLogGroup:

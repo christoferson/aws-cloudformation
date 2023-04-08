@@ -1,69 +1,75 @@
-AWSTemplateFormatVersion: 2010-09-09
+AWSTemplateFormatVersion: "2010-09-09"
 Description: Step Functions - Standard - Task / Choice
 
 Resources:
 
   LambdaExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Service: lambda.amazonaws.com
-            Action: 'sts:AssumeRole'
-      Path: /
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   LambdaFunction:
-    Type: 'AWS::Lambda::Function'
+    Type: "AWS::Lambda::Function"
     Properties:
-      Handler: index.handler
+      Handler: "index.handler"
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
         ZipFile: |
           exports.handler = (event, context, callback) => {
               callback(null, event);
           };
-      Runtime: nodejs16.x
-      Timeout: '25'
+      Runtime: "nodejs18.x"
+      Timeout: "25"
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "step-functions-lambda"
 
   LambdaLogGroup:
-    Type: 'AWS::Logs::LogGroup'
+    Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Sub '/aws/lambda/${LambdaFunction}'
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
 
   StateMachineExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: "2012-10-17"
         Statement:
-          - Effect: Allow
+          - Effect: "Allow"
             Principal:
               Service:
-                - !Sub 'states.${AWS::Region}.amazonaws.com'
-            Action: 'sts:AssumeRole'
-      Path: /
+                - states.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
       Policies:
         - PolicyName: StatesExecutionPolicy
           PolicyDocument:
-            Version: 2012-10-17
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - 'lambda:InvokeFunction'
-                Resource: '*'
+                  - "lambda:InvokeFunction"
+                Resource: "*"
               - Effect: Allow
                 Action:
-                  - 'logs:*'
-                Resource: '*'
+                  - "logs:*"
+                Resource: "*"
 
   StateMachine:
-    Type: 'AWS::StepFunctions::StateMachine'
+    Type: "AWS::StepFunctions::StateMachine"
     Properties:
       StateMachineType: STANDARD
       RoleArn: !GetAtt StateMachineExecutionRole.Arn
