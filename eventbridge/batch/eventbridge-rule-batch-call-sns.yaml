@@ -55,7 +55,7 @@ Parameters:
 
 Resources:
 
-  EvenBridgeRole:
+  EventBridgeRole:
     Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "event-bridge-role"
@@ -70,7 +70,7 @@ Resources:
             Principal:
               Service: events.amazonaws.com
       ManagedPolicyArns:
-        - !Ref EvenBridgeRolePolicy
+        - !Ref EventBridgeRolePolicy
         #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
       Tags:
         - Key: "Application"
@@ -80,7 +80,7 @@ Resources:
         - Key: "name"
           Value: "event-bridge-role-batch-call-sns"
 
-  EvenBridgeRolePolicy:
+  EventBridgeRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: "Event Bridge ManagedPolicy - Batch Call SNS"
@@ -128,7 +128,7 @@ Resources:
           jobDefinition:
             - prefix: !Sub "${JobDefinitionArn}"
       State: "ENABLED"
-      RoleArn: !GetAtt EvenBridgeRole.Arn
+      RoleArn: !GetAtt EventBridgeRole.Arn
       Targets:
         - 
           Arn: !Ref SnsTopicArn
