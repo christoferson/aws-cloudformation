@@ -134,12 +134,28 @@ Resources:
           Arn: !Ref SnsTopicArn
           Id: "TargetSNS"
           #RoleArn : Not Supported. Use Resource Policy AWS::SNS::TopicPolicy
+          InputTransformer:
+            InputPathsMap:
+              JobDefinition: $.detail.jobDefinition
+              JobId: $.detail.jobId
+              JobName: $.detail.jobName
+              JobQueue: $.detail.jobQueue
+              Status: $.detail.status
+              Time: $.time
+            InputTemplate: |-
+              {
+                "Time": <Time>,
+                "JobDefinition": <JobDefinition>,
+                "Status": <Status>,
+                "JobName": <JobName>,
+                "JobId": <JobId>,
+                "JobQueue": <JobQueue>
+              }
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600 #86400
             MaximumRetryAttempts: 1 #185
           #DeadLetterConfig:
           #   Arn: xx
-
 
 Outputs:
 
