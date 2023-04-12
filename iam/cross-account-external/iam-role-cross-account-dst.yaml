@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IAM Role Cross Account - Destination Account
+
+Parameters:
+
+  SourceAccount:
+    Type: String
+    Default: myapp
+    Description: SourceAccount
+
+  ExternalId:
+    Type: String
+    Default: myapp
+    Description: ExternalId
+        
+Resources:
+
+  CrossAccoutRole: 
+    Type: "AWS::IAM::Role"
+    Properties:
+      #RoleName: #TODO
+      Description: Developer Role
+      #Path: "/demo/" # must begin and end with / and contain only alphanumeric characters
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              AWS: !Sub arn:aws:iam::${SourceAccount}:root
+              #Service: 
+              #  - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+            #  Bool:
+            #    aws:MultiFactorAuthPresent: true
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+        - !Ref CrossAccoutRolePolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ssm:GetParameters"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:GetSecretValue" 
+                Resource: "*" #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                Resource: "*" #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      Tags:
+        - Key: "Name"
+          Value: "developer-role"
+
+  CrossAccoutRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Cross Account Role ManagedPolicy"
+      #ManagedPolicyName: "code-build-demo-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: Allow
+            Resource: "*"
+ 
+Outputs:
+
+  CrossAccoutRoleArn:
+    Value: !GetAtt CrossAccoutRole.Arn
