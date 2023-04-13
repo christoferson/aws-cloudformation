@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Enable AWS Config
+
+Resources:
+
+  ConfigRuleVpcSecurityGroupOpenOnlyToAuthorizedPorts:
+    #DependsOn:
+    #  - ConfigConfigurationRecorder
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      ConfigRuleName: vpc-sg-open-only-to-authorized-ports
+      Description: "sample rule"
+      InputParameters:
+        authorizedTcpPorts: 1-21,23-3388,3390-65535
+        authorizedUdpPorts: 1-21,23-3388,3390-65535
+      Source:
+        Owner: AWS
+        SourceIdentifier: VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS  
+        
+Outputs:
+
+  ConfigRuleVpcSecurityGroupOpenOnlyToAuthorizedPortsArn:
+    Value: !GetAtt ConfigRuleVpcSecurityGroupOpenOnlyToAuthorizedPorts.Arn
