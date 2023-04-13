@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IAM Role Cross Account - Source Account
+
+Parameters:
+
+  CrossAccountDstRoleArn:
+    Type: String
+    Default: myapp
+    Description: SourceAccount
+    
+Resources:
+
+  CrossAccountAssumeRole: 
+    Type: "AWS::IAM::Role"
+    Properties:
+      #RoleName:
+      Description: Developer Role
+      #Path: "/demo/" # must begin and end with / and contain only alphanumeric characters
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: "Allow"
+            Principal: 
+              AWS: !Sub arn:aws:iam::${SourceAccount}:root
+              #Service: 
+              #  - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - !Ref CrossAccountAssumeRolePolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameters'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue' 
+                Resource: '*' #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                Resource: '*' #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      Tags:
+        - Key: "Name"
+          Value: "developer-role"
+
+  CrossAccountAssumeRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Resource:
+              - !Ref CrossAccountDstRoleArn
+
+ 
+Outputs:
+
+  CrossAccountAssumeRoleArn:
+    Value: !GetAtt CrossAccountAssumeRole.Arn
