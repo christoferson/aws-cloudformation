@@ -1,18 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 #Transform: AWS::Serverless-2016-10-31
-Description: Serverless patterns - Amazon API Gateway REST API with S3 integration
+Description: API Gateway REST API + S3 integration
 
 Parameters:
 
   ApiGatewayName:
     Type: "String"
-    Default: "apigw-s3-proxy"
+    Default: "rest-proxy-int-s3"
     Description: "HTTP Api Gateway Name"
     
 Resources:
 
 
-  AppApi:
+  ApiGatewayRestApi:
     Type: "AWS::ApiGateway::RestApi"
     Properties:
       Name: !Sub "${ApiGatewayName}"
@@ -21,22 +21,22 @@ Resources:
   ResourceFolder:
     Type: AWS::ApiGateway::Resource
     Properties:
-      RestApiId: !Ref AppApi
-      ParentId: !GetAtt AppApi.RootResourceId
+      RestApiId: !Ref ApiGatewayRestApi
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
       PathPart: '{folder}'
 
   ResourceItem:
     Type: AWS::ApiGateway::Resource
     Properties:
-      RestApiId: !Ref AppApi
+      RestApiId: !Ref ApiGatewayRestApi
       ParentId: !Ref ResourceFolder
       PathPart: '{item}'
 
   RootMethodGet:
     Type: AWS::ApiGateway::Method
     Properties:
-      RestApiId: !Ref AppApi
-      ResourceId: !GetAtt AppApi.RootResourceId
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !GetAtt ApiGatewayRestApi.RootResourceId
       HttpMethod: GET
       AuthorizationType: AWS_IAM
       Integration:
@@ -69,7 +69,7 @@ Resources:
   FolderMethodGet:
     Type: AWS::ApiGateway::Method
     Properties:
-      RestApiId: !Ref AppApi
+      RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ResourceFolder
       HttpMethod: GET
       AuthorizationType: AWS_IAM
@@ -95,7 +95,7 @@ Resources:
   ItemMethodGet:
     Type: AWS::ApiGateway::Method
     Properties:
-      RestApiId: !Ref AppApi
+      RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ResourceItem
       HttpMethod: GET
       AuthorizationType: AWS_IAM
@@ -118,19 +118,19 @@ Resources:
           ResponseModels:
             application/json: Empty
 
-  Deployment:
+  ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
     - RootMethodGet
     Properties:
-      RestApiId: !Ref AppApi
+      RestApiId: !Ref ApiGatewayRestApi
   
-  Stage:  
+  ApiGatewayStage:  
     Type: AWS::ApiGateway::Stage
     Properties:
       StageName: Prod
-      RestApiId: !Ref AppApi
-      DeploymentId: !Ref Deployment
+      RestApiId: !Ref ApiGatewayRestApi
+      DeploymentId: !Ref ApiGatewayDeployment
 
   ApiGatewayS3ReadOnlyRole:
     Type: AWS::IAM::Role
@@ -152,4 +152,4 @@ Outputs:
 
   AppApiEndpoint:
     Description: API Endpoint
-    Value: !Sub "https://${AppApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+    Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
