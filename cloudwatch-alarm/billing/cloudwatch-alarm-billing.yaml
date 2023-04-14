@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cloudwatch - Alarm - Billing
+
+Parameters:
+
+  Email:
+    Type: String
+    Default: your@gmail.com
+    Description: Email address to receive alarms
+
+  BillingAlertThreshold:
+    Type: Number
+    Default: 50
+    Description: USD Currency
+
+Resources:
+
+  BillingAlert:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref BillingAlertTopic
+      AlarmDescription: !Sub "Billing Alert ${BillingAlertThreshold} USD"
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Currency
+          Value: USD
+      EvaluationPeriods: 1
+      MetricName: EstimatedCharges
+      Namespace: AWS/Billing
+      Period: 21600
+      TreatMissingData: breaching
+      Statistic: Maximum
+      Threshold: !Ref BillingAlertThreshold
+
+  BillingAlertTopic:
+    Type: AWS::SNS::Topic
+
+  AlarmSubscriberEmail:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref Email
+      Protocol: email
+      TopicArn: !Ref BillingAlertTopic
+
