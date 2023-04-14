@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Enable AWS Config
+
+Resources:
+
+  ServiceLinkedRoleForConfig:
+    Type: AWS::IAM::ServiceLinkedRole
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties: 
+      AWSServiceName: config.amazonaws.com
+      Description: A service-linked role required for AWS Config to access your resources.
+
+  ServiceLinkedRoleForConfigRemediation:
+    Type: AWS::IAM::ServiceLinkedRole
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties: 
+      AWSServiceName: remediation.config.amazonaws.com 
+      Description: A service-linked role required for AWS Config Remediation to access your resources.
