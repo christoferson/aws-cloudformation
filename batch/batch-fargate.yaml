@@ -15,11 +15,15 @@ Metadata:
           - Service
       -
         Label:
-          default: "Batch / Network Configuration"
+          default: "Network Configuration"
         Parameters:
-          - BatchComputeMaxVCpu
           - VpcId
           - VpcSubnetListCompute
+      -
+        Label:
+          default: "Batch Configuration"
+        Parameters:
+          - BatchComputeMaxVCpu
       -
         Label:
           default: "Job Configuration"
@@ -108,7 +112,6 @@ Resources:
               Service: batch.amazonaws.com
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole" #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
-        - "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
         - !Ref BatchServiceRolePolicy
       Path: "/"
       Tags:
