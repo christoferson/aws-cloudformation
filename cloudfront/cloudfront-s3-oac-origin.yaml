@@ -8,6 +8,11 @@ Parameters:
     Description: "CloudFrontDistributionId"
     Default: "E1521E835ZN7KD"
 
+  CloudFrontOriginAccessControlName:
+    Type: String
+    Description: "CloudFrontOriginAccessControlName"
+    Default: "S3OAC"
+
 Resources:
 
   Bucket:
@@ -30,13 +35,15 @@ Resources:
       Tags:
         - Key: "Name"
           Value: "cloudfront-s3-oac-origin"
+        - Key: "Version"
+          Value: "20221007"
 
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties: 
       OriginAccessControlConfig: 
         Description: S3 Origin Access Control
-        Name: S3OAC
+        Name: !Ref CloudFrontOriginAccessControlName
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
@@ -53,8 +60,11 @@ Resources:
           Principal:
             Service: "cloudfront.amazonaws.com"
           Condition:
-            StringEquals:
-              AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}"
+            "ForAnyValue:StringEquals":
+              AWS:SourceArn: 
+                - !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}"
+                - !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/E85IID7DAFXTMY"
+
 Outputs:
 
   BucketDomainName:
