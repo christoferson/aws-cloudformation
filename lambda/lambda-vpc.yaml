@@ -1,6 +1,25 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Lambda - VPC
 
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetIdList
+      -
+        Label:
+          default: "Code Configuration"
+        Parameters:
+          - CodeBucketName
+          - CodeObjectKey
+
 Parameters:
 
   CodeBucketName:
@@ -16,11 +35,24 @@ Parameters:
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
+    ConstraintDescription: Must be the identifier of an existing Virtual Private Cloud
 
-  VpcSubnet:
-    Description: Subnet
-    Type: AWS::EC2::Subnet::Id
-
+  VpcSubnetIdList:
+    Description: Private VpcSubnets for Web Servers
+    Type: List<AWS::EC2::Subnet::Id>
+    ConstraintDescription: Must be the identifier of an existing Subnets
+    
+Rules:
+  SubnetsInVPC:
+    Assertions:
+      - Assert:
+          'Fn::EachMemberEquals':
+            - 'Fn::ValueOf':
+                - VpcSubnetIdList
+                - VpcId
+            - Ref: VpcId
+        AssertDescription: All subnets must in the VPC
+        
 Resources:
 
   # Todo Receive this as a parameter. 
@@ -89,8 +121,8 @@ Resources:
       VpcConfig:
         SecurityGroupIds:
           - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref VpcSubnet
+        SubnetIds: !Ref VpcSubnetIdList
+          #- !Ref VpcSubnet
       TracingConfig:
         Mode: Active
 
