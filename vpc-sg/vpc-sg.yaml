@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC Security Group"
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+Resources:
+
+  LambdaSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #GroupName: !Sub ""
+      GroupDescription: !Sub "Database Proxy Security Group"
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-{Environment}-lambda-sg"
+
+  DatabaseProxySecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #GroupName: !Sub ""
+      GroupDescription: !Sub "Database Proxy Security Group"
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          SourceSecurityGroupOwnerId: !Ref AWS::AccountId
+          Description: !Sub "inbound"
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-{Environment}-database-proxy-sg"
+          
+  DatabaseSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #GroupName: !Sub ""
+      GroupDescription: "Database Security Group"
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref DatabaseProxySecurityGroup
+          SourceSecurityGroupOwnerId: !Ref AWS::AccountId
+          Description: !Sub "inbound"
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-{Environment}-database-sg"
+
