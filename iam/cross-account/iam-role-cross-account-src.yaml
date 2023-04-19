@@ -23,13 +23,10 @@ Resources:
             Effect: "Allow"
             Principal: 
               AWS: !Sub arn:aws:iam::${SourceAccount}:root
-              #Service: 
-              #  - "ec2.amazonaws.com"
             Action: 
               - "sts:AssumeRole"
       ManagedPolicyArns:
         - !Ref CrossAccountAssumeRolePolicy
-        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
       Policies:
         - PolicyName: access-secrets
           PolicyDocument:

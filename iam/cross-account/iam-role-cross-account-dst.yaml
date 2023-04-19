@@ -1,12 +1,14 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: IAM Role Cross Account - Destination Account
 
+# Allows the account specified in CrossAccountSourceAccount to assume this role
+
 Parameters:
 
-  SourceAccount:
+  CrossAccountSourceAccount:
     Type: String
-    Default: myapp
-    Description: SourceAccount
+    Default: "094948585"
+    Description: Account Number of the Source Account
     
 Resources:
 
@@ -22,9 +24,7 @@ Resources:
           - 
             Effect: "Allow"
             Principal: 
-              AWS: !Sub arn:aws:iam::${SourceAccount}:root
-              #Service: 
-              #  - "ec2.amazonaws.com"
+              AWS: !Sub arn:aws:iam::${CrossAccountSourceAccount}:root
             Action: 
               - "sts:AssumeRole"
             #Condition:
