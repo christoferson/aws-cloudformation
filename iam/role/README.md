@@ -63,6 +63,10 @@ Swap:             0           0           0
 
 - sudo systemctl enable httpd
 
+### EC2 with CloudWatch Agent
+
+[ec2-cloudwatch](ec2-cloudwatch.yaml)
+
 ### Troubleshooting CloudWatch Agent
 
 ##### Agent fails to start

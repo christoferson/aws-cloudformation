@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Organization Access Role
 
+# Enables the Management Account to Access Member Account
+
 Parameters:
 
   OrganizationManagementAccountId:
