@@ -40,3 +40,65 @@ Resources:
         #Name: !Sub glue-database-${Environment}
         Description: "Glue Database Description" 
 
+  GlueCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        ['arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole']
+      Policies:
+        -
+          PolicyName: "S3BucketAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: 
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource: 
+                  - !Sub "${DataSourceBucket.Arn}/*"
+                      
+  GlueClassifier:
+    Type: AWS::Glue::Classifier
+    Properties: 
+      XMLClassifier:
+        Name: xml-classifier
+        Classification: xml-classification
+        RowTag: CD
+
+  GlueCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      #Name: !Ref CFNCrawlerName
+      DatabaseName: !Ref GlueDatabase
+      Role: !GetAtt GlueCrawlerRole.Arn
+      #Classifiers: none, use the default classifier
+      Description: Crawler for XML Data
+      #Schedule: none, use default run-on-demand
+      #RecrawlPolicy
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DataSourceBucket}"
+      TablePrefix: "item"
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
+      Tags:
+        "Key1": "Value1"
+        
+#Outputs:
+  #GlueDatabaseName:
+  #AWS::Glue::Database
