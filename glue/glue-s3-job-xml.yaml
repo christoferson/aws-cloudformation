@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Glue - Source S3 - XML Format
+
+Parameters:
+
+  Environment:
+    Type: String
+    Description: Environment
+    Default: dev
+
+Resources:
+
+  DataSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "name"
+          Value: "source-bucket"
+
+  DataDestinationBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "name"
+          Value: "destination-bucket"
+          
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: glue.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: MyGlueJobPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            - s3:PutObject
+            Resource:
+            - !Sub "arn:aws:s3:::${DataSourceBucket}/*"
+            - !Sub "arn:aws:s3:::${DataDestinationBucket}/*"
+
+  GlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: my-glue-job
+      Description: "Glue Job"
+      Role: !GetAtt GlueJobRole.Arn
+      #ExecutionClass: FLEX
+      Command:
+        Name: glueetl
+        PythonVersion: 3
+        ScriptLocation: s3://demo-cloudformation/glue/script.py
+      DefaultArguments:
+        #"--extra-py-files": "s3://my-extra-files-bucket/my-extra-file.zip"
+        "--source-path": !Sub "s3://${DataSourceBucket}/"
+        "--destination-path": !Sub "s3://${DataDestinationBucket}/"
+        "--job-language": "python"
+        "--job-bookmark-option": "job-bookmark-disable"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      MaxCapacity: 2.0
+      Timeout: 30
+      MaxRetries: 0
+
+          
+#Outputs:
+  #GlueDatabaseName:
+  #AWS::Glue::Database
