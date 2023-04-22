@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Glue - Source S3 - XML Format
+
+Parameters:
+
+  Environment:
+    Type: String
+    Description: Environment
+    Default: dev
+
+Resources:
+
+  DataSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "name"
+          Value: "source-bucket"
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId  # The AWS account ID for the account in which to create the catalog object
+      DatabaseInput:
+        #Name: !Sub glue-database-${Environment}
+        Description: "Glue Database Description" 
+
