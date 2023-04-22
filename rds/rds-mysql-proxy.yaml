@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+
+  VpcId:
+    Type: "AWS::EC2::VPC::Id"
+    Description : "VPC ID"
+
+  DatabaseProxyName:
+    Type: String
+    Default: "my-database-proxy"
+
+  DatabaseProxyVpcSubnetIdList:
+    Type: List<AWS::EC2::Subnet::Id>
+
+  DatabaseSecretName:
+    Type: String
+    Default: "DatabaseSecret-y30bZMGPQosH"
+    
+  DatabaseSecretKmsEncryptionKey:
+    Type: String
+    Default: "aws/secretsmanager"
+
+  DatabaseInstanceId:
+    Type: String
+    Default: "instance"
+
+
+Resources:
+
+  DatabaseProxyServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "rds.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "Use for RDS Proxy"
+      ManagedPolicyArns:
+        - !Ref DatabaseProxyManagedPolicy
+      Path: /
+      #RoleName: !Ref SecretsManagerRoleName
+
+  DatabaseProxyManagedPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Get values from Secrets Manager"
+      #ManagedPolicyName: !Ref SecretsManagerManagedPolicyName
+      Path: /
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "secretsmanager:GetSecretValue"
+            Resource: "*" #!Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${DatabaseSecretName}"
+          - Effect: Allow
+            Action:
+              - "kms:Decrypt"
+            Resource: "*" #!Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${DatabaseSecretKmsEncryptionKey}"
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
+                
+  DatabaseProxySecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #GroupName: !Sub ${PJPrefix}-rds-proxy
+      GroupDescription: !Sub "Database Proxy Security Group"
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          #SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          #SourceSecurityGroupOwnerId: !Ref AWS::AccountId
+          #Description: !Sub ${PJPrefix}-lambda
+          FromPort: 3306
+          IpProtocol: tcp
+          ToPort: 3306
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: "rds-proxy"
+
+  DatabaseProxy:
+    Type: "AWS::RDS::DBProxy"
+    Properties:
+      Auth:
+        - AuthScheme: SECRETS
+          IAMAuth: DISABLED
+          SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${DatabaseSecretName}"
+      DebugLogging: false
+      # The identifier for the proxy. This name must be unique for all proxies owned by your AWS account in the specified AWS Region. 
+      DBProxyName: !Ref DatabaseProxyName #TODO
+      EngineFamily: "MYSQL"
+      IdleClientTimeout: 28800 # The number of seconds that a connection to the proxy can be inactive before the proxy disconnects it. You can set this value higher or lower than the connection timeout limit for the associated database.
+      RequireTLS: "false"
+      RoleArn: !GetAtt DatabaseProxyServiceRole.Arn
+      VpcSecurityGroupIds:
+        - !Ref DatabaseProxySecurityGroup
+      VpcSubnetIds: !Ref DatabaseProxyVpcSubnetIdList
+
+  DatabaseProxyTargetGroup:
+    Type: "AWS::RDS::DBProxyTargetGroup"
+    Properties:
+      ConnectionPoolConfigurationInfo:
+        ConnectionBorrowTimeout: 120 #Must be less than equal to 300 #number of seconds for a proxy to wait for a connection to become available in the connection pool.
+        MaxConnectionsPercent: 100
+        MaxIdleConnectionsPercent: 40
+      #DBClusterIdentifiers: !Ref ProxyTargetDBClusterIdentifiers
+      DBInstanceIdentifiers:  #TODO
+        - !Ref DatabaseInstanceId
+      DBProxyName: !Ref DatabaseProxy
+      TargetGroupName: default
+
+
+ 
