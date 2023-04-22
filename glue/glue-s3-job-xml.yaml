@@ -8,6 +8,16 @@ Parameters:
     Description: Environment
     Default: dev
 
+  ScriptBucket:
+    Type: String
+    Description: ScriptBucket
+    Default: xxxx
+
+  ScriptObjectKey:
+    Type: String
+    Description: ScriptBucket
+    Default: glue/script.py
+    
 Resources:
 
   DataSourceBucket:
@@ -53,7 +63,40 @@ Resources:
       Tags:
         - Key: "name"
           Value: "destination-bucket"
+
+  WorkBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "name"
+          Value: "work-bucket"
           
+  GlueJobLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws-glue/jobs/my-job"
+      RetentionInDays: 3
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
+
   GlueJobRole:
     Type: AWS::IAM::Role
     Properties:
@@ -64,6 +107,8 @@ Resources:
             Service: glue.amazonaws.com
           Action: sts:AssumeRole
       Path: /
+      ManagedPolicyArns:
+        - !Ref GlueJobRolePolicy
       Policies:
       - PolicyName: MyGlueJobPolicy
         PolicyDocument:
@@ -75,28 +120,59 @@ Resources:
             Resource:
             - !Sub "arn:aws:s3:::${DataSourceBucket}/*"
             - !Sub "arn:aws:s3:::${DataDestinationBucket}/*"
+            - !Sub "arn:aws:s3:::${ScriptBucket}/*"
 
+  GlueJobRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: !Sub "Glue Job Managed Policy"
+      #ManagedPolicyName: "batch-service-role-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: "Allow"
+            Resource: "*"
+            
   GlueJob:
     Type: AWS::Glue::Job
+    DependsOn:
+      - DataSourceBucket
+      - DataDestinationBucket
+      - WorkBucket
+      - GlueJobLogGroup
     Properties:
       Name: my-glue-job
       Description: "Glue Job"
       Role: !GetAtt GlueJobRole.Arn
-      #ExecutionClass: FLEX
+      GlueVersion: "4.0"
+      ExecutionClass: FLEX
+      WorkerType: "G.1X"
+      NumberOfWorkers: 2 #To use Worker Type G.1X, minimum allowed value of Number of Workers is 2
       Command:
         Name: glueetl
         PythonVersion: 3
-        ScriptLocation: s3://demo-cloudformation/glue/script.py
+        ScriptLocation: !Sub "s3://${ScriptBucket}/${ScriptObjectKey}"
       DefaultArguments:
-        #"--extra-py-files": "s3://my-extra-files-bucket/my-extra-file.zip"
+        #"--extra-py-files": "s3://my-extra-files-bucket/my-extra-file.zip" 
+        #--enable-continuous-cloudwatch-log
+        #'--TempDir': 's3-path-to-directory'
         "--source-path": !Sub "s3://${DataSourceBucket}/"
         "--destination-path": !Sub "s3://${DataDestinationBucket}/"
+        "--TempDir": !Sub "s3://${WorkBucket}"
         "--job-language": "python"
         "--job-bookmark-option": "job-bookmark-disable"
+        "--enable-metrics": ""
+        "--enable-continuous-cloudwatch-log": "true"
+        "--enable-continuous-log-filter": "true"
+        "--continuous-log-logGroup": !Ref GlueJobLogGroup
       ExecutionProperty:
         MaxConcurrentRuns: 1
-      MaxCapacity: 2.0
-      Timeout: 30
+      #MaxCapacity: 2.0 #Please do not set Max Capacity if using Worker Type and Number of Workers.
+      Timeout: 8
       MaxRetries: 0
 
           
