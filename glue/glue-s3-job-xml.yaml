@@ -11,7 +11,7 @@ Parameters:
   ScriptBucket:
     Type: String
     Description: ScriptBucket
-    Default: xxxx
+    Default: demo-cloudformation
 
   ScriptObjectKey:
     Type: String
@@ -136,7 +136,11 @@ Resources:
               - "logs:PutLogEvents"
             Effect: "Allow"
             Resource: "*"
-            
+          - Action:
+              - "cloudwatch:PutMetricData"
+            Effect: Allow
+            Resource: "*"    
+
   GlueJob:
     Type: AWS::Glue::Job
     DependsOn:
