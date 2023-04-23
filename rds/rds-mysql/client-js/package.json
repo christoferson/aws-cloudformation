@@ -1,0 +1,19 @@
+{
+  "name": "rds-client-js",
+  "version": "1.0.0",
+  "description": "RDS Client Javascript",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "RDS",
+    "Client",
+    "Javascript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "mysql": "^2.18.1"
+  }
+}
