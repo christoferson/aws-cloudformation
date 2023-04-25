@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+
+  UserName:
+    Type: String
+    Default: user
+    
+  Password:
+    NoEcho: true
+    Type: String
+
+Resources:
+
+  CloudfrontFunction:
+    Type: "AWS::CloudFront::Function"
+    Properties: 
+      Name: !Sub
+        - basic-auth-cf2-${UniqueId}
+        - UniqueId: !Select [0, !Split ["-", !Select [2, !Split [/, !Ref "AWS::StackId"]]]]
+      FunctionConfig:
+        Comment: "CloudfrontF"
+        Runtime: "cloudfront-js-1.0"
+      FunctionCode: !Sub 
+        - |
+          function handler(event) {
+            var request = event.request;
+            var headers = request.headers;
+
+            // echo -n user:pass | base64
+            var EncodedSecret = "Basic ${EncodedSecret}";
+
+            if (typeof headers.authorization === "undefined" || headers.authorization.value !== EncodedSecret) {
+              return {
+                statusCode: 401,
+                statusDescription: "Unauthorized",
+                headers: { "www-authenticate": { value: "Basic" } }
+              };
+            }
+
+            return request;
+          }
+        - EncodedSecret : !Base64
+            Fn::Join: [ ":", [ !Ref UserName,  !Ref Password ] ]
+      AutoPublish: false
+
+Outputs:
+
+  CloudfrontFunctionArn:
+    Description: "CloudfrontFunction"
+    Value: !GetAtt CloudfrontFunction.FunctionMetadata.FunctionARN
+      
