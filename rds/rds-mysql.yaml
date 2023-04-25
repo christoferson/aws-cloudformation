@@ -25,7 +25,7 @@ Parameters:
 
   MySQLMinorVersion:
     Type: String
-    Default: '20'
+    Default: '32'
 
 Metadata:
 
@@ -93,7 +93,7 @@ Resources:
        StorageType: "gp2"
        AllocatedStorage: "20"
        #MaxAllocatedStorage: 
-       MultiAZ: false  
+       MultiAZ: false
        DBSubnetGroupName: !Ref DBSubnetGroup
        PubliclyAccessible: false
        VPCSecurityGroups:
