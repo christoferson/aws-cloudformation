@@ -98,7 +98,52 @@ Resources:
       Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
       Tags:
         "Key1": "Value1"
-        
+
+###
+
+  DataDestinationBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "name"
+          Value: "destination-bucket"
+          
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: glue.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: MyGlueJobPolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            - s3:PutObject
+            Resource:
+            - arn:aws:s3:::source-bucket/*
+            - arn:aws:s3:::destination-bucket/*
 #Outputs:
   #GlueDatabaseName:
   #AWS::Glue::Database
