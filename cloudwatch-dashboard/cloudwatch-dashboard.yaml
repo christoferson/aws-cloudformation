@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Dashboard 
+
+Resources:
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 2,
+              "y": 2,
+              "width": 8,
+              "height": 8,
+              "properties": {
+                "metrics": [
+                  [
+                    "AWS/ApplicationELB",
+                    "RequestCount",
+                    "LoadBalancer",
+                    "AvailabilityZone",
+                    "ap-northeast-1a",
+                    {
+                      "period": 300,
+                      "stat": "Sum"
+                    }
+                  ]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "ap-northeast-1",
+                "period": 300
+              }
+            }  
+          ]
+        }
