@@ -14,6 +14,7 @@ Provision a CodeBuild project that pulls source from CodeCommit and pushes to EC
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_CodeBuild.html
 - https://aws.amazon.com/blogs/devops/how-to-enable-caching-for-aws-codebuild/
 - https://docs.aws.amazon.com/codebuild/latest/userguide/build-caching.html
+- https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/replicate-filtered-amazon-ecr-container-images-across-accounts-or-regions.html
 
 TODO:
 BuildSpec - Push to Docker Hub

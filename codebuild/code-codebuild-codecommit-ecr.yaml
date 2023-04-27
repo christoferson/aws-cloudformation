@@ -181,6 +181,8 @@ Resources:
           phases:
             pre_build:
               commands:
+                - echo $CODEBUILD_SOURCE_VERSION
+                - echo $CODEBUILD_SOURCE_VERSION | sed -e 's!refs/heads/!!'
                 - echo Logging in to Amazon ECR...
                 - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}
                 #- $(aws ecr get-login --no-include-email)
@@ -231,7 +233,7 @@ Resources:
         - Key: "Name"
           Value: "codebuild-log-group"
 
-## Trigger CodeBuild on Push
+## Trigger CodePipeline on Push TODO
 
   EventBridgeCodeBuilTriggerPolicy:
     Type: AWS::IAM::ManagedPolicy
