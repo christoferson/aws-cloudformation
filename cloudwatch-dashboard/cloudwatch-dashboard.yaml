@@ -8,32 +8,36 @@ Resources:
     Properties:
       DashboardBody: !Sub |
         {
-          "widgets": [
-            {
-              "type": "metric",
-              "x": 2,
-              "y": 2,
-              "width": 8,
-              "height": 8,
-              "properties": {
-                "metrics": [
-                  [
-                    "AWS/ApplicationELB",
-                    "RequestCount",
-                    "LoadBalancer",
-                    "AvailabilityZone",
-                    "ap-northeast-1a",
-                    {
-                      "period": 300,
-                      "stat": "Sum"
+            "widgets": [
+                {
+                    "height": 6,
+                    "width": 6,
+                    "y": 0,
+                    "x": 0,
+                    "type": "metric",
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/aaaaaaaa/aaaaaaaa", "AvailabilityZone", "ap-northeast-1a", { "period": 300, "stat": "Sum", "region": "ap-northeast-1" } ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": true,
+                        "region": "ap-northeast-1",
+                        "period": 300
                     }
-                  ]
-                ],
-                "view": "timeSeries",
-                "stacked": true,
-                "region": "ap-northeast-1",
-                "period": 300
-              }
-            }  
-          ]
+                },
+                {
+                    "type": "log",
+                    "x": 0,
+                    "y": 6,
+                    "width": 24,
+                    "height": 6,
+                    "properties": {
+                        "query": "SOURCE '/batch/logs/batch-fargate/demo' | fields @timestamp, @message, @logStream, @log\n| sort @timestamp desc\n| limit 20",
+                        "region": "eu-west-1",
+                        "stacked": false,
+                        "title": "Log group: /batch/logs/batch-fargate/demo",
+                        "view": "timeSeries"
+                    }
+                }
+            ]
         }
