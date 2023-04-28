@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CodeStar - Connection"
+
+# Note: A connection created through AWS CloudFormation is in PENDING status by default. You can make its status AVAILABLE by updating the connection in the console.
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+    
+Resources:
+
+  CodeStarConnection:
+    Type: "AWS::CodeStarConnections::Connection"
+    Properties:
+      ConnectionName: MyConnection #Connection names must be unique in an AWS user account.
+      ProviderType: Bitbucket #Bitbucket | GitHub | GitHubEnterpriseServer
+      Tags:
+        - Key: Project
+          Value: ProjectB
+          
+Outputs:
+
+  CodeStarConnectionConnectionArn:
+    Value: !GetAtt CodeStarConnection.ConnectionArn
+
+  CodeStarConnectionOwnerAccountId:
+    Value: !GetAtt CodeStarConnection.OwnerAccountId
