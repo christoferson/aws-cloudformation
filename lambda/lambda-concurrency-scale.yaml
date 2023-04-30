@@ -32,7 +32,7 @@ Resources:
     Properties:
       #FunctionName : "basic-lambda"
       Description: "Basic Lambda"
-      Runtime: nodejs12.x
+      Runtime: nodejs16.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:

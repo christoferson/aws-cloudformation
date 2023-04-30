@@ -55,7 +55,7 @@ Resources:
           Value: "lambda-basic"
 
   LambdaLogGroup:
-    Type: AWS::Logs::LogGroup
+    Type: "AWS::Logs::LogGroup"
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1

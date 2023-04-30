@@ -20,12 +20,27 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
+  LambdaExecutionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: root
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - ec2:*
+          Resource:
+          - '*'
+      Roles:
+      - !Ref LambdaExecutionRole
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       #FunctionName : "basic-lambda-python"
       Description: "Basic Lambda Python"
-      Runtime: python3.8
+      Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:
