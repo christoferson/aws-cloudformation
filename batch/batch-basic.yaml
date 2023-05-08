@@ -1,7 +1,30 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Batch
 
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+
+
 Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
 
   VpcId:
     Description : "VPC ID"
@@ -28,40 +51,42 @@ Parameters:
 Resources:
 
   BatchServiceRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
-      #RoleName: !Sub ""
-      Description: "Batch Service Role"
+      #RoleName: !Sub "BatchServiceRole"
+      Description: !Sub "Batch Service Role ${Application}-${Environment}"
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
             Effect: Allow
             Principal:
               Service: batch.amazonaws.com
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+        - "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole" #- arn:aws:iam::aws:policy/aws-service-role/BatchServiceRolePolicy
         - !Ref BatchServiceRolePolicy
-      Path: "/" #/
+      Path: "/"
       Tags:
-        - Key: 'environment'
-          Value: common
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
 
   BatchServiceRolePolicy:
-    Type: 'AWS::IAM::ManagedPolicy'
+    Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "Batch Service Role ManagedPolicy"
+      Description: !Sub "Batch Service Role ManagedPolicy ${Application}-${Environment}"
       #ManagedPolicyName: "code-build-demo-policy"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
-            Effect: Allow
-            Resource: '*'
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: "Allow"
+            Resource: "*"
           - Action:
               - 's3:GetObject'
               - 's3:PutObject'
