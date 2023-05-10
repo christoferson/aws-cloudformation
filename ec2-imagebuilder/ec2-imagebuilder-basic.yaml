@@ -150,16 +150,23 @@ Resources:
             AmiTags:
               AmiTagKey: 'ami-tag-key'
 
-  Image:
-    Type: AWS::ImageBuilder::Image
+  ImagePipeline:
+    Type: 'AWS::ImageBuilder::ImagePipeline'
     Properties:
-      ImageRecipeArn: !Ref 'ImageRecipe'
-      InfrastructureConfigurationArn: !Ref 'InfrastructureConfiguration'
+      Name: !Sub '${AWS::StackName}-pipeline'
+      Description: 'description'
+      ImageRecipeArn: !Ref ImageRecipe
+      InfrastructureConfigurationArn: !Ref InfrastructureConfiguration
       DistributionConfigurationArn: !Ref DistributionConfiguration
       ImageTestsConfiguration:
-        ImageTestsEnabled: true
-        TimeoutMinutes: 60
+        ImageTestsEnabled: false
+        TimeoutMinutes: 90
+      #Schedule:
+      #  ScheduleExpression: 'cron(0 0 * * ? *)'
+      #  PipelineExecutionStartCondition: 'EXPRESSION_MATCH_ONLY'
+      Status: 'DISABLED'
       Tags:
-        CmBillingGroup: ImageBuilder
+        CustomerImagePipelineTagKey1: 'CustomerImagePipelineTagValue1'
+        CustomerImagePipelineTagKey2: 'CustomerImagePipelineTagValue2'
 
-# TODO Image or Image Pipeline
+        # TODO Update Install and Test
