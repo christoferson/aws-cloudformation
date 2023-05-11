@@ -21,6 +21,51 @@ You can set the permissions on what repositories and who can use the pull throug
 
 [ecr-svc-pull-through-cache-rule](ecr-svc-pull-through-cache-rule.yaml)
 
+### ECR - Cross Account Replication
+
+#### Configure the replication settings in the Source Account
+
+```
+  EcrReplicationConfiguration:
+    Type: "AWS::ECR::ReplicationConfiguration"
+    Properties:
+      ReplicationConfiguration: 
+          Rules:
+            - 
+              Destinations:
+                - 
+                  Region: !Ref RepositoryStgRegionID
+                  RegistryId: !Ref RepositoryStgAccountID
+              RepositoryFilters:
+                - 
+                  FilterType: "PREFIX_MATCH" 
+                  Filter: !Ref RepositoryFilterPrefix   
+```
+
+[ecr-svc-replication-rule](ecr-svc-replication-rule.yaml)
+
+
+#### Next, configure the permissions in the Destination Account
+
+```
+  PrivateRegistryPolicy:
+    Type: "AWS::ECR::RegistryPolicy"
+    Properties:
+      PolicyText:
+        Version: 2012-10-17
+        Statement:
+          - Sid: replicate-repository
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${RepositoryReplicationSourceAccountID}:root" #Source
+            Action:
+              - "ecr:CreateRepository"
+              - "ecr:ReplicateImage"
+            Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*" #Destination
+```
+
+[ecr-policy-replicate-repository](ecr-policy-replicate-repository.yaml)
+
 ### Links
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_ECR.html

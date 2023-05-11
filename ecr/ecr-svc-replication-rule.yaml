@@ -57,6 +57,11 @@ Parameters:
     Default: "us-east-2"
     Description: "ECR Replication Destination Region ID (PRD)"
 
+  RepositoryFilterPrefix:
+    Type: "String"
+    Default: "foo-repo"
+    Description: "Repository Filter Name Prefix"
+
 Resources:
 
   EcrReplicationConfiguration:
@@ -72,8 +77,8 @@ Resources:
               #  -
               #    Region: !Ref RepositoryPrdRegionID
               #    RegistryId: !Ref RepositoryPrdRegionID
-              #RepositoryFilters:
-              #  - 
-              #    FilterType: "PREFIX_MATCH" 
-              #    Filter: "123456789012" #repository name prefix           
+              RepositoryFilters:
+                - 
+                  FilterType: "PREFIX_MATCH" 
+                  Filter: !Ref RepositoryFilterPrefix         
                   
