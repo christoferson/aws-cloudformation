@@ -34,6 +34,17 @@ Metadata:
           - ALBSubnetId2
           - ECSSubnetId1
           - ECSSubnetId2
+      - Label:
+          default: "ECS Fargate Service 2 Configuration"
+        Parameters:
+          - ECSTaskName
+          - ECSTaskCPUUnit
+          - ECSTaskMemory
+          - ECSContainerName
+          - ECSContainerPort
+          - ECSImageName
+          - ECSServiceName
+          - ECSTaskDesiredCount
 
     ParameterLabels:
       InternetALBName:
@@ -119,11 +130,11 @@ Parameters:
 
   ECSContainerPort:
     Type: Number
-    Default: 80
+    Default: 8080
 
   ECSImageName:
     Type: String
-    Default: "httpd:latest"
+    Default: "916902469227.dkr.ecr.eu-west-1.amazonaws.com/ecr-java-server-spring-boot:7a84e5a" #TODO
 
   ECSServiceName:
     Type: String
@@ -133,6 +144,15 @@ Parameters:
     Type: Number
     Default: 1
 
+  ECSContainerPort2:
+    Type: Number
+    Default: 8190
+
+  ECSImageName2:
+    Type: String
+    Default: "916902469227.dkr.ecr.eu-west-1.amazonaws.com/ecr-java-server-spring-boot:c66add1"
+    #Default: "916902469227.dkr.ecr.eu-west-1.amazonaws.com/ecr-java-server-spring-boot:3448fff"  #TODO
+    
 Resources:
 
   LoadBalancerSecurityGroup:
@@ -154,22 +174,7 @@ Resources:
       SecurityGroupIngress:
       - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
         IpProtocol: -1
-
-# ------------------------------------------------------------#
-#  Target Group
-# ------------------------------------------------------------#
-  TargetGroup:
-    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
-    Properties:
-      VpcId: !Ref VpcId
-      #Name: !Sub "${ProjectName}-${TargetGroupName}"
-      Protocol: HTTP
-      Port: !Ref ECSContainerPort
-      TargetType: ip
-      HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /
-      HealthyThresholdCount: 5
-
+      
 # ------------------------------------------------------------#
 #  Internet ALB
 # ------------------------------------------------------------#
@@ -196,6 +201,73 @@ Resources:
         - !Ref ALBSubnetId1
         - !Ref ALBSubnetId2
 
+# ------------------------------------------------------------#
+#  Target Group
+# ------------------------------------------------------------#
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #Name: !Sub "${ProjectName}-${TargetGroupName}"
+      Protocol: HTTP
+      Port: !Ref ECSContainerPort
+      TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthyThresholdCount: 5
+
+  TargetGroup1:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #Name: !Sub "${ProjectName}-${TargetGroupName}"
+      Protocol: HTTP
+      Port: !Ref ECSContainerPort
+      TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthyThresholdCount: 5
+     
+  TargetGroup2:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #Name: !Sub "${ProjectName}-${TargetGroupName}"
+      Protocol: HTTP
+      Port: !Ref ECSContainerPort2
+      TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthyThresholdCount: 5
+      
+  ALBListenerRule1:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:  # Can have Blue Green
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup #TODO Target Group 1
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - "/service1/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+ 
+  ALBListenerRule2:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup2
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - "/service2/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 2
+      
   ALBListener:
     Type: "AWS::ElasticLoadBalancingV2::Listener"
     Properties:
@@ -323,9 +395,42 @@ Resources:
           #Secrets
       #PlacementConstraints
       Tags:
-        - Key: "keyname1"
-          Value: "value1"
+        - Key: "TaskName"
+          Value: "Task1"
 
+  ECSTaskDefinition2:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      Cpu: !Ref ECSTaskCPUUnit
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      Family: !Sub "${ProjectName}-${ECSTaskName}"
+      Memory: !Ref ECSTaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Sub "${ProjectName}-2-${ECSContainerName}"
+          Image: !Ref ECSImageName2
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup  #TODO
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: !Sub "${ProjectName}-2"
+          MemoryReservation: 128
+          PortMappings:
+            - Protocol: tcp
+              #HostPort: !Ref ECSContainerPort
+              ContainerPort: !Ref ECSContainerPort2
+          #HealthCheck
+          #Secrets
+      #PlacementConstraints
+      Tags:
+        - Key: "TaskName"
+          Value: "Task1"
+          
 # ------------------------------------------------------------#
 #  ECS Service
 # ------------------------------------------------------------#
@@ -355,9 +460,38 @@ Resources:
       #PropagateTags: SERVICE | TASK_DEFINITION
       #SchedulingStrategy: DAEMON | REPLICA
       Tags:
-        - Key: "keyname1"
-          Value: "value1"
+        - Key: "ServiceName"
+          Value: "Service1"
 
+  ECSService2:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: !Ref ECSTaskDesiredCount
+      LaunchType: FARGATE
+      LoadBalancers:
+        -
+          TargetGroupArn: !Ref TargetGroup2
+          ContainerPort: !Ref ECSContainerPort2
+          ContainerName: !Sub "${ProjectName}-2-${ECSContainerName}" #TODO
+      NetworkConfiguration:
+       AwsvpcConfiguration:
+           AssignPublicIp: ENABLED
+           SecurityGroups:
+             - !Ref EcsServiceSecurityGroup
+           Subnets:
+             - !Ref ECSSubnetId1
+             - !Ref ECSSubnetId2
+      ServiceName: !Sub "${ProjectName}-${ECSServiceName}-2"
+      TaskDefinition: !Ref ECSTaskDefinition2
+      HealthCheckGracePeriodSeconds: 60
+      #PropagateTags: SERVICE | TASK_DEFINITION
+      #SchedulingStrategy: DAEMON | REPLICA
+      Tags:
+        - Key: "ServiceName"
+          Value: "Service2"
+          
 Outputs:
 
   InternetALBDomainName:
