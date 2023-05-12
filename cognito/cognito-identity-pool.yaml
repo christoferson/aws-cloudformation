@@ -196,13 +196,15 @@ Resources:
 Outputs:
 
   UserPoolId:
-    Description: 'The name of the user pool'
+    Description: 'Name of the UserPool'
     Value: !Ref UserPool
 
   UserPoolClient:
-    Value:
-      Ref: UserPoolClient
+    Description: 'Name of the UserPool'
+    Value: !Ref UserPoolClient
 
   IdentityPool:
-    Value:
-      Ref: IdentityPool
+    Description: 'Name of the UserPool'
+    Value: !Ref IdentityPool
+
+  ## Authenticated / Unauthenticated Roles
