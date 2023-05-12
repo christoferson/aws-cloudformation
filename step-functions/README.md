@@ -2,7 +2,7 @@
 ## Step Functions (Standard)
 
 
-### Step Functions Basic
+### Standard - Step Functions Basic
 
 Example with a single step that invokes a lambda function
 
@@ -16,9 +16,15 @@ Input JSON:
 
 [step-functions-std-basic](step-functions-std-basic.yaml)
 
-### Step Functions Demo
+### Standard - Step Functions Demo
 
 Example using various State types
+
+Input JSON:
+
+```
+TODO
+```
 
 - foo=3: Succeed State
 - foo=4: Retry State
@@ -28,6 +34,12 @@ Example using various State types
 ### Step Function Batch
 
 Provision a StepFunction that calls Batch
+
+Input JSON:
+
+```
+TODO
+```
 
 Use ContainerOverrides to pass parameters to the Batch process. [link](https://docs.aws.amazon.com/ja_jp/batch/latest/APIReference/API_ContainerOverrides.html)
 
@@ -47,6 +59,44 @@ Use ContainerOverrides to pass parameters to the Batch process. [link](https://d
 ```
 
 [step-functions-std-batch](step-functions-std-batch.yaml)
+
+### Standard - Step Functions - Sequence of Lambda
+
+Provision Step Function that calls several Lambda in sequence.
+
+```
+{
+  "movies": [
+    {
+      "genre": "crime",
+      "director": "Quentin Tarantino",
+      "title": "Reservoir Dogs",
+      "year": 1992
+    },
+    {
+      "genre": "action",
+      "director": "Brian De Palma",
+      "title": "Mission: Impossible",
+      "year": 1996,
+      "staring": [
+        "Tom Cruise"
+      ]
+    }
+  ],
+  "metadata": {
+    "lastUpdated": "2020-05-27T08:00:00.000Z"
+  },
+  "stringJson": "{\"arr\": [1, 2, 3, 4, 5], \"bool\": true, \"null\": null, \"number\": 1}"
+}
+```
+
+[step-functions-std-seq](step-functions-std-seq.yaml)
+
+### Standard - Step Functions - XXX
+
+[step-functions-std-task-choice](step-functions-std-task-choice.yaml)
+
+----------
 
 ## Step Functions (Express)
 
@@ -80,7 +130,7 @@ If an AWS SDK integration encounters an error, the resulting Error field will be
 https://docs.aws.amazon.com/step-functions/latest/dg/connect-lambda.html
 https://docs.aws.amazon.com/lambda/latest/dg/API_Invoke.html#API_Invoke_RequestParameters
 
-Optimized Lambda integration
+##### Optimized Lambda integration
 
 ```
 {  
@@ -98,7 +148,9 @@ Optimized Lambda integration
 }
 ```
 
-Lambda AWS SDK integration
+Parameters in Step Functions are expressed in PascalCase, even when the native service API is camelCase.
+
+##### Lambda AWS SDK integration
 
 ```
 {  
@@ -124,6 +176,8 @@ Lambda AWS SDK integration
                   - 'events:DescribeRule'
                 Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForBatchJobsRule"
 ```
+
+- StateMachineExecutionRole-foo/bar is not authorized to perform: batch:TagResource on resource: arn:aws:batch:eu-west-1:9030984848:job-definition/BatchJobDefinition-foo
 
 ## References
 
