@@ -1,5 +1,5 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Vpc Endpoint (Gateway Endpoint) - S3'
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Vpc Endpoint (Gateway Endpoint) - S3"
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -41,7 +41,7 @@ Parameters:
 Resources:
 
   VpcEndpointS3:
-    Type: 'AWS::EC2::VPCEndpoint'
+    Type: "AWS::EC2::VPCEndpoint"
     Properties:
       VpcEndpointType: Gateway # Gateway | GatewayLoadBalancer | Interface
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
@@ -50,10 +50,11 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Effect: Allow
-            Principal: '*'
+            Principal: "*"
             Action:
-              - "s3:*" # s3:GetObject
+              - "*"
             Resource:
+              - "arn:aws:s3:::*"
               - "arn:aws:s3:::*/*" # arn:aws:s3:::examplebucket/*
       RouteTableIds: !Ref RouteTableIdList  # (Optional) The IDs of the route tables. Routing is supported only for gateway endpoints.
       #  - rtb-xxxxx
