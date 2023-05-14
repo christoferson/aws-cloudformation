@@ -36,3 +36,16 @@ Resources:
         - Key: "Name"
           Value: !Sub "${Application}-${Environment}-eks-node-sg"
 
+  DatabaseSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: "Database Security Group"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "database-sg"
