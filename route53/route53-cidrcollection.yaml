@@ -1,0 +1,18 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Route53 CIDR Collection'
+
+Resources:
+
+  CidrCollectionPrivateSubnet:
+    Type: AWS::Route53::CidrCollection
+    Properties:
+      Name: "cidr-collection-private-subnet"
+      Locations:
+        - LocationName: "mlocation-1"
+          CidrList:
+            - "10.1.0.0/24"
+        - LocationName: "mlocation-2"
+          CidrList:
+            - "2002::1234:0:0:0:0:0/48"
+            - "1002::/32"
