@@ -14,6 +14,27 @@ A VPC Endpoint is a virtual scalable networking component you create in a VPC an
 
 - You must specify the region when executing AWS S3 commands. i.e. AWS cli defaults to us region
 
+```
+S3GatewayEndpoint:
+  Type: 'AWS::EC2::VPCEndpoint'
+  Properties:
+    PolicyDocument:
+      Version: 2012-10-17
+      Statement:
+        - Effect: Allow
+          Principal: '*'
+          Action:
+            - 's3:GetObject'
+          Resource:
+            - 'arn:aws:s3:::examplebucket/*'
+    RouteTableIds:
+      - !Ref routetableA
+      - !Ref routetableB
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+    VpcId: !Ref VPCID
+```
+
+
 ### Vpc Endpoint - Gateway Endpoint - S3
 
 Provision a VPC Gateway Endpoint for S3.
@@ -41,6 +62,21 @@ Provision a VPC Gateway Endpoint for DynamoDB.
 
 
 - [List of Interface Endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html)
+
+```
+cwlInterfaceEndpoint:
+  Type: 'AWS::EC2::VPCEndpoint'
+  Properties:
+    VpcEndpointType: Interface
+    ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+    VpcId: !Ref myVPC
+    SubnetIds: 
+      - !Ref subnetA
+      - !Ref subnetB
+    SecurityGroupIds:
+      - !Ref mySecurityGroup
+```
+
 
 #### Vpc Endpoint Interface Endpoint - SSM
 
@@ -94,6 +130,7 @@ aws ecr describe-repositories --region eu-west-1
 
 - [ ] aws:PrincipalOrgId condition
 
+### Endpoints
 
 com.amazonaws.region.batch
 com.amazonaws.region.events
