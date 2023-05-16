@@ -91,11 +91,18 @@ Resources:
 
 Outputs:
 
+# Description (optional) literal string that's between 0 and 1024 bytes in length. can't use a parameter or function
+# Value (required) literals, parameter references, pseudo-parameters, a mapping value, or intrinsic functions.
+# Export (optional)
+  # For each AWS account, Export names must be unique within a region.
+  # Fn::ImportValue to import only values that have been exported within the same region.
+  # You can't delete a stack if another stack references one of its outputs.
+  # You can't modify or remove an output value that is referenced by another stack.
   ResourceExampleRef:
     Value: !Ref ResourceExample
 
   RegionEnvironmentTypeAmiMapResult: 
     Description: Return the name of the AMI ID that matches the region and environment type keys
     Value: !FindInMap [RegionEnvironmentTypeAmiMap, !Ref "AWS::Region", !Ref EnvironmentType]
-  
+    #Condition: CreateProdResources
 
