@@ -300,7 +300,19 @@ Resources:
           Arn: !Sub "${CodeBuildProject.Arn}"
           Id: "TriggerCodePipeline"
           RoleArn: !GetAtt EventBridgeCodeBuildTriggerRole.Arn
-
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600 #86400
+            MaximumRetryAttempts: 1 #185
+          InputTransformer:
+            InputPathsMap:
+              SourceReferenceName: $.detail.referenceName
+              SourceCommitId: $.detail.commitId
+            InputTemplate: |
+              {
+                "environmentVariablesOverride": [
+                  {"name" : "MY_VAR", "type" : "PLAINTEXT", "value": "foo"},
+                ]
+              }
 
 Outputs:
 
