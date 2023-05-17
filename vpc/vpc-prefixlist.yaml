@@ -1,0 +1,90 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "VPC Prefix List"
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Parameters: 
+          - PrefixListName
+          - AddressFamily
+          - MaxEntries
+      - Parameters: 
+          - CidrBlock1
+          - CidrBlock2
+          - CidrBlock3
+          - CidrBlock4
+          - CidrBlock5
+
+Parameters:
+
+  PrefixListName:
+    Type: String
+    Default: PrivateIPAddresses
+    Description: A name for the prefix list. The name cannot start with com.amazonaws.
+
+  AddressFamily:
+    Type: String
+    Default: IPv4
+    AllowedValues: [IPv4,IPv6]
+    Description: The IP address type.  AddressFamily is not updatable. 
+
+  MaxEntries:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 1000
+    Description: The maximum number of entries for the prefix list. MaxEntries is not updatable. 
+
+  CidrBlock1:
+    Type: String
+    Default: "10.0.0.0/8"
+    Description: The CIDR blocks
+  CidrBlock2:
+    Type: String
+    Default: "172.16.0.0/12"
+    Description: The CIDR blocks
+  CidrBlock3:
+    Type: String
+    Default: "192.168.0.0/16"
+    Description: The CIDR blocks
+  CidrBlock4:
+    Type: String
+    Default: ""
+    Description: The CIDR blocks
+  CidrBlock5:
+    Type: String
+    Default: ""
+    Description: The CIDR blocks
+
+Conditions:
+  IsEmpty1: !Equals [ !Ref CidrBlock1, '' ]
+  IsEmpty2: !Equals [ !Ref CidrBlock2, '' ]
+  IsEmpty3: !Equals [ !Ref CidrBlock3, '' ]
+  IsEmpty4: !Equals [ !Ref CidrBlock4, '' ]
+  IsEmpty5: !Equals [ !Ref CidrBlock5, '' ]
+
+Resources:
+
+  VpcPrefixList:
+    Type: AWS::EC2::PrefixList
+    Properties: 
+      PrefixListName: !Ref PrefixListName
+      AddressFamily: !Ref AddressFamily #IPv4 | IPv6
+      MaxEntries: !Ref MaxEntries
+      Entries:
+        - !If [IsEmpty1, !Ref "AWS::NoValue", Cidr: !Ref CidrBlock1]
+        - !If [IsEmpty2, !Ref "AWS::NoValue", Cidr: !Ref CidrBlock2]
+        - !If [IsEmpty3, !Ref "AWS::NoValue", Cidr: !Ref CidrBlock3]
+        - !If [IsEmpty4, !Ref "AWS::NoValue", Cidr: !Ref CidrBlock4]
+        - !If [IsEmpty5, !Ref "AWS::NoValue", Cidr: !Ref CidrBlock5]
+      Tags:
+        - Key: "Name"
+          Value: !Ref PrefixListName
+
+#Outputs:
+
+#  VpcPrefixListVersion:
+#    Description: Prefix List
+#    Value: !GetAtt VpcPrefixList.Version
+    
