@@ -310,7 +310,8 @@ Resources:
             InputTemplate: |
               {
                 "environmentVariablesOverride": [
-                  {"name" : "MY_VAR", "type" : "PLAINTEXT", "value": "foo"},
+                  {"name" : "SOURCE_REFERENCE_NAME", "type" : "PLAINTEXT", "value": "<SourceReferenceName>"},
+                  {"name" : "SOURCE_COMMIT_ID", "type" : "PLAINTEXT", "value": "<SourceCommitId>"}
                 ]
               }
 
