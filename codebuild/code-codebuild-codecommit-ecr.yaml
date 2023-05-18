@@ -178,11 +178,16 @@ Resources:
         Location: !Sub "https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${CodeCommitRepositoryName}"
         BuildSpec: |
           version: 0.2
+          env:
+            shell: bash
           phases:
             pre_build:
               commands:
+                - echo $SOURCE_REFERENCE_NAME
+                - echo $SOURCE_COMMIT_ID
                 - echo $CODEBUILD_SOURCE_VERSION
                 - echo $CODEBUILD_SOURCE_VERSION | sed -e 's!refs/heads/!!'
+                - IMAGE_TAG_ENV="$SOURCE_REFERENCE_NAME.$(date '+%Y-%m-%d').${SOURCE_COMMIT_ID:0:8}"
                 - echo Logging in to Amazon ECR...
                 - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}
                 #- $(aws ecr get-login --no-include-email)
@@ -200,6 +205,8 @@ Resources:
                 - echo Build completed on `date`
                 - echo Pushing the Docker images...
                 - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG_ENV
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG_ENV
                 - echo Writing image definitions file...
                 - echo "[{\"name\":\"${CONTAINER_NAME}\",\"imageUri\":\"${REPOSITORY_URI}:${IMAGE_TAG}\"}]" > imagedefinitions.json
           artifacts:
