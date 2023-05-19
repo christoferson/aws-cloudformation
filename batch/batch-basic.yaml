@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Batch
+Description: Batch - Basic (EC2)
 
 Metadata:
 
@@ -46,7 +46,7 @@ Parameters:
   JobDefinitionCommand:
     Description: Job Definition Command
     Type: String
-    Default: "echo ec2;"
+    Default: "echo basic;"
 
 Resources:
 
@@ -77,7 +77,7 @@ Resources:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
       Description: !Sub "Batch Service Role ManagedPolicy ${Application}-${Environment}"
-      #ManagedPolicyName: "code-build-demo-policy"
+      #ManagedPolicyName: "batch-service-role-policy"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -95,7 +95,7 @@ Resources:
             Resource: !Sub "arn:aws:s3:::code-build-demo-bucket/*"
 
   BatchComputeSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+    Type: "AWS::EC2::SecurityGroup"
     Properties:
       VpcId: !Ref VpcId
       GroupDescription: "BatchComputeEnvironment"
@@ -153,7 +153,7 @@ Resources:
         Tags: {"Name": "Batch Compute Environment"}
 
   BatchJobQueue:
-    Type: AWS::Batch::JobQueue
+    Type: "AWS::Batch::JobQueue"
     Properties:
       #JobQueueName: cfn-queue # (Optional)
       Priority: 1 # Job queues with a higher priority (or a higher integer value for the priority parameter) are evaluated first

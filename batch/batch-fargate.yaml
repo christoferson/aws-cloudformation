@@ -157,7 +157,7 @@ Resources:
       ServiceRole: !GetAtt BatchServiceRole.Arn
       ComputeResources:
         Type: FARGATE #FARGATE or FARGATE_SPOT
-        #MinvCpus: 0
+        #MinvCpus: 0 #This parameter isn't applicable to jobs that are running on Fargate resources. Don't specify it.
         MaxvCpus: !Ref BatchComputeMaxVCpu #16?
         #DesiredvCpus: 0
         SecurityGroupIds:
@@ -167,6 +167,9 @@ Resources:
         #InstanceTypes:
         #  - optimal
         #Tags: {"Name": "Batch (Fargate) Compute Environment"} #tags is not applicable for Fargate
+        #AllocationStrategy: BEST_FIT_PROGRESSIVE | SPOT_CAPACITY_OPTIMIZED #This parameter isn't applicable to jobs that are running on Fargate resources, and shouldn't be specified.
+        #BidPercentage: This parameter isn't applicable to jobs that are running on Fargate resources. Don't specify it.
+        #DesiredvCpus: This parameter isn't applicable to jobs that are running on Fargate resources. Don't specify it.
 
   BatchJobQueue:
     Type: "AWS::Batch::JobQueue"
