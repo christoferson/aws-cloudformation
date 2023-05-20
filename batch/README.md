@@ -47,6 +47,27 @@ Provision a Compute Environment (Fargate), Job Queue, Definition
 
 [batch-fargate](batch-fargate.yaml)
 
+### Batch - Fargate - Multiple Compute Environment
+
+Provision 2 Compute Environments, Fargate & Fargate Spot, Job Queue, Definition
+
+Job Queue references the 2 compute environments prioritizing Spot
+
+```
+  BatchJobQueue:
+    Type: "AWS::Batch::JobQueue"
+    Properties:
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref BatchComputeEnvironmentSpot
+        - Order: 2
+          ComputeEnvironment: !Ref BatchComputeEnvironment
+      State: ENABLED
+```
+
+[batch-fargate-multi-ce](batch-fargate-multi-ce.yaml)
+
 ### Batch - Fargate - Extra Service
 
 Provision additional Job Queue, Job Definition and assign to an existing Compute Environment
