@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CodeGuru - CodeCommit"
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  CodeCommitRepositoryName:
+    Type: String
+    Default: code-java-server-spring-boot
+    Description: Application Name
+       
+Resources:
+
+  CodeGuruReviewerRepositoryAssociation:
+    Type: "AWS::CodeGuruReviewer::RepositoryAssociation"
+    Properties:
+      Name: !Ref CodeCommitRepositoryName
+      Type: CodeCommit #CodeCommit | Bitbucket | GitHubEnterpriseServer | S3Bucket
+      Tags:
+        - Key: Project
+          Value: ProjectB
+
+Outputs:
+
+  CodeGuruReviewerRepositoryAssociationAssociationArn:
+    Value: !GetAtt CodeGuruReviewerRepositoryAssociation.AssociationArn
+
