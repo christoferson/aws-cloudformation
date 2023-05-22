@@ -1,0 +1,290 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Step Functions - Standard - Batch
+
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "State Machine Configuration"
+        Parameters: 
+          - StateMachineTimeoutSeconds
+      - Label: 
+          default: "Batch Job Configuration"
+        Parameters: 
+          - BatchJobName
+      - Label: 
+          default: "Target Batch Configuration"
+        Parameters: 
+          - BatchJobQueueArn
+          - BatchJobDefinitionArn
+                    
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  StateMachineTimeoutSeconds:
+    Description : "StateMachine Timeout in Seconds"
+    Type: Number
+    Default: "3600"
+    
+  BatchJobName:
+    Description : "Job Name"
+    Type: String
+    Default: "step-batch-job"
+
+  BatchJobQueueArn:
+    Description : "Job Queue Name or Arn"
+    Type: String
+    Default: "BatchJobQueue-YF75D0jJcnsxSG9P"
+
+  BatchJobDefinitionArn:
+    Description : "Job Definition Name or Arn. Name:Revision or Latest Revision"
+    Type: String
+    Default: "BatchJobDefinition-10e963866c726db"
+
+Resources:
+
+  StateMachineExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "states.amazonaws.com" #states.amazonaws.com # states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - !Ref StateMachineExecutionRolePolicy
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - 'batch:SubmitJob'
+                  - 'batch:DescribeJobs'
+                  - 'batch:TerminateJob'
+                  - "batch:TagResource"
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'events:PutTargets'
+                  - 'events:PutRule'
+                  - 'events:DescribeRule'
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForBatchJobsRule"
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'xray:PutTraceSegments'
+                  - 'xray:PutTelemetryRecords'
+                  - 'xray:GetSamplingRules'
+                  - 'xray:GetSamplingTargets'
+                Resource: '*'
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+
+  StateMachineExecutionRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "StateMachine Role ManagedPolicy"
+      #ManagedPolicyName: "statemachine-job-role-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:ListAllMyBuckets'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:ListBucket'
+              - "s3:GetBucketLocation"
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: "*"
+              
+  StateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      StateMachineType: "STANDARD"
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      DefinitionString: !Sub
+        - |-
+          {
+            "Comment": "Submit Batch Job ${BatchJobName}",
+            "StartAt": "Submit Batch Job",
+            "TimeoutSeconds": ${StateMachineTimeoutSeconds},
+            "States": {
+              "Submit Batch Job": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::batch:submitJob.sync",
+                "Parameters": {
+                  "JobName": "${BATCH_JOB_NAME}",
+                  "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
+                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}",
+                  "ContainerOverrides": {
+                    "Command.$": "States.Array('sh', '-c', States.Format('echo s3rocksv3 && java -jar batch.jar \\'{}\\' \\'{}\\'', $.detail.bucket.name, $.detail.object.key))",
+                    "Environment": [
+                      {
+                        "Name": "APP_AWS_REGION",
+                        "Value.$": "$.region"
+                      },
+                      {
+                        "Name": "APP_AWS_BUCKET_NAME",
+                        "Value.$": "$.detail.bucket.name"
+                      },
+                      {
+                        "Name": "APP_AWS_BUCKET_OBJECT_KEY",
+                        "Value.$": "$.detail.object.key"
+                      }
+                    ]
+                  },
+                  "Tags": {
+                    "Application": "${Application}"
+                  }
+                },
+                "Next": "Notify Success",
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "States.ALL"
+                    ],
+                    "IntervalSeconds": 30,
+                    "MaxAttempts": 2,
+                    "BackoffRate": 1.5
+                  }
+                ],
+                "Catch": [
+                  {
+                    "ErrorEquals": [
+                      "States.ALL"
+                    ],
+                    "Next": "Notify Failure"
+                  }
+                ]
+              },
+              "Notify Success": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sns:publish",
+                "Parameters": {
+                  "Message": "Batch job submitted through Step Functions succeeded",
+                  "TopicArn": "${SNS_SUCCESS}"
+                },
+                "End": true
+              },
+              "Notify Failure": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sns:publish",
+                "Parameters": {
+                  "Message": "Batch job submitted through Step Functions failed",
+                  "TopicArn": "${SNS_FAIL}"
+                },
+                "End": true
+              }
+            }
+          }
+        - BATCH_JOB_NAME: !Ref BatchJobName
+          BATCH_JOB_QUEUE_NAME: !Ref BatchJobQueueArn
+          BATCH_JOB_DEFINITION_NAME: !Ref BatchJobDefinitionArn
+          SNS_SUCCESS: !Ref StepFunctionSnsTopicSuccess 
+          SNS_FAIL: !Ref StepFunctionSnsTopicFailure
+      TracingConfiguration:
+        Enabled: true
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt LogGroupStateMachine.Arn
+        IncludeExecutionData: true
+        Level: "ERROR"
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+
+  LogGroupStateMachine:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      RetentionInDays: 1
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+
+  StepFunctionSnsTopicSuccess:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "Step Function Notification - Success"
+      Tags:
+        -
+          Key: "Application"
+          Value: !Ref Application
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+
+  StepFunctionSnsTopicFailure:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "Step Function Notification - Failure"
+      Tags:
+        -
+          Key: "Application"
+          Value: !Ref Application
+        -
+          Key: "Environment"
+          Value: !Ref Environment
+
+Outputs:
+
+  StateMachineArn:
+    Value: !Ref StateMachine
+
+  StateMachineName:
+    Value: !GetAtt StateMachine.Name
