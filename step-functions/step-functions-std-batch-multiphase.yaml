@@ -157,10 +157,10 @@ Resources:
         - |-
           {
             "Comment": "Submit Batch Job ${BatchJobName}",
-            "StartAt": "Submit Batch Job",
+            "StartAt": "Submit Batch Job 1",
             "TimeoutSeconds": ${StateMachineTimeoutSeconds},
             "States": {
-              "Submit Batch Job": {
+              "Submit Batch Job 1": {
                 "Type": "Task",
                 "Resource": "arn:aws:states:::batch:submitJob.sync",
                 "Parameters": {
@@ -168,7 +168,55 @@ Resources:
                   "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
                   "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}",
                   "ContainerOverrides": {
-                    "Command.$": "States.Array('sh', '-c', States.Format('echo s3rocksv3 && java -jar batch.jar \\'{}\\' \\'{}\\'', $.detail.bucket.name, $.detail.object.key))",
+                    "Command.$": "States.Array('sh', '-c', States.Format('echo step1 && java -jar batch.jar \\'{}\\' \\'{}\\'', $.detail.bucket.name, $.detail.object.key))",
+                    "Environment": [
+                      {
+                        "Name": "APP_AWS_REGION",
+                        "Value.$": "$.region"
+                      },
+                      {
+                        "Name": "APP_AWS_BUCKET_NAME",
+                        "Value.$": "$.detail.bucket.name"
+                      },
+                      {
+                        "Name": "APP_AWS_BUCKET_OBJECT_KEY",
+                        "Value.$": "$.detail.object.key"
+                      }
+                    ]
+                  },
+                  "Tags": {
+                    "Application": "${Application}"
+                  }
+                },
+                "Next": "Submit Batch Job 2",
+                "Retry": [
+                  {
+                    "ErrorEquals": [
+                      "States.ALL"
+                    ],
+                    "IntervalSeconds": 30,
+                    "MaxAttempts": 2,
+                    "BackoffRate": 1.5
+                  }
+                ],
+                "Catch": [
+                  {
+                    "ErrorEquals": [
+                      "States.ALL"
+                    ],
+                    "Next": "Notify Failure"
+                  }
+                ]
+              },
+              "Submit Batch Job 2": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::batch:submitJob.sync",
+                "Parameters": {
+                  "JobName": "${BATCH_JOB_NAME}",
+                  "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
+                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}",
+                  "ContainerOverrides": {
+                    "Command.$": "States.Array('sh', '-c', States.Format('echo step2 && java -jar batch.jar \\'{}\\' \\'{}\\'', $.detail.bucket.name, $.detail.object.key))",
                     "Environment": [
                       {
                         "Name": "APP_AWS_REGION",
