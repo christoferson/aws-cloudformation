@@ -206,7 +206,8 @@ Resources:
                     ],
                     "Next": "Notify Failure"
                   }
-                ]
+                ],
+                "ResultPath": "$.TaskResult1"
               },
               "Submit Batch Job 2": {
                 "Type": "Task",
@@ -254,7 +255,8 @@ Resources:
                     ],
                     "Next": "Notify Failure"
                   }
-                ]
+                ],
+                "ResultPath": "$.TaskResult2"
               },
               "Notify Success": {
                 "Type": "Task",
