@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Step Functions - Standard - Batch
+Description: Step Functions - Standard - Call Multiple Batch in Sequence
 
 Metadata:
 
@@ -18,15 +18,18 @@ Metadata:
         Parameters: 
           - StateMachineTimeoutSeconds
       - Label: 
-          default: "Batch Job Configuration"
+          default: "Batch Job Configuration - 1"
         Parameters: 
           - BatchJobName
-      - Label: 
-          default: "Target Batch Configuration"
-        Parameters: 
           - BatchJobQueueArn
           - BatchJobDefinitionArn
-                    
+      - Label: 
+          default: "Batch Job Configuration - 2"
+        Parameters: 
+          - BatchJobName2
+          - BatchJobQueueArn2
+          - BatchJobDefinitionArn2
+
 Parameters:
 
   Application:
@@ -55,6 +58,21 @@ Parameters:
     Default: "BatchJobQueue-YF75D0jJcnsxSG9P"
 
   BatchJobDefinitionArn:
+    Description : "Job Definition Name or Arn. Name:Revision or Latest Revision"
+    Type: String
+    Default: "BatchJobDefinition-10e963866c726db"
+
+  BatchJobName2:
+    Description : "Job Name"
+    Type: String
+    Default: "step-batch-job"
+
+  BatchJobQueueArn2:
+    Description : "Job Queue Name or Arn"
+    Type: String
+    Default: "BatchJobQueue-YF75D0jJcnsxSG9P"
+
+  BatchJobDefinitionArn2:
     Description : "Job Definition Name or Arn. Name:Revision or Latest Revision"
     Type: String
     Default: "BatchJobDefinition-10e963866c726db"
@@ -213,9 +231,9 @@ Resources:
                 "Type": "Task",
                 "Resource": "arn:aws:states:::batch:submitJob.sync",
                 "Parameters": {
-                  "JobName": "${BATCH_JOB_NAME}",
-                  "JobQueue": "${BATCH_JOB_QUEUE_NAME}",
-                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME}",
+                  "JobName": "${BATCH_JOB_NAME_2}",
+                  "JobQueue": "${BATCH_JOB_QUEUE_NAME_2}",
+                  "JobDefinition": "${BATCH_JOB_DEFINITION_NAME_2}",
                   "ContainerOverrides": {
                     "Command.$": "States.Array('sh', '-c', States.Format('echo step2 && java -jar batch.jar \\'{}\\' \\'{}\\'', $.detail.bucket.name, $.detail.object.key))",
                     "Environment": [
@@ -281,6 +299,9 @@ Resources:
         - BATCH_JOB_NAME: !Ref BatchJobName
           BATCH_JOB_QUEUE_NAME: !Ref BatchJobQueueArn
           BATCH_JOB_DEFINITION_NAME: !Ref BatchJobDefinitionArn
+          BATCH_JOB_NAME_2: !Ref BatchJobName2
+          BATCH_JOB_QUEUE_NAME_2: !Ref BatchJobQueueArn2
+          BATCH_JOB_DEFINITION_NAME_2: !Ref BatchJobDefinitionArn2
           SNS_SUCCESS: !Ref StepFunctionSnsTopicSuccess 
           SNS_FAIL: !Ref StepFunctionSnsTopicFailure
       TracingConfiguration:
