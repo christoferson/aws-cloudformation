@@ -18,6 +18,10 @@ Your email address is verified as soon as you follow the link in the verificatio
 
 Provision and SES Identity (Domain). DKIM and MailFrom Enabled.
 
+If your using Route53, you need to add both domain verification records and the MX mail verification records.
+Only after you verified both, then you will get an email and can start sending.
+Failure to verify the MX record will result in an error when sending emails.
+
 [ses-identity-domain](ses-identity-domain.yaml)
 
 ### Errors
