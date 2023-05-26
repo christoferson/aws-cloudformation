@@ -82,9 +82,9 @@ Resources:
         - Key: "Name"
           Value: !Ref PrefixListName
 
-#Outputs:
+Outputs:
 
-#  VpcPrefixListVersion:
-#    Description: Prefix List
-#    Value: !GetAtt VpcPrefixList.Version
+  VpcPrefixListArn:
+    Description: Prefix List Arn
+    Value: !Sub "${VpcPrefixList.Arn}"
     
