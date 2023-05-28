@@ -43,6 +43,62 @@ Provision a CodeBuild project that pulls source from CodeCommit and pushes to EC
 - https://docs.aws.amazon.com/codebuild/latest/userguide/build-caching.html
 - https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/replicate-filtered-amazon-ecr-container-images-across-accounts-or-regions.html
 
+#### Errors
+
+##### junit because no identity-based policy allows the codebuild:CreateReportGroup action
+
+
+#### Java
+
+##### Install Java Runtime
+
+Make sure you are using the Environment Image that supports the runtime version
+
+```
+      Environment:
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+```
+
+In your buildspec, install the correct java runtime. e.g. corretto17
+
+```
+        BuildSpec: |
+          ...
+          phases:
+            install:
+              runtime-versions:
+                java: corretto17
+```
+
+##### JUNIT Report
+
+Ensure CodeBuild has required permissions
+
+```
+            Action:
+              - codebuild:CreateReportGroup
+              - codebuild:CreateReport
+              - codebuild:UpdateReport
+              - codebuild:BatchPutTestCases
+              - codebuild:BatchPutCodeCoverages
+            Resource:
+              - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/*"
+```
+
+Create a report in your buildspec.
+
+```
+          reports:
+            junit:
+              files:
+                - '**/*'
+              base-directory: "build/test-results"
+              file-format: 'JUnitXML'           
+```
+
 TODO:
 BuildSpec - Push to Docker Hub
 
