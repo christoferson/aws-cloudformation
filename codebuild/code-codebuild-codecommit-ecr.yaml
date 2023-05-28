@@ -139,6 +139,15 @@ Resources:
               - 'codecommit:GitPull'
             Effect: Allow
             Resource: !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+          - Effect: Allow
+            Action:
+              - codebuild:CreateReportGroup
+              - codebuild:CreateReport
+              - codebuild:UpdateReport
+              - codebuild:BatchPutTestCases
+              - codebuild:BatchPutCodeCoverages
+            Resource:
+              - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/*"
 
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
@@ -159,7 +168,7 @@ Resources:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         #Image: aws/codebuild/docker:18.09.0-1.7.0
-        Image: aws/codebuild/standard:5.0
+        Image: aws/codebuild/standard:7.0
         EnvironmentVariables:
           - Name: AWS_DEFAULT_REGION
             Value: !Ref AWS::Region
@@ -181,6 +190,9 @@ Resources:
           env:
             shell: bash
           phases:
+            install:
+              runtime-versions:
+                java: corretto17
             pre_build:
               commands:
                 - echo $SOURCE_REFERENCE_NAME
@@ -188,6 +200,9 @@ Resources:
                 - echo $CODEBUILD_SOURCE_VERSION
                 - echo $CODEBUILD_SOURCE_VERSION | sed -e 's!refs/heads/!!'
                 - IMAGE_TAG_ENV="$SOURCE_REFERENCE_NAME.$(date '+%Y-%m-%d').${SOURCE_COMMIT_ID:0:8}"
+                - echo $IMAGE_TAG_ENV
+                - mvn -v
+                - mvn -q clean package
                 - echo Logging in to Amazon ECR...
                 - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}
                 #- $(aws ecr get-login --no-include-email)
@@ -217,6 +232,13 @@ Resources:
             paths:
               - '/root/.m2/**/*'
               - '/root/.npm/**/*'
+          reports:
+            junit:
+              files:
+                - '**/*'
+              #base-directory: "build/test-results"
+              base-directory: "target/surefire-reports"
+              file-format: 'JUnitXML'
       Cache:
         #Type: S3
         #Location: !Sub "${CodeBuildOutputBucket}/cache"
