@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "CodeArtifact - Domain"
+
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-codeartifact-domain.html
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  DomainName:
+    Type: String
+    Default: demo-artifact-domain
+    Description: CodeArtifact Domain Name
+
+  DomainEncryptionKey:
+    Type: String
+    Default: "arn:aws:kms:eu-west-1:zzz:key/eee7e1ec-9c3a-44e4-9da8-9b29836df441" #aws/codeartifact" #arn:aws:kms:us-west-2:123456789012:key/12345678-9abc-def1-2345-6789abcdef12
+    Description: CodeArtifact Domain Encryption Key
+    
+Resources:
+
+  CodeArtifactDomain:
+    Type: AWS::CodeArtifact::Domain
+    Properties:
+      DomainName: !Ref DomainName
+      EncryptionKey: !Ref DomainEncryptionKey
+      PermissionsPolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Action:
+                - codeartifact:ReadFromRepository
+                - codeartifact:DescribePackageVersion
+                - codeartifact:DescribeRepository
+                - codeartifact:GetPackageVersionReadme
+                - codeartifact:GetRepositoryEndpoint
+                - codeartifact:ListPackageVersionAssets
+                - codeartifact:ListPackageVersionDependencies
+                - codeartifact:ListPackageVersions
+                - codeartifact:ListPackages
+                - codeartifact:ReadFromRepository
+              Effect: Allow
+              Principal:
+                AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              Resource: "*"
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "keyname2"
+          Value: "value2"
+
+Outputs:
+
+  CodeArtifactDomainArn:
+    Description: CodeArtifactDomain Arn
+    Value: !GetAtt CodeArtifactDomain.Arn
