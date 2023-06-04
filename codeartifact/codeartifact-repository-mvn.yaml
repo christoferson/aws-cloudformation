@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "CodeArtifact"
+
+#https://docs.aws.amazon.com/codeartifact/latest/ug/external-connection.html
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  CodeArtifactDomainName:
+    Type: String
+    Default: demo-artifact-domain
+    Description: Application Name
+
+  CodeArtifactRepositoryName:
+    Type: String
+    Default: demo-artifact-repository-mvn
+    Description: Application Name
+    
+Resources:
+
+  CodeArtifactRepository:
+    Type: AWS::CodeArtifact::Repository
+    Properties:
+      DomainName: !Ref CodeArtifactDomainName
+      RepositoryName: !Ref CodeArtifactRepositoryName
+      Description: "Demo CodeArtificat Repository"
+      #DomainOwner:
+      #PermissionsPolicyDocument:
+      ExternalConnections:
+        - public:maven-central
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "keyname2"
+          Value: "value2"
+ 
+Outputs:
+
+  CodeArtifactRepositoryArn:
+    Description: CodeArtifactRepository Arn
+    Value: !GetAtt CodeArtifactRepository.Arn
