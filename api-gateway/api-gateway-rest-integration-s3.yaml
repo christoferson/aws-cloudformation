@@ -8,29 +8,49 @@ Parameters:
     Type: "String"
     Default: "rest-proxy-int-s3"
     Description: "HTTP Api Gateway Name"
-    
+
+  ApiGatewayMethodAuthorizationType:
+    Type: "String"
+    Default: "AWS_IAM"
+    Description: "NONE | AWS_IAM | CUSTOM | COGNITO_USER_POOLS"
+
 Resources:
 
+  ApiGatewayS3ReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
 
   ApiGatewayRestApi:
     Type: "AWS::ApiGateway::RestApi"
     Properties:
       Name: !Sub "${ApiGatewayName}"
-      Description: S3 integraton REST API demo
+      Description: "S3 integraton REST API demo"
 
   ResourceFolder:
-    Type: AWS::ApiGateway::Resource
+    Type: "AWS::ApiGateway::Resource"
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
-      PathPart: '{folder}'
+      PathPart: "{folder}"
 
   ResourceItem:
     Type: AWS::ApiGateway::Resource
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       ParentId: !Ref ResourceFolder
-      PathPart: '{item}'
+      PathPart: "{item}"
 
   RootMethodGet:
     Type: AWS::ApiGateway::Method
@@ -38,11 +58,11 @@ Resources:
       RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !GetAtt ApiGatewayRestApi.RootResourceId
       HttpMethod: GET
-      AuthorizationType: AWS_IAM
+      AuthorizationType: !Ref ApiGatewayMethodAuthorizationType # NONE | AWS_IAM | CUSTOM | COGNITO_USER_POOLS
       Integration:
         Type: AWS
         IntegrationHttpMethod: GET
-        Uri: !Sub arn:aws:apigateway:${AWS::Region}:s3:path//
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path//"
         Credentials: !GetAtt ApiGatewayS3ReadOnlyRole.Arn
         IntegrationResponses:
           - StatusCode: 200
@@ -72,7 +92,7 @@ Resources:
       RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ResourceFolder
       HttpMethod: GET
-      AuthorizationType: AWS_IAM
+      AuthorizationType: !Ref ApiGatewayMethodAuthorizationType
       RequestParameters:
         method.request.path.folder: true
         method.request.header.Content-Type: true
@@ -98,7 +118,7 @@ Resources:
       RestApiId: !Ref ApiGatewayRestApi
       ResourceId: !Ref ResourceItem
       HttpMethod: GET
-      AuthorizationType: AWS_IAM
+      AuthorizationType: !Ref ApiGatewayMethodAuthorizationType
       RequestParameters:
         method.request.path.item: true
         method.request.path.folder: true
@@ -132,21 +152,7 @@ Resources:
       RestApiId: !Ref ApiGatewayRestApi
       DeploymentId: !Ref ApiGatewayDeployment
 
-  ApiGatewayS3ReadOnlyRole:
-    Type: AWS::IAM::Role
-    Properties:
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - apigateway.amazonaws.com
-          Action:
-          - sts:AssumeRole
-      Path: "/"
+
 
 Outputs:
 
