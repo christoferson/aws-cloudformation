@@ -9,11 +9,21 @@
 - HTTP_PROXY: for integrating the route or method request with an HTTP endpoint, with the client request passed through as-is. 
 - MOCK: for integrating the route or method request with API Gateway as a "loopback" endpoint without invoking any backend.
 
+### API Gateway - Authentication
+
+NONE | AWS_IAM | CUSTOM | COGNITO_USER_POOLS
+
+- https://repost.aws/knowledge-center/iam-authentication-api-gateway#
+
+----------
+
 ### API Gateway - Account Settings
 
 Account Settings e.g. IAM role that Amazon API Gateway uses to write API logs to Amazon CloudWatch Logs.
 
 [api-gateway-account](api-gateway-account.yaml)
+
+----------
 
 ### API Gateway - HTTP - Quick Integrate with existing Lambda
 
@@ -87,6 +97,8 @@ curl -X POST "https://ddd.execute-api.eu-west-1.amazonaws.com/stg/demo" -d "name
 - https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-aws-services.html
 
 [api-gateway-http-sqs](api-gateway-http-sqs.yaml)
+
+------------
 
 ## API Gateway - REST
 
@@ -265,9 +277,13 @@ Invoke: curl -X POST https://rest-id.execute-api.region.amazonaws.com/stg/demo/{
 
 [api-gateway-rest-lambda](api-gateway-rest-lambda.yaml)
 
-## API Gateway - REST - S3
+## API Gateway - REST - Integrate with S3 | [link](https://docs.aws.amazon.com/apigateway/latest/developerguide/integrating-api-with-aws-services-s3.html)
 
 Provision REST API that integrates with S3. (IntegrationType=AWS)
+
+Sample Call to download file. Note that you need to set appropriate credentials based on selected Authorization Type
+
+curl https://xxxxx.execute-api.eu-west-1.amazonaws.com/Prod/<bucket>/manifest.yaml --output manifest.yaml
 
 [api-gateway-rest-integration-s3](api-gateway-rest-integration-s3.yaml)
 
@@ -313,4 +329,5 @@ wscat -c wss://zzz.execute-api.eu-west-1.amazonaws.com/LATEST
 - CloudWatch Logs role ARN must be set in account settings to enable logging
 - Currently, an API with a protocol type of HTTP may only be associated with proxy integrations (AWS_PROXY, HTTP_PROXY) 
 - Execution failed due to configuration error: Invalid permissions on Lambda function
-  - ss
+- API Gateway REST API endpoint 403 "Missing Authentication Token" errors?
+  - https://repost.aws/knowledge-center/api-gateway-authentication-token-errors 
