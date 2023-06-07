@@ -287,6 +287,17 @@ curl https://xxxxx.execute-api.eu-west-1.amazonaws.com/Prod/<bucket>/manifest.ya
 
 [api-gateway-rest-integration-s3](api-gateway-rest-integration-s3.yaml)
 
+## API Gateway - REST - Integrate with S3 PUT
+
+Provision REST API that integrates with S3. (IntegrationType=AWS)
+
+Sample Call to put a file. Note that you need to set appropriate credentials based on selected Authorization Type
+
+curl -X PUT https://xxx.execute-api.eu-west-1.amazonaws.com/Prod/<bucket> -F "file=@./download.yaml"
+
+[api-gateway-rest-integration-s3-put](api-gateway-rest-integration-s3-put.yaml)
+
+
 ## API Gateway - WebSocket
 
 RouteSelectionExpression
