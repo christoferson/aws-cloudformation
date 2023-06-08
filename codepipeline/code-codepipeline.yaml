@@ -3,10 +3,25 @@ Description: CodePipeline
 
 Parameters:
 
-  CodeCommitRepositoryName: #Todo Add Branch Name
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  CodeCommitRepositoryName:
     Description: CodeCommit Repository Name
     Type: String
     Default: "my-repository-name"
+
+  CodeCommitRepositoryBranch:
+    Description: CodeCommit Repository Name
+    Type: String
+    Default: "main"
 
 Resources:
 
@@ -283,7 +298,7 @@ Resources:
                 Provider: CodeCommit
               Configuration:
                 RepositoryName: !Ref CodeCommitRepositoryName
-                BranchName: main #master
+                BranchName: !Ref CodeCommitRepositoryBranch #main #master
                 PollForSourceChanges: false
               RunOrder: 1
               OutputArtifacts:
