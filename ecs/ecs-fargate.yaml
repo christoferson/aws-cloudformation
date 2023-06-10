@@ -354,6 +354,8 @@ Resources:
       HealthCheckGracePeriodSeconds: 60
       #PropagateTags: SERVICE | TASK_DEFINITION
       #SchedulingStrategy: DAEMON | REPLICA
+      DeploymentController:
+         Type: ECS #CODE_DEPLOY | ECS | EXTERNAL
       Tags:
         - Key: "keyname1"
           Value: "value1"

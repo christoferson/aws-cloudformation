@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: ECS Fargate with Application Load Balancer + Target Tacking Scaling
+Description: ECS Fargate with Application Load Balancer + Target Tacking Scaling (With Service and Task)
 
 Metadata:
 
@@ -229,6 +229,20 @@ Resources:
     Type: "AWS::ECS::Cluster"
     Properties:
       ClusterName: !Sub "${ProjectName}-${ECSClusterName}"
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+      Configuration:
+        ExecuteCommandConfiguration:
+            Logging: DEFAULT
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled #enabled
       Tags:
         - Key: environment
           Value: production
@@ -339,6 +353,8 @@ Resources:
       HealthCheckGracePeriodSeconds: 60
       #PropagateTags: SERVICE | TASK_DEFINITION
       #SchedulingStrategy: DAEMON | REPLICA
+      DeploymentController:
+         Type: ECS #CODE_DEPLOY | ECS | EXTERNAL
       Tags:
         - Key: "keyname1"
           Value: "value1"
