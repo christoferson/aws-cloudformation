@@ -1,0 +1,354 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate with Application Load Balancer (With Service and Task)
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Name Prefix"
+        Parameters:
+          - ProjectName
+      - Label:
+          default: "Load Balancer Configuration"
+        Parameters:
+          - LoadBalancerName
+          - TargetGroupName
+      - Label:
+          default: "ECS Fargate Configuration"
+        Parameters:
+          - ECSClusterName
+          - ECSTaskName
+          - ECSTaskCPUUnit
+          - ECSTaskMemory
+          - ECSContainerName
+          - ECSContainerPort
+          - ECSImageName
+          - ECSServiceName
+          - ECSTaskDesiredCount
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetPublicList
+          - VpcSubnetPrivateList
+
+    ParameterLabels:
+      LoadBalancerName:
+        default: "LoadBalancerName"
+      TargetGroupName:
+        default: "TargetGroupName"
+      ECSClusterName:
+        default: "ECSClusterName"
+      ECSTaskName:
+        default: "ECSTaskName"
+      ECSTaskCPUUnit:
+        default: "ECSTaskCPUUnit"
+      ECSTaskMemory:
+        default: "ECSTaskMemory"
+      ECSContainerName:
+        default: "ECSContainerName"
+      ECSContainerPort:
+        default: "ECSContainerPort"
+      ECSImageName:
+        default: "ECSImageName"
+      ECSServiceName:
+        default: "ECSServiceName"
+      ECSTaskDesiredCount:
+        default: "ECSTaskDesiredCount"
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+
+  ProjectName:
+    Default: ecsdev
+    Type: String
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+    
+  VpcSubnetPublicList:
+    Description: Public "VpcSubnets for LoadBalancer"
+    Type: List<AWS::EC2::Subnet::Id>
+
+  VpcSubnetPrivateList:
+    Description: Public "VpcSubnets for Fargate Compute"
+    Type: List<AWS::EC2::Subnet::Id>
+
+  LoadBalancerName:
+    Type: String
+    Default: "alb"
+
+  TargetGroupName:
+    Type: String
+    Default: "tg"
+
+  ECSClusterName:
+    Type: String
+    Default: "cluster"
+
+  ECSTaskName:
+    Type: String
+    Default: "task"
+
+  ECSTaskCPUUnit:
+    AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
+    Type: String
+    Default: "256"
+
+  ECSTaskMemory:
+    AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
+    Type: String
+    Default: "512"
+
+  ECSContainerName:
+    Type: String
+    Default: "container"
+
+  ECSContainerPort:
+    Type: Number
+    Default: 80
+
+  ECSImageName:
+    Type: String
+    Default: "httpd:latest"
+
+  ECSServiceName:
+    Type: String
+    Default: "service"
+
+  ECSTaskDesiredCount:
+    Type: Number
+    Default: 1
+
+Resources:
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: "Load Balancer Security Group"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+
+  EcsServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: "Only allow inbound access to ECS from the Load Balancer"
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        IpProtocol: -1
+
+# ------------------------------------------------------------#
+#  Target Group
+# ------------------------------------------------------------#
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #Name: !Sub "${ProjectName}-${TargetGroupName}"
+      Protocol: HTTP
+      Port: !Ref ECSContainerPort
+      TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthyThresholdCount: 5
+
+# ------------------------------------------------------------#
+#  Internet ALB
+# ------------------------------------------------------------#
+  LoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Sub "${ProjectName}-${LoadBalancerName}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${LoadBalancerName}"
+      Scheme: "internet-facing"
+      LoadBalancerAttributes:
+        - Key: "deletion_protection.enabled"
+          Value: false
+        - Key: "idle_timeout.timeout_seconds"
+          Value: 60
+        #- Key: "access_logs.s3.enabled"
+        #  Value: true
+        #- Key: "access_logs.s3.bucket"
+        #  Value: !Sub "alb-log-${AWS::AccountId}"
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets: !Ref VpcSubnetPublicList
+
+  LoadBalancerListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: !Sub "${ProjectName}-${ECSClusterName}"
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+      Configuration:
+        ExecuteCommandConfiguration:
+            Logging: DEFAULT
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled #enabled
+      Tags:
+        - Key: environment
+          Value: production
+
+  ECSLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-group"
+      RetentionInDays: 1
+
+# ------------------------------------------------------------#
+#  ECS Task Execution Role
+# ------------------------------------------------------------#
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "${ProjectName}-ECSTaskExecutionRolePolicy"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+# ------------------------------------------------------------#
+#  ECS Task Role
+# ------------------------------------------------------------#
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "${ProjectName}-ECSTaskRole"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - 'ssm:GetParameters'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 'secretsmanager:GetSecretValue' 
+                Effect: Allow
+                Resource: '*' #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Action:
+                  - 'kms:Decrypt'
+                Effect: Allow
+                Resource: '*' #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      Tags: 
+        - Key: "keyname1"
+          Value: "value1"
+
+# ------------------------------------------------------------#
+#  ECS TaskDefinition
+# ------------------------------------------------------------#
+  ECSTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      Cpu: !Ref ECSTaskCPUUnit
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      Family: !Sub "${ProjectName}-${ECSTaskName}"
+      Memory: !Ref ECSTaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Sub "${ProjectName}-${ECSContainerName}"
+          Image: !Ref ECSImageName
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: !Ref ProjectName
+          MemoryReservation: 128
+          PortMappings:
+            - Protocol: tcp
+              #HostPort: !Ref ECSContainerPort
+              ContainerPort: !Ref ECSContainerPort
+          #HealthCheck
+          #Secrets
+      #PlacementConstraints
+      Tags:
+        - Key: "keyname1"
+          Value: "value1"
+
+# ------------------------------------------------------------#
+#  ECS Service
+# ------------------------------------------------------------#
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: LoadBalancerListener
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: !Ref ECSTaskDesiredCount
+      LaunchType: FARGATE
+      LoadBalancers:
+        -
+          TargetGroupArn: !Ref TargetGroup
+          ContainerPort: !Ref ECSContainerPort
+          ContainerName: !Sub "${ProjectName}-${ECSContainerName}"
+      NetworkConfiguration:
+       AwsvpcConfiguration:
+           AssignPublicIp: ENABLED
+           SecurityGroups:
+             - !Ref EcsServiceSecurityGroup
+           Subnets: !Ref VpcSubnetPrivateList
+      #ServiceName: !Sub "${ProjectName}-${ECSServiceName}"
+      TaskDefinition: !Ref ECSTaskDefinition
+      HealthCheckGracePeriodSeconds: 60
+      #PropagateTags: SERVICE | TASK_DEFINITION
+      #SchedulingStrategy: DAEMON | REPLICA
+      DeploymentController:
+         Type: ECS #CODE_DEPLOY | ECS | EXTERNAL
+      Tags:
+        - Key: "keyname1"
+          Value: "value1"
+
+Outputs:
+
+  LoadBalancerDomainName:
+    Value: !GetAtt LoadBalancer.DNSName
+
