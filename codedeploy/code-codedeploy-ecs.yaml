@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodeDeploy - Input S3 + Output ECS
+
+Parameters:
+
+  RevisionBucketName:
+    Description: Bucket containing revision
+    Type: String
+    Default: "my-bucket"
+
+  RevisionObjectKey:
+    Description: Name of the revision zip file
+    Type: String
+    Default: "code-codedeploy.zip"
+
+ 
+Resources:
+
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      #RoleName: !Sub "code-codedeploy-demo-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+        - !Ref CodeDeployServiceRolePolicy
+
+  CodeDeployServiceRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeDeploy Role ManagedPolicy"
+      #ManagedPolicyName: "code-deploy-demo-ecs-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "ecs:DescribeServices"
+              - "ecs:CreateTaskSet"
+              - "ecs:UpdateServicePrimaryTaskSet"
+              - "ecs:DeleteTaskSet"
+            Effect: Allow
+            Resource: "*"
+
+  CodeDeployAplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      #ApplicationName: "code-codedeploy-demo-ecs"
+      ComputePlatform: ECS #ComputePlatform: ECS | Lambda | Server
+      Tags:
+        - Key: environment
+          Value: stg
+
+Outputs:
+
+  CodeDeployAplicationName:
+    Value: !Ref CodeDeployAplication
+
