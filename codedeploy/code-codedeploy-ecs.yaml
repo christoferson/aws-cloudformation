@@ -13,6 +13,20 @@ Parameters:
     Type: String
     Default: "code-codedeploy.zip"
 
+  ContainerClusterName:
+    Description: "ECS Cluster Name"
+    Type: String
+    Default: "ecsstg-cluster"
+
+  ContainerServiceName:
+    Description: "ECS Cluster Service Name"
+    Type: String
+    Default: "ecs-fargate-w-test-ECSService-Cz4HPL8uww84"
+
+  LoadBalancerName:
+    Description: "LoadBalancer Name"
+    Type: String
+    Default: "ecsdev-alb"
  
 Resources:
 
@@ -57,8 +71,57 @@ Resources:
         - Key: environment
           Value: stg
 
+  CodeDeployGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployAplication
+      #DeploymentGroupName: "code-codedeploy-demo-ecs-deployment-group"
+      ServiceRoleArn: !GetAtt [CodeDeployServiceRole, Arn]
+      DeploymentConfigName: CodeDeployDefault.OneAtATime #CodeDeployDefault.OneAtATime,HalfAtATime,
+      DeploymentStyle: 
+        DeploymentType: BLUE_GREEN #BLUE_GREEN | IN_PLACE
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      Deployment: 
+        Description: "Deployment to ECS"
+        IgnoreApplicationStopFailures: true 
+        Revision: 
+          RevisionType: S3 
+          S3Location: 
+            Bucket: 
+              Ref: RevisionBucketName 
+            Key: 
+              Ref: RevisionObjectKey 
+            BundleType: Zip 
+            #ETag: 
+              #Ref: ETag 
+            #Version: 
+              #Ref: Version
+      ECSServices:
+        - ClusterName: !Ref ContainerClusterName
+          ServiceName: !Ref ContainerServiceName
+      LoadBalancerInfo:
+      #  ElbInfoList:
+      #    - Name: !Ref LoadBalancerName
+        TargetGroupInfoList: 
+          - Name: "ecs-fa-Targe-JK81T8QQHS7L" #TODO
+      BlueGreenDeploymentConfiguration:
+        DeploymentReadyOption:
+          ActionOnTimeout: CONTINUE_DEPLOYMENT #CONTINUE_DEPLOYMENT | STOP_DEPLOYMENT
+        GreenFleetProvisioningOption:
+          Action: DISCOVER_EXISTING #COPY_AUTO_SCALING_GROUP | DISCOVER_EXISTING
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE #KEEP_ALIVE | TERMINATE
+          TerminationWaitTimeInMinutes: 120 #The maximum setting is 2880 minutes (2 days).
+      #AutoRollbackConfiguration:
+      #  Enabled: true
+      #  Events: # DEPLOYMENT_FAILURE, DEPLOYMENT_STOP_ON_ALARM, or DEPLOYMENT_STOP_ON_REQUEST
+      #    - DEPLOYMENT_FAILURE 
+      #    - DEPLOYMENT_STOP_ON_ALARM
+
 Outputs:
 
   CodeDeployAplicationName:
     Value: !Ref CodeDeployAplication
 
+  CodeDeployGroupName:
+    Value: !Ref CodeDeployGroup
