@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodeDeploy - Input S3 + Output EC2
+Description: CodeDeploy - Input S3 + Output EC2/Server
 
 Parameters:
 
@@ -29,6 +29,23 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+        - !Ref CodeDeployServiceRolePolicy
+
+  CodeDeployServiceRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Description: "CodeDeploy Role ManagedPolicy"
+      #ManagedPolicyName: "code-deploy-demo-ec2-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "ecs:DescribeServices"
+            Effect: Allow
+            Resource: "*"
+      Tags:
+        - Key: "Name"
+          Value: "code-deploy-demo-ec2-policy"
 
   CodeDeployAplication:
     Type: AWS::CodeDeploy::Application
