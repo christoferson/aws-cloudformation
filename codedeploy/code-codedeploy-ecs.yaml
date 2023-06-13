@@ -61,6 +61,9 @@ Resources:
               - "ecs:DeleteTaskSet"
             Effect: Allow
             Resource: "*"
+      Tags:
+        - Key: "Name"
+          Value: "code-deploy-demo-ecs-policy"
 
   CodeDeployAplication:
     Type: AWS::CodeDeploy::Application
