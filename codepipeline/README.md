@@ -226,3 +226,9 @@ Solution: Add permission to CodeBuild Service Role.
 }
 * arn:aws:codestar-connections:region:account-id:connection/connection-id
 ```
+
+### Links 
+
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/reference-pipeline-structure.html#actions-valid-providers
+
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/reference-pipeline-structure.html#reference-action-artifacts
