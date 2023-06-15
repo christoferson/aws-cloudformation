@@ -1,5 +1,10 @@
 ## Config Cloudformation Templates
 
+
+###### Managed Rules
+
+[link] (https://docs.aws.amazon.com/config/latest/developerguide/managed-rules-by-aws-config.html)
+
 ##### Resource management
 
 - Specify the resource types you want AWS Config to record.
