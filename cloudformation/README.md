@@ -1,7 +1,7 @@
 
 ## Cloudformation
 
-## Pseudo parameters
+## Pseudo parameters | [link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html)
 
 - AWS::AccountId
 - AWS::Partition
@@ -125,6 +125,8 @@ Cause: FindInMap did not resolve any value. No defaulting.
 
 
 ## Links
+
+- [Parameters] https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html
 
 - [Anatomy](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-anatomy.html)
 
