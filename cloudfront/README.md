@@ -11,6 +11,7 @@ Provision a cloudfront showcasing multiple Origin Types
 - lambda/* Lambda Origin
 - elb/* Load Balancer Origin (http)
 
+Lambda and ELB uses OriginCustomHeaders to limit access to clients via CloudFront
 
 - [cloudfront-demo](cloudfront-demo.yaml)
 
