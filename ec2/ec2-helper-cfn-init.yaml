@@ -22,7 +22,7 @@ Parameters:
 
   InstanceMachineImageId:
     Description: AMI Id
-    Type: AWS::SSM::Parameter::Value
+    Type: "AWS::SSM::Parameter::Value<String>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
 Resources:
