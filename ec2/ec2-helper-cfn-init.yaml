@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 - Cfn Helper Script
+
+Parameters:
+
+  VpcId:
+    Type: "AWS::EC2::VPC::Id"
+    Description: VPC ID
+    
+  SubnetId:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: SubnetId
+    
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+
+  FromIpAddress:
+    Type: String
+    Description: The IP address range that can be used to SSH and HTTP to the EC2 instances
+    Default: 0.0.0.0/0
+
+  InstanceMachineImageId:
+    Description: AMI Id
+    Type: AWS::SSM::Parameter::Value
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
+Resources:
+
+  ServerInstance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      Comment: Install a simple web app
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              httpd: []
+          files:
+            /var/www/html/index.html:
+              content: !Sub |
+                <p>Hello!</p>
+              mode: '000644'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              httpd:
+                enabled: 'true'
+                ensureRunning: 'true'
+    Properties:
+      ImageId: !Ref InstanceMachineImageId
+      InstanceType: t3.micro
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      KeyName: !Ref KeyName
+      SubnetId : !Ref SubnetId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          /opt/aws/bin/cfn-init -v \
+          --stack ${AWS::StackName} \
+          --resource ServerInstance \
+          --region ${AWS::Region}
+
+  InstanceSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Enable SSH access and HTTP access on the inbound port
+      SecurityGroupIngress:
+        -
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref FromIpAddress
+        -
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref FromIpAddress
+      VpcId: !Ref VpcId
