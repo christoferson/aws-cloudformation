@@ -120,3 +120,19 @@ TODO: Add Dynamic Scaling
 
 ### TODO
 GRPC
+
+
+
+
+
+### Hekper Scripts
+
+cfn-init
+[ec2-helper-cfn-init](ec2-helper-cfn-init.yaml)
+
+cfn-signal
+
+cfn-get-metadata
+
+cfn-hup
+The cfn-hup helper is a daemon that detects changes in resource metadata and runs user-specified actions when a change is detected. This allows you to make configuration updates on your running Amazon EC2 instances through the UpdateStack API action.
