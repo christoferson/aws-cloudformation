@@ -34,6 +34,10 @@ Resources:
 
   ServerInstance:
     Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
     Metadata:
       Comment: Install a simple web app
       AWS::CloudFormation::Init:
@@ -89,6 +93,13 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
           /opt/aws/bin/cfn-init -v \
+          --stack ${AWS::StackName} \
+          --resource ServerInstance \
+          --region ${AWS::Region}
+
+          # Signal completion of the initialization. Note that the name of the resource must match the logical name of the resource
+          # Signal must be sent within the timeout specified in the Completion Timeout
+          /opt/aws/bin/cfn-signal -e $? \
           --stack ${AWS::StackName} \
           --resource ServerInstance \
           --region ${AWS::Region}
