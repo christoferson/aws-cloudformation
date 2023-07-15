@@ -25,6 +25,11 @@ Parameters:
     Type: "AWS::SSM::Parameter::Value<String>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
+  WebPageText:
+    Type: String
+    Description: WebPage Display
+    Default: "<p>Hello!</p>"
+
 Resources:
 
   ServerInstance:
@@ -39,7 +44,7 @@ Resources:
           files:
             /var/www/html/index.html:
               content: !Sub |
-                <p>Hello!</p>
+                ${WebPageText}
               mode: '000644'
               owner: root
               group: root
