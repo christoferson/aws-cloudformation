@@ -89,7 +89,20 @@ Use the following command to get the latest metadata
 /opt/aws/bin/cfn-get-metadata --stack <stack-name> --resource EC2Instance --region eu-west-1
 ```
 
-ec2-cfn-signal
+##### cfn-init 
+Executes logic defined in the metadata AWS::CloudFormation::Init. AWS::CloudFormation::Init contains statements to install packages, files, and start services.
+
+##### cfn-metadata
+Detects changes in AWS::CloudFormation::Init and applies the changes.
+
+##### cfn-signal
+Signal that the initialization is complete when CreationPolicy or WaitCondition is defined.
+
+[ec2-helper-cfn-init](ec2-helper-cfn-init.yaml)
+
+[ec2-helper-cfn-hup](ec2-helper-cfn-hup.yaml)
+
+[ec2-helper-cfn-signal](ec2-helper-cfn-signal.yaml)
 
 ### Launch Template
 
@@ -104,6 +117,8 @@ Provision Application Load Balancer in the public subnets and delegates traffic 
 TODO: Add Dynamic Scaling
 
 [ec2-alb](./ec2-alb.yaml)
+
+
 
 ### Cloudformation Documentation
 
@@ -120,12 +135,12 @@ TODO: Add Dynamic Scaling
 
 ### TODO
 GRPC
+AWS::SSM::Association
 
 
 
 
-
-### Hekper Scripts
+### Helper Scripts
 
 cfn-init
 [ec2-helper-cfn-init](ec2-helper-cfn-init.yaml)
