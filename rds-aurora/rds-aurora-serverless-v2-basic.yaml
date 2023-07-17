@@ -1,59 +1,76 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: RDS - Aurora Serverless v2 (Aurora3)
 
+# TODO: Meta
+
 Parameters:
 
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
 
-  VpcRdsSubnetIds:
-    Description: RDS VPC subnets list
+  VpcSubnetList:
+    Description: Private VpcSubnets for Web Servers
     Type: List<AWS::EC2::Subnet::Id>
-  DbClientCidr:
-    Description: DB Client CIDR Block
+
+  DatabaseClusterName:
+    Description: DatabaseClusterName
     Type: String
-    Default: 172.31.0.0/16
-  RdsDBClusterIdentifier:
-    Description: DBClusterIdentifier
-    Type: String
-    Default: aurora-sl-v2
+    Default: rdsserverlessclusterbasic
+
   MasterUsername:
     Description: MasterUsername
     Type: String
     Default: admin
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
   MasterUserPassword:
     Description: MasterUserPassword
     Type: String
     Default: password
     NoEcho: true
-  DatabaseName:
-    Description: DatabaseName
+    MinLength: '3'
+    MaxLength: '24'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+
+  DatabaseClientCidr:
+    Description: DB Client CIDR Block
     Type: String
-    Default: testdb
+    Default: 0.0.0.0/32
 
 Resources:
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties:
-      DBSubnetGroupDescription: !Sub '${AWS::StackName}-DBSubnetGroup'
-      SubnetIds: !Ref 'VpcRdsSubnetIds'
 
-  SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  DatabaseSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
     Properties:
-      VpcId: !Ref 'VpcId'
-      GroupDescription: !Sub '${AWS::StackName}-Allow MySQL-(tcp3306)'
+      #DBSubnetGroupName
+      DBSubnetGroupDescription: !Sub "rds-aurora-serverless-v2-basic-subnet-group"
+      SubnetIds: !Ref VpcSubnetList
+      Tags:
+        - 
+          Key: "Name"
+          Value: !Sub "rds-aurora-serverless-v2-basic-subnet-group"
+
+  DatabaseSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: !Sub "rds-aurora-serverless-v2-basic-sg"
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
-          CidrIp: !Ref 'DbClientCidr'
+          CidrIp: !Ref DatabaseClientCidr
 
-  DBClusterParameterGroup:
-    Type: AWS::RDS::DBClusterParameterGroup
+  DatabaseClusterParameterGroup:
+    Type: "AWS::RDS::DBClusterParameterGroup"
     Properties:
-      Description: !Sub '${AWS::StackName}-DBClusterParameterGroup'
+      DBClusterParameterGroupName: !Sub "rds-aurora-serverless-v2-basic-cluster-parameter-group"
+      Description: !Sub "rds-aurora-serverless-v2-basic-cluster-parameter-group"
       Family: aurora-mysql8.0
       Parameters:
         character_set_server: utf8
@@ -62,44 +79,57 @@ Resources:
         character_set_results: utf8
         character_set_database: utf8
         performance_schema: 1
+      Tags:
+        - 
+          Key: "Name"
+          Value: !Sub "rds-aurora-serverless-v2-basic-cluster-parameter-group"
 
-  DBParameterGroup:
-    Type: AWS::RDS::DBParameterGroup
+  DatabaseParameterGroup:
+    Type: "AWS::RDS::DBParameterGroup"
     Properties:
-      Description: !Sub '${AWS::StackName}-DBParameterGroup'
+      DBParameterGroupName: "rds-aurora-serverless-v2-basic-parameter-group"
+      Description: !Sub "rds-aurora-serverless-v2-basic-parameter-group"
       Family: aurora-mysql8.0
       Parameters:
         general_log: 0
         slow_query_log: 1
         long_query_time: 5000
         log_output: FILE
+      Tags:
+       - 
+         Key: "Name"
+         Value: !Sub "rds-aurora-serverless-v2-basic-parameter-group"
 
-  DBCluster:
-    Type: AWS::RDS::DBCluster
+  DatabaseCluster:
+    Type: "AWS::RDS::DBCluster"
     DeletionPolicy: Snapshot
     Properties:
-      DBSubnetGroupName: !Ref 'DBSubnetGroup'
+      DatabaseName: !Ref DatabaseClusterName
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
       Engine: aurora-mysql
       EngineVersion: 8.0.mysql_aurora.3.02.0
       VpcSecurityGroupIds:
-        - !Ref 'SecurityGroup'
-      DBClusterParameterGroupName: !Ref 'DBClusterParameterGroup'
-      PreferredMaintenanceWindow: Thu:18:35-Thu:19:05
-      PreferredBackupWindow: 18:05-18:35
+        - !Ref DatabaseSecurityGroup
+      DBClusterParameterGroupName: !Ref DatabaseClusterParameterGroup
+      PreferredMaintenanceWindow: Fri:20:00-Fri:22:00
+      PreferredBackupWindow: 18:00-19:00
       BackupRetentionPeriod: 7
-      DatabaseName: !Ref 'DatabaseName'
-      MasterUsername: !Ref 'MasterUsername'
-      MasterUserPassword: !Ref 'MasterUserPassword'
       ServerlessV2ScalingConfiguration: 
         MaxCapacity: 16
         MinCapacity: 0.5
+      Tags:
+        - 
+          Key: "Name"
+          Value: !Sub "rds-aurora-serverless-v2-basic-cluster"
 
-  DBInstance1:
-    Type: AWS::RDS::DBInstance
+  DatabaseInstance1:
+    Type: "AWS::RDS::DBInstance"
     Properties:
-      DBClusterIdentifier: !Ref 'DBCluster'
+      DBClusterIdentifier: !Ref DatabaseCluster
       DBInstanceClass: db.serverless
-      DBParameterGroupName: !Ref 'DBParameterGroup'
+      DBParameterGroupName: !Ref DatabaseParameterGroup
       Engine: aurora-mysql
       EnablePerformanceInsights: true
       PreferredMaintenanceWindow: Thu:19:05-Thu:19:35
@@ -108,13 +138,17 @@ Resources:
         - 0
         - !GetAZs
           Ref: AWS::Region
-
-  DBInstance2:
-    Type: AWS::RDS::DBInstance
+      Tags:
+        - 
+          Key: "Name"
+          Value: !Sub "rds-aurora-serverless-v2-db-instance-1"
+          
+  DatabaseInstance2:
+    Type: "AWS::RDS::DBInstance"
     Properties:
-      DBClusterIdentifier: !Ref 'DBCluster'
+      DBClusterIdentifier: !Ref DatabaseCluster
       DBInstanceClass: db.serverless
-      DBParameterGroupName: !Ref 'DBParameterGroup'
+      DBParameterGroupName: !Ref DatabaseParameterGroup
       Engine: aurora-mysql
       EnablePerformanceInsights: true
       PreferredMaintenanceWindow: Thu:19:05-Thu:19:35
@@ -123,3 +157,7 @@ Resources:
         - 1
         - !GetAZs
           Ref: AWS::Region
+      Tags:
+        - 
+          Key: "Name"
+          Value: !Sub "rds-aurora-serverless-v2-db-instance-2"
