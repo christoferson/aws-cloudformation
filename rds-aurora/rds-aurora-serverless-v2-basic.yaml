@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RDS - Aurora Serverless v2 (Aurora3)
+
+Parameters:
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcRdsSubnetIds:
+    Description: RDS VPC subnets list
+    Type: List<AWS::EC2::Subnet::Id>
+  DbClientCidr:
+    Description: DB Client CIDR Block
+    Type: String
+    Default: 172.31.0.0/16
+  RdsDBClusterIdentifier:
+    Description: DBClusterIdentifier
+    Type: String
+    Default: aurora-sl-v2
+  MasterUsername:
+    Description: MasterUsername
+    Type: String
+    Default: admin
+  MasterUserPassword:
+    Description: MasterUserPassword
+    Type: String
+    Default: password
+    NoEcho: true
+  DatabaseName:
+    Description: DatabaseName
+    Type: String
+    Default: testdb
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub '${AWS::StackName}-DBSubnetGroup'
+      SubnetIds: !Ref 'VpcRdsSubnetIds'
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: !Sub '${AWS::StackName}-Allow MySQL-(tcp3306)'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref 'DbClientCidr'
+
+  DBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: !Sub '${AWS::StackName}-DBClusterParameterGroup'
+      Family: aurora-mysql8.0
+      Parameters:
+        character_set_server: utf8
+        character_set_client: utf8
+        character_set_connection: utf8
+        character_set_results: utf8
+        character_set_database: utf8
+        performance_schema: 1
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Sub '${AWS::StackName}-DBParameterGroup'
+      Family: aurora-mysql8.0
+      Parameters:
+        general_log: 0
+        slow_query_log: 1
+        long_query_time: 5000
+        log_output: FILE
+
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Snapshot
+    Properties:
+      DBSubnetGroupName: !Ref 'DBSubnetGroup'
+      Engine: aurora-mysql
+      EngineVersion: 8.0.mysql_aurora.3.02.0
+      VpcSecurityGroupIds:
+        - !Ref 'SecurityGroup'
+      DBClusterParameterGroupName: !Ref 'DBClusterParameterGroup'
+      PreferredMaintenanceWindow: Thu:18:35-Thu:19:05
+      PreferredBackupWindow: 18:05-18:35
+      BackupRetentionPeriod: 7
+      DatabaseName: !Ref 'DatabaseName'
+      MasterUsername: !Ref 'MasterUsername'
+      MasterUserPassword: !Ref 'MasterUserPassword'
+      ServerlessV2ScalingConfiguration: 
+        MaxCapacity: 16
+        MinCapacity: 0.5
+
+  DBInstance1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref 'DBCluster'
+      DBInstanceClass: db.serverless
+      DBParameterGroupName: !Ref 'DBParameterGroup'
+      Engine: aurora-mysql
+      EnablePerformanceInsights: true
+      PreferredMaintenanceWindow: Thu:19:05-Thu:19:35
+      PromotionTier: 0
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+
+  DBInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref 'DBCluster'
+      DBInstanceClass: db.serverless
+      DBParameterGroupName: !Ref 'DBParameterGroup'
+      Engine: aurora-mysql
+      EnablePerformanceInsights: true
+      PreferredMaintenanceWindow: Thu:19:05-Thu:19:35
+      PromotionTier: 1
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
