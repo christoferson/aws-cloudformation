@@ -24,6 +24,7 @@ Parameters:
     Description: AMI Id
     Type: "AWS::SSM::Parameter::Value<String>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
   WebPageText:
     Type: String
     Description: WebPage Display
@@ -55,7 +56,13 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
+          echo 'sleeping...'
+          sleep 30s
+          # return status 0 with message cf-success-signal
+          # WaitHandle is the http cloudformation callback url. callback url is secured by sigv4
+          echo 'initiate signal complete'
           /opt/aws/bin/cfn-signal -e 0 -r 'cf-success-signal' '${MasterWaitHandle}'
+          echo 'signal sent'
 
   MasterWaitHandle:
     Type: "AWS::CloudFormation::WaitConditionHandle"
@@ -68,12 +75,12 @@ Resources:
       Timeout: "300"
       Count: 1
 
-          
+  # Server Instance will wait for the Master Instance WaitCondition to be flagged complete. DependsOn: MasterWaitCondition
   ServerInstance:
     Type: AWS::EC2::Instance
     DependsOn: MasterWaitCondition
     Metadata:
-      Comment: Install a simple web app
+      Comment: Wait for Master Server Instance to complete
       AWS::CloudFormation::Init:
         config:
           packages:
@@ -122,3 +129,11 @@ Resources:
           ToPort: 80
           CidrIp: !Ref FromIpAddress
       VpcId: !Ref VpcId
+
+Outputs:
+
+  ServerInstanceMasterPublicIp:
+    Value: !GetAtt ServerInstanceMaster.PublicIp
+
+  ServerInstancePublicIp:
+    Value: !GetAtt ServerInstance.PublicIp
