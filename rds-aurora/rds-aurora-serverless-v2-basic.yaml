@@ -1,7 +1,28 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: RDS - Aurora Serverless v2 (Aurora3)
 
-# TODO: Meta
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+      -
+        Label:
+          default: "Database Configuration"
+        Parameters:
+          - DatabaseClusterName
+          - MasterUsername
+          - MasterUserPassword
+      -
+        Label:
+          default: "Security Configuration"
+        Parameters:
+          - DatabaseClientCidr
 
 Parameters:
 
@@ -65,7 +86,10 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           CidrIp: !Ref DatabaseClientCidr
-
+      Tags:
+        - Key: Name
+          Value: !Sub "rds-aurora-serverless-v2-basic-sg"
+          
   DatabaseClusterParameterGroup:
     Type: "AWS::RDS::DBClusterParameterGroup"
     Properties:
@@ -119,6 +143,9 @@ Resources:
       ServerlessV2ScalingConfiguration: 
         MaxCapacity: 16
         MinCapacity: 0.5
+      EnableHttpEndpoint: true # Enable Data API for Query Editor
+      EnableCloudwatchLogsExports: # audit, error, general, slowquery
+        - "error"
       Tags:
         - 
           Key: "Name"
@@ -161,3 +188,11 @@ Resources:
         - 
           Key: "Name"
           Value: !Sub "rds-aurora-serverless-v2-db-instance-2"
+
+Outputs:
+
+  DatabaseClusterEndpointAddress:
+    Value: !GetAtt DatabaseCluster.Endpoint.Address
+
+  DatabaseClusterReadEndpointAddress:
+    Value: !GetAtt DatabaseCluster.ReadEndpoint.Address
