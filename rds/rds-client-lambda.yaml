@@ -53,6 +53,17 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole #Allows lambda to create, delete, describe network interfaces
         - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: root # Allow to connect via RDS Proxy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource: "*"
+                  #- !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:${DBProxyId2}/${DBMasterUsername}"
+                Effect: Allow
+                Action:
+                  - rds-db:connect
+
 
   LambdaFunction:
     Type: AWS::Lambda::Function
