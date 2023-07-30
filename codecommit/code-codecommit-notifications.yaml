@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CodeCommit"
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Code Configuration"
+        Parameters:
+          - Application
+          - RepositoryName
+          - RepositoryDescription
+    ParameterLabels:
+      RepositoryName:
+        default: "Repository Name"
+      RepositoryDescription:
+        default: "Reporistory Description"
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  RepositoryName:
+    Type: "String"
+    Default: "code-repository-demo"
+    Description: "Code Commit Repository Name"
+
+  RepositoryDescription:
+    Type: "String"
+    Default: "Code Repository Demo"
+    Description: "Code Commit Repository Description"
+    
+Resources:
+
+  CodeCommitRepository:
+    Type: "AWS::CodeCommit::Repository"
+    DeletionPolicy: Retain # Delete Retain
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      RepositoryDescription: !Ref RepositoryDescription
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Name"
+          Value: !Ref RepositoryName
+
+Outputs:
+
+  CodeCommitRepositoryArn:
+    Value: !GetAtt CodeCommitRepository.Arn
+
+  CodeCommitRepositoryCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
