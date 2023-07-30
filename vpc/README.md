@@ -42,6 +42,12 @@ Provision a VPC FlowLog and send logs to Cloudwatch.
 
 [vpc-flowlogs-cw](vpc-flowlogs-cw.yaml)
 
+### VPC Prefix List
+
+VPC Prefix List
+
+[vpc-prefixlist](vpc-prefixlist.yaml)
+
 ### TODO
 3 Public Private Subnets
 NAT or NOT
@@ -57,3 +63,5 @@ DestinationOptions is not supported when LogDestinationType is cloud-watch-logs
 ### References
 
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-flowlog.html#cfn-ec2-flowlog-destinationoptions
+
+- https://www.site24x7.com/tools/ipv4-subnetcalculator.html

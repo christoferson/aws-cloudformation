@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'VPC with Public Subnets only and spans 2 Availability Zones'
+Description: "VPC with Public Subnets Only. Spans 2 Availability Zones"
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -49,17 +49,21 @@ Parameters:
 
 Resources:
 
-  VPC:
+  Vpc:
     Type: "AWS::EC2::VPC"
     Properties:
       CidrBlock: !Ref VpcBlock
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      InstanceTenancy: "default"
+      EnableDnsSupport: true #Enabled by default.
+      EnableDnsHostnames: true #Disabled by default for nondefault VPCs.
+      InstanceTenancy: "default" #dedicated | default | host
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc"
-
+      - Key: Application
+        Value: !Sub "${Application}"
+      - Key: Environment
+        Value: !Sub "${Environment}"
+                
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
@@ -70,13 +74,13 @@ Resources:
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
     Type: "AWS::EC2::RouteTable"
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
       - Key: Description
         Value: Public Subnet Route Table
@@ -98,7 +102,7 @@ Resources:
     Metadata:
       Comment: Public Subnet 01
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
@@ -118,7 +122,7 @@ Resources:
     Metadata:
       Comment: Public Subnet 02
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
@@ -148,16 +152,16 @@ Resources:
 Outputs:
 
   VpcId:
-    Description: VPC ID
-    Value: !Ref "VPC"
+    Description: Vpc ID
+    Value: !Ref "Vpc"
 
   VpcDefaultNetworkAcl:
-    Description: The ID of the default network ACL for the VPC.
-    Value: !GetAtt VPC.DefaultNetworkAcl
+    Description: The ID of the default network ACL for the Vpc.
+    Value: !GetAtt Vpc.DefaultNetworkAcl
 
   VpcDefaultSecurityGroup:
-    Description: The ID of the default security group for the VPC. 
-    Value: !GetAtt VPC.DefaultSecurityGroup
+    Description: The ID of the default security group for the Vpc. 
+    Value: !GetAtt Vpc.DefaultSecurityGroup
 
   PublicSubnet01Id:
     Description: Public Subnet 1 ID
