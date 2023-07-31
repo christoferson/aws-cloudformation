@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "CodeCommit"
+Description: "CodeCommit - Triggers - SNS"
 
 Metadata:
 
@@ -42,11 +42,24 @@ Resources:
     Properties:
       RepositoryName: !Ref RepositoryName
       RepositoryDescription: !Ref RepositoryDescription
+      Triggers:
+        - Name: mtrigger
+          CustomData: foobar
+          DestinationArn: !Ref CodeCommitSnsTopic
+          Branches:
+            - dev
+          Events:
+            - all
       Tags:
         - Key: "Application"
           Value: !Ref Application
         - Key: "Name"
           Value: !Ref RepositoryName
+
+  CodeCommitSnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "CodeCommit Notifications Topic"
 
 Outputs:
 
