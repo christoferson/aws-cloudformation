@@ -224,7 +224,12 @@ Resources:
                   "Message": "Batch job submitted through Step Functions failed",
                   "TopicArn": "${SNS_FAIL}"
                 },
-                "End": true
+                "Next": "Complete As Failed"
+              },
+              "Complete As Failed": {
+                "Type": "Fail",
+                "Cause": "StepFunctionFailed",
+                "Error": "ErrorA"
               }
             }
           }
