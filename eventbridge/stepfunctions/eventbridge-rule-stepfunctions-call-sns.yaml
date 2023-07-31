@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (Batch) - Call SNS
+
+# Target SNS Topic must define AWS::SNS::TopicPolicy to permit events.amazonaws.com to publish message
+# TODO: Check if we need AWS::SNS::TopicPolicy here. Assume source SNS has it.
+
+Metadata:
+
+  StackVersion: 1
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label: 
+          default: "Source Configuration"
+        Parameters: 
+          - JobDefinitionArn
+      - Label: 
+          default: "Target Configuration"
+        Parameters: 
+          - SnsTopicArn
+    ParameterLabels: 
+      BucketArn: 
+        Default: "JobDefinitionArn"
+        MinLength: 5
+        MaxLength: 124
+        
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  JobDefinitionArn:
+    Type: "String"
+    Default: "arn:aws:batch:us-east-1:900000000:job-definition/BatchJobDefinition-10e963866c726AA"
+    Description: "Arn of the Target Job Definition"
+
+  SnsTopicArn:
+    Type: "String"
+    Default: "arn:aws:sns:us-east-1:9000000000:topic"
+    Description: "Arn of the Target Sns Topic"
+
+Resources:
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "event-bridge-role"
+      Description: !Sub "Event Bridge Role - Batch Call SNS"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref EventBridgeRolePolicy
+        #- arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application      
+        - Key: "Environment"
+          Value: !Ref Environment
+        - Key: "name"
+          Value: "event-bridge-role-batch-call-sns"
+
+  EventBridgeRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Event Bridge ManagedPolicy - Batch Call SNS"
+      #ManagedPolicyName: "event-bridge-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'     
+
+  SnsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SnsTopicArn
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "events.amazonaws.com"
+            Action: 
+              - "sns:Publish"
+            Resource: !Ref SnsTopicArn
+
+  EventBridgeRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-batch-call-sns
+      Description: "Event Bridge Rule Batch Call SNS"
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.batch
+        detail-type:
+          - "Batch Job State Change"
+        detail:
+          status: # SUBMITTED PENDING RUNNABLE STARTING RUNNING SUCCEEDED FAILED
+            - "FAILED"
+            - "SUCCEEDED"
+          jobDefinition:
+            - prefix: !Sub "${JobDefinitionArn}"
+      State: "ENABLED"
+      RoleArn: !GetAtt EventBridgeRole.Arn
+      Targets:
+        - 
+          Arn: !Ref SnsTopicArn
+          Id: "TargetSNS"
+          #RoleArn : Not Supported. Use Resource Policy AWS::SNS::TopicPolicy
+          InputTransformer:
+            InputPathsMap:
+              JobDefinition: $.detail.jobDefinition
+              JobId: $.detail.jobId
+              JobName: $.detail.jobName
+              JobQueue: $.detail.jobQueue
+              Status: $.detail.status
+              Time: $.time
+            InputTemplate: |-
+              {
+                "Time": <Time>,
+                "JobDefinition": <JobDefinition>,
+                "Status": <Status>,
+                "JobName": <JobName>,
+                "JobId": <JobId>,
+                "JobQueue": <JobQueue>
+              }
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600 #86400
+            MaximumRetryAttempts: 1 #185
+          #DeadLetterConfig:
+          #   Arn: xx
+
+Outputs:
+
+  EventBridgeRuleName:
+    Value: !Ref EventBridgeRule
