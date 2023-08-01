@@ -60,6 +60,10 @@ Use ContainerOverrides to pass parameters to the Batch process. [link](https://d
 
 [step-functions-std-batch](step-functions-std-batch.yaml)
 
+### Standard - Step Functions - Sequence of Batch
+
+[step-functions-std-batch-multiphase](step-functions-std-batch-multiphase.yaml)
+
 ### Standard - Step Functions - Sequence of Lambda
 
 Provision Step Function that calls several Lambda in sequence.
@@ -192,3 +196,5 @@ Parameters in Step Functions are expressed in PascalCase, even when the native s
 ### TODO
 
 - ContainerOverrides, Batch, Env Vars
+
+- https://aws.amazon.com/jp/blogs/developer/handling-errors-retries-and-adding-alerting-to-step-function-state-machine-executions/
