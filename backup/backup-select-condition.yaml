@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backup - Scheduled - Resource Selection By Conditions
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Backup Configuration"
+        Parameters:
+          - BackupName
+          - ScheduleExpressionCron
+      -
+        Label:
+          default: "Resource Selection Configuration"
+        Parameters:
+          - SelectionTagKey
+          - SelectionTagValue
+
+Parameters:
+
+  BackupName:
+    Description: Backup plan name
+    Type: String
+    Default: "backup-condition"
+
+  ScheduleExpressionCron:
+    Description: type the cron.
+    Type: String
+    Default: cron(0 19 25 * ? *)
+
+  SelectionTagKey:
+    Description: TagKey of Resource to backup
+    Type: String
+    Default: Environment
+
+  SelectionTagValue:
+    Description: TagValue of Resource to backup
+    Type: String
+    Default: production
+
+Resources:
+
+  BackupServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: AWSBackupDefaultServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: backup.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+      - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      Path: "/"
+      Tags:
+        - Key: 'Name'
+          Value: 'backup-service-role'
+
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties: 
+      BackupPlan: 
+        BackupPlanName: !Sub "${BackupName}-plan"
+        BackupPlanRule: 
+          - RuleName: !Sub "${BackupName}-rule"
+            #EnableContinuousBackup: true
+            TargetBackupVault: "Default"
+            ScheduleExpression: !Ref ScheduleExpressionCron
+            CompletionWindowMinutes: 720
+            StartWindowMinutes: 60
+            Lifecycle:
+              #MoveToColdStorageAfterDays: 
+              DeleteAfterDays: 14
+
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: !Sub "${BackupName}-selection"
+        IamRoleArn: !GetAtt BackupServiceRole.Arn
+        Conditions: { "StringEquals": [{ "ConditionKey": "aws:ResourceTag/CreatedByCryo", "ConditionValue": "true" }] }
+        ListOfTags:
+         - ConditionType: "STRINGEQUALS"
+           ConditionKey: !Ref SelectionTagKey
+           ConditionValue: !Ref SelectionTagValue
+        #NotResources:
+        #  - xxx
+
+Outputs:
+
+  BackupPlanArn:
+    Value: !GetAtt BackupPlan.BackupPlanArn
+
+  BackupPlanId:
+    Value: !GetAtt BackupPlan.BackupPlanId
+
+  BackupPlanVersionId:
+    Value: !GetAtt BackupPlan.VersionId
+
+  BackupSelectionId:
+    Value: !GetAtt BackupSelection.Id
+
+  BackupSelectionSelectionId:
+    Value: !GetAtt BackupSelection.SelectionId
