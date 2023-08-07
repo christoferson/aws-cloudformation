@@ -85,12 +85,15 @@ Resources:
       BackupSelection:
         SelectionName: !Sub "${BackupName}-selection"
         IamRoleArn: !GetAtt BackupServiceRole.Arn
-        ListOfTags:
+        ListOfTags: # When you specify more than one condition, you assign all resources that match AT LEAST ONE condition (using OR logic).
          - ConditionType: "STRINGEQUALS"
            ConditionKey: !Ref SelectionTagKey
            ConditionValue: !Ref SelectionTagValue
-        #NotResources:
-        #  - xxx
+         - ConditionType: "STRINGEQUALS"
+           ConditionKey: "Environment"
+           ConditionValue: "ProductionSpecial"
+        #NotResources: #A list of Amazon Resource Names (ARNs) to exclude from a backup plan.
+        #  - arn:aws:dynamodb:*:927000065000:table/Foo
 
 Outputs:
 
