@@ -14,7 +14,11 @@ Backup - Scheduled - Resource Selection By Tag
 
 [backup-select-tag](backup-select-tag.yaml)
 
-### Backup - Selection Resource
+### Backup - Selection By Specific Resource Arn
+
+Provision Backup Service that Selects Target via Specified Arn
+
+Backup - Scheduled - Resource Selection By Arn
 
 [backup-select-resource](backup-select-resource.yaml)
 

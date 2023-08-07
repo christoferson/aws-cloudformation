@@ -63,14 +63,15 @@ Resources:
         BackupPlanName: !Sub "${BackupName}-plan"
         BackupPlanRule: 
           - RuleName: !Sub "${BackupName}-rule"
-            #EnableContinuousBackup: true
+            EnableContinuousBackup: true
             TargetBackupVault: "Default"
             ScheduleExpression: !Ref ScheduleExpressionCron
             CompletionWindowMinutes: 720
             StartWindowMinutes: 60
             Lifecycle:
-              #MoveToColdStorageAfterDays: 
+              #MoveToColdStorageAfterDays: 7 
               DeleteAfterDays: 14
+      BackupPlanTags: { "BackupName": !Sub "${BackupName}" }
 
   BackupSelection:
     Type: AWS::Backup::BackupSelection
