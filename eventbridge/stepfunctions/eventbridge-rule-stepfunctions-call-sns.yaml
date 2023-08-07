@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EventBridge Rule (Batch) - Call SNS
+Description: EventBridge Rule (StepFunctions) - Call SNS
 
 # Target SNS Topic must define AWS::SNS::TopicPolicy to permit events.amazonaws.com to publish message
 # TODO: Check if we need AWS::SNS::TopicPolicy here. Assume source SNS has it.
@@ -19,14 +19,14 @@ Metadata:
       - Label: 
           default: "Source Configuration"
         Parameters: 
-          - JobDefinitionArn
+          - StateMachineArn
       - Label: 
           default: "Target Configuration"
         Parameters: 
           - SnsTopicArn
     ParameterLabels: 
       BucketArn: 
-        Default: "JobDefinitionArn"
+        Default: "StateMachineArn"
         MinLength: 5
         MaxLength: 124
         
@@ -43,14 +43,14 @@ Parameters:
     Default: dev
     Description: Environment
 
-  JobDefinitionArn:
+  StateMachineArn:
     Type: "String"
-    Default: "arn:aws:batch:us-east-1:900000000:job-definition/BatchJobDefinition-10e963866c726AA"
-    Description: "Arn of the Target Job Definition"
+    Default: "arn:aws:states:us-west-1:30950454358:stateMachine:StateMachine-zPlfXPRHlJX5"
+    Description: "Arn of the Target StateMachine"
 
   SnsTopicArn:
     Type: "String"
-    Default: "arn:aws:sns:us-east-1:9000000000:topic"
+    Default: "arn:aws:sns:us-west-1:30950454358:my-topic"
     Description: "Arn of the Target Sns Topic"
 
 Resources:
@@ -59,7 +59,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       #RoleName: !Sub "event-bridge-role"
-      Description: !Sub "Event Bridge Role - Batch Call SNS"
+      Description: !Sub "Event Bridge Role - StepFunctions Call SNS"
       Path: /
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -78,12 +78,12 @@ Resources:
         - Key: "Environment"
           Value: !Ref Environment
         - Key: "name"
-          Value: "event-bridge-role-batch-call-sns"
+          Value: "event-bridge-role-stepfunction-call-sns"
 
   EventBridgeRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "Event Bridge ManagedPolicy - Batch Call SNS"
+      Description: "Event Bridge ManagedPolicy - StepFunction Call SNS"
       #ManagedPolicyName: "event-bridge-policy"
       PolicyDocument:
         Version: 2012-10-17
@@ -93,7 +93,7 @@ Resources:
               - 'logs:CreateLogStream'
               - 'logs:PutLogEvents'
             Effect: Allow
-            Resource: '*'     
+            Resource: '*'
 
   SnsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
@@ -114,19 +114,21 @@ Resources:
     Type: AWS::Events::Rule
     Properties: 
       #Name: eventbridge-rule-batch-call-sns
-      Description: "Event Bridge Rule Batch Call SNS"
+      Description: "Event Bridge Rule StepFunction Call SNS"
       EventBusName: default
       EventPattern:
         source:
-          - aws.batch
+          - aws.states
         detail-type:
-          - "Batch Job State Change"
+          - "Step Functions Execution Status Change"
         detail:
-          status: # SUBMITTED PENDING RUNNABLE STARTING RUNNING SUCCEEDED FAILED
+          status: # RUNNING, SUCCEEDED, FAILED, TIMED_OUT, ABORTED
             - "FAILED"
             - "SUCCEEDED"
-          jobDefinition:
-            - prefix: !Sub "${JobDefinitionArn}"
+            - "TIMED_OUT"
+            - "ABORTED"
+          stateMachineArn:
+            - prefix: !Sub "${StateMachineArn}"
       State: "ENABLED"
       RoleArn: !GetAtt EventBridgeRole.Arn
       Targets:
@@ -136,20 +138,22 @@ Resources:
           #RoleArn : Not Supported. Use Resource Policy AWS::SNS::TopicPolicy
           InputTransformer:
             InputPathsMap:
-              JobDefinition: $.detail.jobDefinition
-              JobId: $.detail.jobId
-              JobName: $.detail.jobName
-              JobQueue: $.detail.jobQueue
+              StateMachine: $.detail.stateMachineArn
+              Execution: $.detail.executionArn
+              Name: $.detail.name
               Status: $.detail.status
+              StartDate: $.detail.startDate
+              StopDate: $.detail.stopDate
               Time: $.time
             InputTemplate: |-
               {
                 "Time": <Time>,
-                "JobDefinition": <JobDefinition>,
-                "Status": <Status>,
-                "JobName": <JobName>,
-                "JobId": <JobId>,
-                "JobQueue": <JobQueue>
+                "StartDate": <StartDate>,
+                "StopDate": <StopDate>,
+                "StateMachine": <StateMachine>,
+                "Execution": <Execution>,
+                "Name": <Name>,
+                "Status": <Status>
               }
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600 #86400
