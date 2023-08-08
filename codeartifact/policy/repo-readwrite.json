@@ -1,0 +1,25 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "codeartifact:DescribePackageVersion",
+                "codeartifact:DescribeRepository",
+                "codeartifact:GetPackageVersionReadme",
+                "codeartifact:GetRepositoryEndpoint",
+                "codeartifact:ListPackageVersionAssets",
+                "codeartifact:ListPackageVersionDependencies",
+                "codeartifact:ListPackageVersions",
+                "codeartifact:ListPackages",
+                "codeartifact:PublishPackageVersion",
+                "codeartifact:PutPackageMetadata",
+                "codeartifact:ReadFromRepository"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Principal": {
+                "AWS": "arn:aws:iam::123456789012:root"
+            }
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "codeartifact:AssociateExternalConnection",
+                "codeartifact:CopyPackageVersions",
+                "codeartifact:DeletePackageVersions",
+                "codeartifact:DeletePackage",
+                "codeartifact:DeleteRepository",
+                "codeartifact:DeleteRepositoryPermissionsPolicy",
+                "codeartifact:DescribePackageVersion",
+                "codeartifact:DescribeRepository",
+                "codeartifact:DisassociateExternalConnection",
+                "codeartifact:DisposePackageVersions",
+                "codeartifact:GetPackageVersionReadme",
+                "codeartifact:GetRepositoryEndpoint",
+                "codeartifact:ListPackageVersionAssets",
+                "codeartifact:ListPackageVersionDependencies",
+                "codeartifact:ListPackageVersions",
+                "codeartifact:ListPackages",
+                "codeartifact:PublishPackageVersion",
+                "codeartifact:PutPackageMetadata",
+                "codeartifact:PutRepositoryPermissionsPolicy",
+                "codeartifact:ReadFromRepository",
+                "codeartifact:UpdatePackageVersionsStatus",
+                "codeartifact:UpdateRepository"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Principal": {
+                "AWS": "arn:aws:iam::123456789012:root"
+            }
+        }
+    ]
+}
