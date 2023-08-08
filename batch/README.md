@@ -84,6 +84,8 @@ https://aws.amazon.com/premiumsupport/knowledge-center/ecs-fargate-mount-efs-con
 
 [batch-fargate-efs](batch-fargate-efs.yaml)
 
+-----------------------------------------------------------------------------------------------------------------------
+
 ### Errors
 
 #### ECS Instance Role should be an ECS Instance Profile ARN
@@ -107,6 +109,7 @@ Compute environment  desiredvCpus minvCpus
 
 Set PlatformVersion: 1.4.0. Error occurs if set to LATEST
 
+-----------------------------------------------------------------------------------------------------------------------
 
 ### Resources
 
