@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "AWS Organizations - Organization Units"
+
+# To update the ParentId parameter value, you must first remove all accounts attached to the organizational unit (OU). 
+# OUs can't be moved within the organization with accounts still attached.
+
+Parameters:
+
+  OrganizationRoot:
+    Description: "Organization ID"
+    Type: "String"
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    ConstraintDescription: "Begins with r- followed by from 4 to 32 lowercase letters or digits."
+    Default: "r-foobar"
+
+Resources:
+
+  InfrastructureOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Properties:
+      Name: Infrastructure
+      ParentId: !Ref OrganizationRoot
+      Tags:
+      - Key: "Name"
+        Value: "InfrastructureOU"
+
+  SecurityOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Properties:
+      Name: Security
+      ParentId: !Ref OrganizationRoot
+      Tags:
+        - Key: "Name"
+          Value: "SecurityOU"
+              
+  InfrastructureProductionOU:
+    DependsOn: InfrastructureOU
+    Type: AWS::Organizations::OrganizationalUnit 
+    Properties:
+      Name: Infrastructure Production Unit
+      ParentId: !Ref InfrastructureOU
+      Tags:
+        - Key: "Name"
+          Value: "InfrastructureProductionOU"
+          
+Outputs:
+
+  InfrastructureOUId:
+    Value: !Ref InfrastructureOU
+
+  SecurityOUId:
+    Value: !Ref SecurityOU
