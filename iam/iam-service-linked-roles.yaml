@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'IAM Service Linked Role'
+
+# To attach a policy to this service-linked role, you must make the request using the AWS service that depends on this role.
+# https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-services-that-work-with-iam.html
+
+Resources:
+
+  ServiceLinkedRoleForConfig:
+    Type: AWS::IAM::ServiceLinkedRole
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties: 
+      AWSServiceName: config.amazonaws.com
+      Description: A service-linked role required for AWS Config to access your resources.
+
+  ServiceLinkedRoleForConfigRemediation:
+    Type: AWS::IAM::ServiceLinkedRole
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties: 
+      AWSServiceName: remediation.config.amazonaws.com 
+      Description: A service-linked role required for AWS Config Remediation to access your resources.
+
+Outputs:
+
+  ServiceLinkedRoleForConfigRoleName:
+    Value: !Ref ServiceLinkedRoleForConfig
+
+  ServiceLinkedRoleForConfigRemediationRoleName:
+    Value: !Ref ServiceLinkedRoleForConfigRemediation
+ 

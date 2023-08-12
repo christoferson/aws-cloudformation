@@ -8,6 +8,14 @@ Provision a Role with Role Policy
 
 [iam-role](iam-role.yaml)
 
+### IAM - Service Linked Role
+
+Provision a Service Linked Role. Example uses AWS Config.
+
+List of service supported. [link](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-services-that-work-with-iam.html)
+
+[iam-service-linked-roles](iam-service-linked-roles.yaml)
+
 ### IAM - User Group
 
 Provision a User Group with User Group Policy
@@ -30,12 +38,18 @@ Provision a custom managed policy with Policy Variables.
 
 - ${!aws:username}
 
+- ${!aws:PrincipalTag}
+
 [iam-policy-variable](iam-policy-variable.yaml)
 
 ### Errors
 
 - Unresolved resource dependencies [aws:username] in the Resources block of the template
   Use ${!aws:username} instead of ${aws:username} arn:aws:iam::${AWS::AccountId}:user/${!aws:username}
+  
+### Notes
+
+Groups are not true identities and cannot be referenced in policy  
 
 ### Resources
 
