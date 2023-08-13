@@ -13,12 +13,16 @@ s3-bucket
 
 [s3-bucket](s3-bucket.yaml)
 
-### S3 Encryption 
+### S3 Encryption
 
-- SSEAlgorithm {AES256 | aws:kms}
+- SSEAlgorithm {AES256 | aws:kms | aws:kms:dsse}
 - AES256 = S3-managed keys (SSE-S3)
 
 - arn:aws:kms:<region>:<account>:alias/aws/s3
+
+[s3-bucket-encryption](s3-bucket-encryption.yaml)
+
+[doc](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingDSSEncryption.html) | [cf](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-serversideencryptionbydefault.html)
 
 ### S3 Object Lambda 
 

@@ -43,7 +43,7 @@ Resources:
       BucketEncryption: # SSE-KMS
         ServerSideEncryptionConfiguration: 
         - ServerSideEncryptionByDefault:
-            SSEAlgorithm: 'aws:kms'
+            SSEAlgorithm: 'aws:kms' #AES256 | aws:kms | aws:kms:dsse
             KMSMasterKeyID: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
           BucketKeyEnabled: true
       OwnershipControls:
