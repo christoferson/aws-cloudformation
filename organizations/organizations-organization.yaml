@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "AWS Organizations - Organization Units"
+
+Resources:
+
+  Organization:
+    DeletionPolicy: Retain
+    Type: AWS::Organizations::Organization
+    Properties:
+      FeatureSet: ALL
+
+Outputs:
+
+  OrganizationArn:
+    Value: !GetAtt Organization.Arn
+
+  OrganizationId:
+    Value: !GetAtt Organization.Id
+    
+  OrganizationManagementAccountArn:
+    Value: !GetAtt Organization.ManagementAccountArn
+    
+  OrganizationManagementAccountEmail:
+    Value: !GetAtt Organization.ManagementAccountEmail
+
+  OrganizationManagementAccountId:
+    Value: !GetAtt Organization.ManagementAccountId
+
+  OrganizationRootId:
+    Value: !GetAtt Organization.RootId
