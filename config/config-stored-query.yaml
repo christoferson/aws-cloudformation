@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Config - Stored Query
+
+Resources:
+
+  ConfigStoredQuery:
+    Type: "AWS::Config::StoredQuery"
+    Properties:
+      QueryName: "config-demo-query"
+      QueryDescription: "Config Demo Query"
+      QueryExpression: "SELECT configuration.complianceType, COUNT(*) WHERE resourceType = 'AWS::Config::ResourceCompliance' GROUP BY configuration.complianceType"
+      Tags:
+        - Key: "management"
+          Value: "manual"
+
+
+Outputs:
+
+  ConfigStoredQueryQueryId:
+    Value: !GetAtt ConfigStoredQuery.QueryId
