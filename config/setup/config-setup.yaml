@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Enable AWS Config
+
+Resources:
+
+  ConfigBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: # SSE-KMS
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'aws:kms'
+            KMSMasterKeyID: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+          BucketKeyEnabled: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: "Name"
+          Value: !Sub "config-bucket-${AWS::Region}"
+
+  ConfigBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConfigBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ConfigBucketPermissionsCheck
+            Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource:
+              - !Sub "arn:aws:s3:::${ConfigBucket}"
+          - Sid: ConfigBucketDelivery
+            Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action: s3:PutObject
+            Resource:
+              - !Sub "arn:aws:s3:::${ConfigBucket}/AWSLogs/${AWS::AccountId}/*"
+
+  ConfigRecorderServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRole
+      #RoleName: !Sub "config-role-${AWS::Region}"
+
+  ConfigConfigurationRecorder:
+    Type: AWS::Config::ConfigurationRecorder
+    #DeletionPolicy: Delete
+    Properties:
+      #Name: !Sub "configuration-recorder-${AWS::Region}"
+      RoleARN: !GetAtt ConfigRecorderServiceRole.Arn
+      RecordingGroup:
+        AllSupported: false
+        IncludeGlobalResourceTypes: false
+        ResourceTypes: 
+          - "AWS::Lambda::Function"
+
+  ConfigDeliveryChannel:
+    Type: AWS::Config::DeliveryChannel
+    Properties:
+      #Name: !Sub "delivery-channel-${AWS::Region}"
+      ConfigSnapshotDeliveryProperties:
+        DeliveryFrequency: One_Hour
+#      1hour   : One_Hour
+#      3hours  : Three_Hours
+#      6hours  : Six_Hours
+#      12hours : Twelve_Hours
+#      24hours : TwentyFour_Hours
+      S3BucketName: !Ref ConfigBucket
+      #S3KeyPrefix
+      #S3KmsKeyArn
+
+Outputs:
+
+  ConfigBucketArn:
+    Value: !GetAtt ConfigBucket.Arn
