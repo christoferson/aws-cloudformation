@@ -16,6 +16,25 @@
 
 - Receive SNS alerts for changes
 
+## Use Cases
+
+- Audit IAM policies
+
+- Detect if cloudtrail has been disabled
+
+- Detect if unapproved AMI is used to launch EC2 instance
+
+- Detect if security groups are too open
+
+- Detect if Internet Gateway is added to unauthorized VPC
+
+- Detect if EBS volumes are unencrypted
+
+- Detect if RDS are public
+
+- Expired IAM Keys (access-keys-rotated)
+
+---------------------------------------------------------------------
 
 
 ###### Managed Rules
@@ -39,24 +58,59 @@
 
 - Use an aggregator to get a centralized view of your resource inventory and compliance. An aggregator is an AWS Config resource type that collects AWS Config configuration and compliance data from multiple AWS accounts and AWS Regions into a single account and Region.
 
+- Create an Aggregator in the Aggregator Account. Aggregate rules, resources, across multiple accounts and regions. If using Organizations, no need to create Authorization in individual accounts. otherwise you need to create authorization in each account.
+
+- Rules are created and managed in individual accounts
+
 ###### Advanced queries
 
 Use one of the sample queries or write your own query by referring to the configuration schema of the AWS resource.
 
 --------------------------------------------------------------
 
+## Resource Types
+
+- [ ] AWS::Config::AggregationAuthorization
+
+- [ ] AWS::Config::ConfigRule
+
+- [x] AWS::Config::ConfigurationAggregator
+
+- [ ] AWS::Config::ConfigurationRecorder
+
+- [ ] AWS::Config::ConformancePack
+
+- [x] AWS::Config::DeliveryChannel
+
+- [ ] AWS::Config::OrganizationConfigRule
+
+- [ ] AWS::Config::OrganizationConformancePack
+
+- [ ] AWS::Config::RemediationConfiguration
+
+- [x] ::Config::StoredQuery
+
+--------------------------------------------------------------
+
 ### Setup Config
 
-Provision a DynamoDB with various features enabled.
+Provision Bucket, DeliveryChannel and ConfigurationRecorder
 
 [setup](setup/config-setup.yaml)
 
-### Setup Config - Service Linked Role
+### Config - Service Linked Role
 
-Provision a DynamoDB with various features enabled.
+Provision the Config Service Linked Role
 
 [1-config-service-linked-role](setup/1-config-service-linked-role.yaml)
+
+### Config - Stored Query
+
+Provision a StoredQuery
+
+[config-stored-query](config-stored-query.yaml)
 
 #### Links
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-servicelinkedrole.html
+
