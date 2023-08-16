@@ -11,6 +11,33 @@
 
 - The Principal element is required, but supports only the wild card (*)
 
+### Syntax
+
+```
+{
+  "Statement" : [
+    {
+      "Effect" : "Deny_or_Allow",
+      "Action" : "update_actions",
+      "Principal" : "*",
+      "Resource" : "LogicalResourceId/resource_logical_ID",
+      "Condition" : {
+        "StringEquals_or_StringLike" : {
+          "ResourceType" : [resource_type, ...]
+        }
+      }
+    }
+  ]
+}
+```
+
+- Action Update:Modify, Update:Replace, Update:Delete, Update:* e.g. "Action" : ["Update:Replace", "Update:Delete"]
+- NotAction e.g. "NotAction" : "Update:Delete"
+
+- Resource e.g. "Resource" : ["LogicalResourceId/CriticalResource*"]
+- NotResource e.g. "NotResource" : "LogicalResourceId/ProductionDatabase"
+
+
 ```
 {
   "Statement" : [
@@ -29,5 +56,24 @@
   ]
 }
 ```
+
+```
+{
+  "Statement" : [
+  {
+    "Effect" : "Deny",
+    "Principal" : "*",
+    "Action" : "Update:*",
+    "Resource" : "*",
+    "Condition" : {
+      "StringEquals" : {
+        "ResourceType" : ["AWS::EC2::Instance", "AWS::RDS::DBInstance"]
+      }
+    }
+  }
+}
+```
+
+## Resources
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/protect-stack-resources.html
