@@ -38,6 +38,8 @@
 
 ###### [Lambda triggered by SQS](lambda/lambda-trigger-sqs.yaml)
 
+##### [Organizations](organizations/README.md)
+
 ##### [RDS](rds/README.md)
 
 ##### [Redshift](redshift/README.md)
@@ -47,6 +49,8 @@
 ##### [S3](s3/README.md)
 
 ##### [Secrets Manager](secrets-manager/README.md)
+
+##### [Service Catalog](service-catalog/README.md)
 
 ##### [SNS](sns/README.md)
 

@@ -1,3 +1,4 @@
+## Service Catalog Cloudformation Templates
 
 ### Concept
 
@@ -22,6 +23,15 @@ Notification constraints enable you to get notifications about stack events usin
 
 Template constraints restrict the configuration parameters that are available for the user when launching the product (for example, EC2 instance types or IP address ranges). With template constraints, you reuse generic AWS CloudFormation templates for products and apply restrictions to the templates on a per-product or per-portfolio basis.
 
+
+------
+
+
+### Templates
+
+#### Portfolio
+
+[service-catalog-portfolio](service-catalog-portfolio.yaml)
 
 
 ### Links
