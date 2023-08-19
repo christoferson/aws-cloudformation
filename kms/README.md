@@ -1,5 +1,49 @@
 ## KMS Cloudformation Template
 
+### Concepts | [doc](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html)
+
+#### Key Types
+
+##### Customer managed key
+
+- The KMS keys that you create are customer managed keys. 
+- Customer managed keys are KMS keys in your AWS account that you create, own, and manage.
+
+- Can view KMS key metadata
+- Can manage KMS key
+- Used only for my AWS account
+- Automatic rotation (Optional. Every year (approximately 365 days))
+ 
+##### AWS managed key 
+
+- AWS managed keys are KMS keys in your account that are created, managed, and used on your behalf by an AWS service integrated with AWS KMS.
+- You don't have to create or maintain the key or its key policy, and there's never a monthly fee for an AWS managed key.
+- you cannot change any properties of AWS managed keys, rotate them, change their key policies, or schedule them for deletion. 
+- you cannot use AWS managed keys in cryptographic operations directly; the service that creates them uses them on your behalf. 
+- Alias aws/service-name
+
+- Can view KMS key metadata
+- Used only for my AWS account
+- Automatic rotation (Required. Every year (approximately 365 days))
+ 
+##### AWS owned key
+
+- AWS owned keys are a collection of KMS keys that an AWS service owns and manages for use in multiple AWS accounts. 
+- Although AWS owned keys are not in your AWS account, an AWS service can use an AWS owned key to protect the resources in your account.
+- AWS owned keys are completely free of charge (no monthly fees or usage fees), they do not count against the AWS KMS quotas for your account, and they're easy to use. 
+
+- Automatic rotation (Varies)
+
+##### Comparison
+
+<table style="border:1px solid black;border-collapse: collapse;">
+  <tr><th>KMS key Type</th><th>Can view KMS key metadata</th><th>Can manage KMS key</th><th>Used only for my AWS account</th><th>Automatic rotation</th></tr>
+  <tr><td>Customer managed key</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Optional. Every year (approximately 365 days)</td></tr>
+  <tr><td>AWS managed key</td><td>Yes</td><td>No</td><td>Yes</td><td>Required. Every year (approximately 365 days)</td></tr>
+  <tr><td>AWS owned key</td><td>No</td><td>No</td><td>No</td><td>Varies</td></tr>
+</table>
+
+ 
 ### Authentication and access control for AWS KMS
 
 - No AWS principal has any permissions to a KMS key unless that permission is provided explicitly and never denied. 
@@ -61,8 +105,41 @@ Without this permission, IAM policies that allow access to the key are ineffecti
 #### Grants 
 – You can use grants in combination with the key policy and IAM policies to allow access to a KMS key. Controlling access this way enables you to allow access to the KMS key in the key policy, and to allow identities to delegate their access to others.
 
+### Automatic Key Rotation
 
+- Automatic rotation is optional for customer managed KMS keys.
 
+- When you enable automatic key rotation for a KMS key, AWS KMS generates new cryptographic material for the KMS key every year. 
+
+- AWS KMS supports automatic key rotation only for symmetric encryption KMS keys with key material that AWS KMS creates. 
+
+- AWS KMS always rotates the key material for AWS managed KMS keys every year.
+
+- Rotation of AWS owned KMS keys varies.
+
+- When you use a rotated KMS key to encrypt data, AWS KMS uses the current key material.
+
+- When you use the rotated KMS key to decrypt ciphertext, AWS KMS uses the same version of the key material that was used to encrypt it. You cannot request a particular version of the key material.
+
+- AWS KMS rotates key material one year (approximately 365 days) after rotation is enabled, and then every year (approximately 365 days) thereafter.
+
+#### Customer managed keys
+
+- Because automatic key rotation is optional on customer managed keys and can be enabled and disabled at any time, the rotation date depends on the date that rotation was most recently enabled. 
+
+#### AWS managed keys
+
+- AWS KMS automatically rotates AWS managed keys every year (approximately 365 days). You cannot enable or disable key rotation for AWS managed keys.
+
+- In May 2022, AWS KMS changed the rotation schedule for AWS managed keys from every three years (approximately 1,095 days) to every year (approximately 365 days).
+
+#### AWS owned keys
+
+- You cannot enable or disable key rotation for AWS owned keys. The key rotation strategy for an AWS owned key is determined by the AWS service that creates and manages the key. 
+
+### Manual Key Rotation
+
+When you rotate KMS keys manually, you also need to update references to the KMS key ID or key ARN in your applications. Aliases, which associate a friendly name with a KMS key, can make this process easier. Use an alias to refer to a KMS key in your applications. Then, when you want to change the KMS key that the application uses, instead of editing your application code, change the target KMS key of the alias.
 
 -------------------------------------------------------------------
 
