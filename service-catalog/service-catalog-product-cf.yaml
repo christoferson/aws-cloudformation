@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Service Catalog - Product - Cloudformation
+
+Parameters:
+
+  CloudformationTemplateUrl:
+    Type: "String"
+    Default: "https://<bucket>/service-catalog/development-environment.template"
+    Description: "Template Url"
+    
+Resources:
+
+  ServiceCatalogProduct:
+    Type: "AWS::ServiceCatalog::CloudFormationProduct"
+    Properties:
+      AcceptLanguage: "jp"
+      Description: "Cloud development environment configured for engineering staff. Runs AWS Linux."
+      Distributor: "distributor"
+      Name: "Linux Desktop"
+      Owner: "IT"
+      ProductType: "CLOUD_FORMATION_TEMPLATE" #CLOUD_FORMATION_TEMPLATE | MARKETPLACE | TERRAFORM_CLOUD | TERRAFORM_OPEN_SOURCE
+      ProvisioningArtifactParameters:
+        - Type: "CLOUD_FORMATION_TEMPLATE"
+          Name: "v1.0"
+          Info: 
+            LoadTemplateFromURL: !Sub "${CloudformationTemplateUrl}"
+          Description: "Base Version"
+          DisableTemplateValidation: true
+      ReplaceProvisioningArtifacts: false
+      SupportDescription: "Contact the IT department for issues deploying or connecting to this product."
+      SupportEmail: "ITSupport@example.com"
+      SupportUrl: "https://wiki.example.com/IT/support"
+      Tags:
+        - Key: "Name"
+          Value: "dproduct"
+
+Outputs:
+
+  ServiceCatalogProductProductName:
+    Value: !GetAtt ServiceCatalogProduct.ProductName
+
+  ServiceCatalogProductProvisioningArtifactIds:
+    Value: !GetAtt ServiceCatalogProduct.ProvisioningArtifactIds
+
+  ServiceCatalogProductProvisioningArtifactNames:
+    Value: !GetAtt ServiceCatalogProduct.ProvisioningArtifactNames
