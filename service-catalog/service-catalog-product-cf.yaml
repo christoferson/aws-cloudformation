@@ -5,12 +5,12 @@ Parameters:
 
   CloudformationTemplateUrl:
     Type: "String"
-    Default: "<bucket>"
+    Default: "https://<bucket>/service-catalog/development-environment.template"
     Description: "Template Url"
 
   ServiceCatalogPortfolioId:
     Type: "String"
-    Default: "<portfolioid>"
+    Default: "<portfolio-id>"
     Description: "ServiceCatalogPortfolioId"
     
 Resources:
@@ -66,7 +66,68 @@ Resources:
           }
         }
 
+# Launch Constraint Role
 
+  ServiceCatalogPortfolioLaunchRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - servicecatalog.amazonaws.com
+      Policies:
+        - PolicyName: LinuxDesktopPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:SetStackPolicy
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:UpdateStack
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - servicecatalog:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sns:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    s3:ExistingObjectTag/servicecatalog:provisioning: true
+
+  ServiceCatalogPortfolioLaunchRoleConstraint:
+    DependsOn:
+      - ServiceCatalogProduct
+      - ServiceCatalogPortfolioProductAssociation
+      - ServiceCatalogPortfolioLaunchRole
+    Type: AWS::ServiceCatalog::LaunchRoleConstraint
+    Properties: 
+      AcceptLanguage: "jp"
+      Description: "Launch Role Constraint"
+      PortfolioId: !Ref ServiceCatalogPortfolioId
+      ProductId: !Ref ServiceCatalogProduct
+      RoleArn: !GetAtt ServiceCatalogPortfolioLaunchRole.Arn
 
 Outputs:
 

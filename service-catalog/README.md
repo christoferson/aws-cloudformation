@@ -42,6 +42,8 @@ Provision Product using Cloudformation Provider and associate with Portfolio.
 
 - Includes LaunchTemplateConstraint that restraints the instance type to ["t2.micro", "t2.small"]
 
+- Includes LaunchRoleConstraint that restraints the role
+
 [service-catalog-product-cf](service-catalog-product-cf.yaml)
 
 ### Errors
