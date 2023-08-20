@@ -5,12 +5,12 @@ Parameters:
 
   CloudformationTemplateUrl:
     Type: "String"
-    Default: "https://<bucket>/service-catalog/development-environment.template"
+    Default: "<bucket>"
     Description: "Template Url"
 
   ServiceCatalogPortfolioId:
     Type: "String"
-    Default: "<portfolio id>"
+    Default: "<portfolioid>"
     Description: "ServiceCatalogPortfolioId"
     
 Resources:
@@ -47,7 +47,27 @@ Resources:
       ProductId: !Ref ServiceCatalogProduct
       #SourcePortfolioId: "Linux Desktop"
 
-          
+  ServiceCatalogPortfolioLaunchTemplateConstraint:
+    Type: AWS::ServiceCatalog::LaunchTemplateConstraint
+    Properties: 
+      AcceptLanguage: "jp"
+      Description: "Launch Template Constraints"
+      PortfolioId: !Ref ServiceCatalogPortfolioId
+      ProductId: !Ref ServiceCatalogProduct
+      Rules: |
+        {
+          "Rule1": {
+            "Assertions": [
+              {
+                "Assert" : {"Fn::Contains": [["t2.micro", "t2.small"], {"Ref": "InstanceType"}]},
+                "AssertDescription": "Instance type should be t2.micro or t2.small"
+              }
+            ]
+          }
+        }
+
+
+
 Outputs:
 
   ServiceCatalogProductProductName:

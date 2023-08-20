@@ -34,6 +34,20 @@ Template constraints restrict the configuration parameters that are available fo
 [service-catalog-portfolio](service-catalog-portfolio.yaml)
 
 
+#### Product - Cloudformation
+
+Provision Product using Cloudformation Provider and associate with Portfolio.
+
+- Product consists of AWS::EC2::Instance and Security Group
+
+- Includes LaunchTemplateConstraint that restraints the instance type to ["t2.micro", "t2.small"]
+
+[service-catalog-product-cf](service-catalog-product-cf.yaml)
+
+### Errors
+
+- Package properties validation failed: Could not read package properties from JSON. (Service: AWSServiceCatalog; Status Code: 400; Error Code: InvalidParametersException;
+
 ### Links
 
 - https://docs.aws.amazon.com/servicecatalog/latest/adminguide/introduction.html
