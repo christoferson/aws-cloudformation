@@ -7,6 +7,11 @@ Parameters:
     Type: "String"
     Default: "https://<bucket>/service-catalog/development-environment.template"
     Description: "Template Url"
+
+  ServiceCatalogPortfolioId:
+    Type: "String"
+    Default: "<portfolio id>"
+    Description: "ServiceCatalogPortfolioId"
     
 Resources:
 
@@ -34,6 +39,15 @@ Resources:
         - Key: "Name"
           Value: "dproduct"
 
+  ServiceCatalogPortfolioProductAssociation:
+    Type: "AWS::ServiceCatalog::PortfolioProductAssociation"
+    Properties:
+      AcceptLanguage: "jp"
+      PortfolioId: !Ref ServiceCatalogPortfolioId
+      ProductId: !Ref ServiceCatalogProduct
+      #SourcePortfolioId: "Linux Desktop"
+
+          
 Outputs:
 
   ServiceCatalogProductProductName:
