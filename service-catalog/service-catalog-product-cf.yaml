@@ -1,12 +1,36 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Service Catalog - Product - Cloudformation
 
+Metadata:
+
+  StackVersion: 1
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Portfolio Configuration"
+        Parameters:
+          - ServiceCatalogPortfolioId
+      -
+        Label:
+          default: "Product Configuration"
+        Parameters:
+          - ServiceCatalogProductVersion
+          - CloudformationTemplateUrl
+
 Parameters:
 
   CloudformationTemplateUrl:
     Type: "String"
-    Default: "<bucket>"
+    Default: "https://<bucket-id>/service-catalog/development-environment.template"
     Description: "Template Url"
+
+  ServiceCatalogProductVersion:
+    Type: "String"
+    Default: "v1.0"
+    Description: "Product Version"
 
   ServiceCatalogPortfolioId:
     Type: "String"
@@ -26,11 +50,11 @@ Resources:
       ProductType: "CLOUD_FORMATION_TEMPLATE" #CLOUD_FORMATION_TEMPLATE | MARKETPLACE | TERRAFORM_CLOUD | TERRAFORM_OPEN_SOURCE
       ProvisioningArtifactParameters:
         - Type: "CLOUD_FORMATION_TEMPLATE"
-          Name: "v1.0"
+          Name: !Ref ServiceCatalogProductVersion
           Info: 
             LoadTemplateFromURL: !Sub "${CloudformationTemplateUrl}"
           Description: "Base Version"
-          DisableTemplateValidation: true
+          DisableTemplateValidation: false
       ReplaceProvisioningArtifacts: false
       SupportDescription: "Contact the IT department for issues deploying or connecting to this product."
       SupportEmail: "ITSupport@example.com"
