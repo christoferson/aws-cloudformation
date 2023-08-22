@@ -59,7 +59,7 @@
       "us-east-1"      : { "HVM64" : "ami-08842d60" },
       "us-west-2"      : { "HVM64" : "ami-8786c6b7" },
       "us-west-1"      : { "HVM64" : "ami-cfa8a18a" },
-      "eu-west-1"      : { "HVM64" : "ami-748e2903" },
+      "eu-west-1"      : { "HVM64" : "ami-0bf84c42e04519c85" },
       "ap-southeast-1" : { "HVM64" : "ami-d6e1c584" },
       "ap-northeast-1" : { "HVM64" : "ami-35072834" },
       "ap-southeast-2" : { "HVM64" : "ami-fd4724c7" },
@@ -138,7 +138,19 @@
         "KeyName" : { "Ref" : "KeyName" },
         "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" }, "HVM64" ] },
         "SubnetId" : { "Ref" : "VpcSubnetId" },
-        "IamInstanceProfile": { "Ref": "InstanceProfile" }
+        "IamInstanceProfile": { "Ref": "InstanceProfile" },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": ["", [
+              "#!/bin/bash\n",
+              "yum update -y\n",
+              "yum install -y httpd\n",
+              "systemctl start httpd\n",
+              "systemctl enable httpd\n",
+              "echo '<h1>Hello from $(hostname -f)</h1>' > /var/www/html/index.html\n"
+            ]]
+          }
+        }
       }
     }
 
