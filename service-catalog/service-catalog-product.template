@@ -72,17 +72,50 @@
 
   "Resources" : {
   
-    "EC2Instance" : {
-      "Type" : "AWS::EC2::Instance",
-      "Properties" : {
-        "InstanceType" : { "Ref" : "InstanceType" },
-        "SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" } ],
-        "KeyName" : { "Ref" : "KeyName" },
-        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" }, "HVM64" ] },
-        "SubnetId" : { "Ref" : "VpcSubnetId" }
-      }
+    "InstanceRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+            "AssumeRolePolicyDocument": {
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "ec2.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                ]
+            },
+            "ManagedPolicyArns": [
+                "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+            ],
+            "Path": "/",
+            "Policies": {
+                "Ref": "AWS::NoValue"
+            },
+            "RoleName": {
+                "Ref": "AWS::NoValue"
+            }
+        }
     },
-
+    
+    "InstanceProfile": {
+        "Type": "AWS::IAM::InstanceProfile",
+        "DependsOn": "InstanceRole",
+        "Properties": {
+            "Path": "/",
+            "Roles": [
+                {
+                    "Ref": "InstanceRole"
+                }
+            ]
+        }
+    },
+    
     "InstanceSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
@@ -95,7 +128,21 @@
           "CidrIp" : { "Ref" : "SSHLocation"}
         } ]
       }
+    },
+        
+    "EC2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "SecurityGroupIds" : [ { "Ref" : "InstanceSecurityGroup" } ],
+        "KeyName" : { "Ref" : "KeyName" },
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" }, "HVM64" ] },
+        "SubnetId" : { "Ref" : "VpcSubnetId" },
+        "IamInstanceProfile": { "Ref": "InstanceProfile" }
+      }
     }
+
+
   },
 
   "Outputs" : {
