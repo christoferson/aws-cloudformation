@@ -9,10 +9,6 @@
 - The KMS keys that you create are customer managed keys. 
 - Customer managed keys are KMS keys in your AWS account that you create, own, and manage.
 
-- Can view KMS key metadata
-- Can manage KMS key
-- Used only for my AWS account
-- Automatic rotation (Optional. Every year (approximately 365 days))
  
 ##### AWS managed key 
 
@@ -21,10 +17,6 @@
 - you cannot change any properties of AWS managed keys, rotate them, change their key policies, or schedule them for deletion. 
 - you cannot use AWS managed keys in cryptographic operations directly; the service that creates them uses them on your behalf. 
 - Alias aws/service-name
-
-- Can view KMS key metadata
-- Used only for my AWS account
-- Automatic rotation (Required. Every year (approximately 365 days))
  
 ##### AWS owned key
 
@@ -32,12 +24,11 @@
 - Although AWS owned keys are not in your AWS account, an AWS service can use an AWS owned key to protect the resources in your account.
 - AWS owned keys are completely free of charge (no monthly fees or usage fees), they do not count against the AWS KMS quotas for your account, and they're easy to use. 
 
-- Automatic rotation (Varies)
 
 ##### Comparison
 
 <table style="border:1px solid black;border-collapse: collapse;">
-  <tr><th>KMS key Type</th><th>Can view KMS key metadata</th><th>Can manage KMS key</th><th>Used only for my AWS account</th><th>Automatic rotation</th></tr>
+  <tr><th>KMS Key Type</th><th>Can view KMS key metadata</th><th>Can manage KMS key</th><th>Used only for my AWS account</th><th>Automatic rotation</th></tr>
   <tr><td>Customer managed key</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Optional. Every year (approximately 365 days)</td></tr>
   <tr><td>AWS managed key</td><td>Yes</td><td>No</td><td>Yes</td><td>Required. Every year (approximately 365 days)</td></tr>
   <tr><td>AWS owned key</td><td>No</td><td>No</td><td>No</td><td>Varies</td></tr>
