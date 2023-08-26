@@ -16,7 +16,7 @@ Parameters:
   LambdaLayerRuntime:
     Description: Lambda Layer NodeJS Runtime
     Type: String
-    Default: "nodejs16.x"
+    Default: "nodejs18.x"
     
 Resources:
 

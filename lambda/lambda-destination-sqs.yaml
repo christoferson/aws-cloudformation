@@ -53,7 +53,7 @@ Resources:
     Properties:
       FunctionName : "dst-lambda"
       Description: "Lambda with Destination"
-      Runtime: nodejs16.x
+      Runtime: nodejs18.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:

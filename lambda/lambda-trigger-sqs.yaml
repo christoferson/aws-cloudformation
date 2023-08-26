@@ -64,7 +64,7 @@ Resources:
     Properties:
       #FunctionName : "lambda-trigger-sqs-lambda"
       Description: "Lambda Triggered by SQS"
-      Runtime: nodejs16.x
+      Runtime: nodejs18.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:

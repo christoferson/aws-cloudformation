@@ -21,7 +21,7 @@ Resources:
       #LayerName: MyLambdaLayerJs
       Description: My Lambda Layer JS
       CompatibleRuntimes: 
-        - nodejs16.x #nodejs18.x | nodejs16.x
+        - nodejs18.x #nodejs18.x | nodejs16.x
       Content: 
         S3Bucket: !Ref LambdaLayerBucketName
         S3Key: !Ref LambdaLayerBucketKey
