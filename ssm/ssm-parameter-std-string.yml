@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Systems Manager - Parameter Store Reference - Register Standard String
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: demo
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: stg
+    Description: Environment Name
+
+  ParameterName:
+    Type: String
+    Default: std-string
+    Description: ParameterName
+    
+  ParameterValue:
+    Type: String
+    Default: stringvalue
+    Description: ParameterValue
+    
+Resources:
+
+  ParameterStandardString:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Application}/${Environment}/${ParameterName}"
+      Tier: "Standard" #Advanced | Intelligent-Tiering | Standard
+      Type: String # String | StringList # AWS CloudFormation doesn't support creating a SecureString parameter type.
+      Value: !Ref ParameterValue
+      Description: SSM Parameter Standard String
+      AllowedPattern: "^[a-zA-Z]{1,24}$"
+      DataType: "text" #text or aws:ec2:image
+      Tags:
+        Application: !Ref Application
+        Environment: !Ref Environment
+        Name: !Sub "ssm-parameter-${ParameterName}"
+
+Outputs:
+
+  ParameterStandardStringName:
+    Value: !Ref ParameterStandardString
