@@ -186,6 +186,9 @@ false - queryStringParameters: { name: 'bar' }
 
 [lambda-alb](lambda-alb.yaml)
 
+
+TODO: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html
+
 ### Lambda - Version and Alias
 
 Provision a Lambda with Versions and Alias.
@@ -272,5 +275,5 @@ Cannot configure provisioned concurrency on both alias and version
 - [AutoScale Concurrency](https://aws.amazon.com/jp/blogs/compute/scheduling-aws-lambda-provisioned-concurrency-for-recurring-peak-usage/)
 - [MultiHeader](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-elasticloadbalancingv2-targetgroup-targetgroupattribute.html)
 - https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
-
+- https://aws.amazon.com/blogs/compute/reducing-java-cold-starts-on-aws-lambda-functions-with-snapstart/
 
