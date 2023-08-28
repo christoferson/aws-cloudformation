@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "DynamoDB - Streams Enabled -> Lambda" -> S3
+Description: "DynamoDB - Streams Enabled -> Lambda -> S3"
 
+Parameters:
+
+  BucketName:
+    Description: "BucketName"
+    Type: String
+    Default: "xxx"
+    
 Resources:
 
   DynamoTable: 
@@ -85,7 +92,7 @@ Resources:
     Properties:
       #FunctionName : "lambda-trigger-dynamodb-lambda"
       Description: "Lambda Triggered by DynamoDB"
-      Runtime: nodejs18.x
+      Runtime: nodejs16.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Environment:
@@ -93,19 +100,17 @@ Resources:
           databaseName: lambdadb
           databaseUser: admin
       Code:
-        ZipFile: |
+        ZipFile: !Sub |
+          'use strict'
+          const AWS = require('aws-sdk');
+          const s3 = new AWS.S3();
           exports.handler = async (event, context, callback) => {
-
               event.Records.forEach((record) => {
                 console.log('Stream record: ', JSON.stringify(record, null, 2));
-                //console.log('Type', record.eventName);
-                //console.log('DynamoDB Record: %j', record.dynamodb);
-
                 if (record.eventName == 'INSERT') {
                     const item = record.dynamodb.NewImage;
                     console.log('Inserted: %j', item);
                 } else if(record.eventName == 'MODIFY') {
-                    //const oldItem = record.dynamodb.OldImage;
                     const item = record.dynamodb.NewImage;
                     console.log('Updated: %j', item);
                 } else if(record.eventName == 'REMOVE') {
@@ -114,11 +119,37 @@ Resources:
                 } else {
                     console.log('NotSupported Type', record.eventName);
                 }
-
+                
+                const bucket = '${BucketName}';
+                let key = 'route53/evt/' + record.dynamodb.Keys.CharacterName.S + '-' + record.dynamodb.Keys.Region.S + '.json';
+                
+                const params = {
+                  Bucket: bucket,
+                  Key: key,
+                  Body: JSON.stringify(record.dynamodb.NewImage),
+                };
+          
+                try {
+                   
+                   s3.putObject(params, function(err, data) {
+                    if (err) {
+                      console.log(err, err.stack);
+                    } else {
+                      console.log(data);
+                    }
+                  });
+                   console.log("*** s3.putObject *** " + key);
+                } catch (error) {
+                  console.log ("*** error *** s3.putObject ***");
+                  console.log (error);
+                }
+          
               });
-
-              callback(null, `Successfully processed ${event.Records.length} records.`);
+          
+              callback(null, `Successfully processed ${!event.Records.length} records.`);
           };
+          
+          
 
   LambdaEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
