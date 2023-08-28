@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Route53 + Application Load Balancer + HTTPS + Cognito - Certificate Provision for HTTPS
+
+Parameters:
+
+  DomainValidationHostedZoneId:
+    Description: "Identifier of the hosted zone"
+    Type: String
+    Default: "<zone-id>"
+    
+  DomainName:
+    Description: "must include a trailing dot (for example, www.example.com.)"
+    Type: String
+    Default: "foo.domain.com."
+
+Resources:
+
+  CertificateManagerCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "${DomainName}"
+      DomainValidationOptions:
+        - DomainName: !Sub "${DomainName}"
+          HostedZoneId: !Ref DomainValidationHostedZoneId
+      SubjectAlternativeNames:
+        - !Sub "*.${DomainName}"
+      ValidationMethod: DNS
+
+Outputs:
+
+  CertificateManagerCertificateArn:
+    Value: !Ref CertificateManagerCertificate
+
