@@ -3,6 +3,16 @@ Description: Route53 + Application Load Balancer
 
 Parameters:
 
+  HostedZoneName:
+    Description: "must include a trailing dot (for example, www.example.com.)"
+    Type: String
+    Default: "example.com."
+
+  LoadBalancerSubDomainName:
+    Description: "Sub Domain Name of the Applicaiton Load Balancer"
+    Type: String
+    Default: "r53lb2"
+
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
@@ -68,6 +78,7 @@ Resources:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: lambda:InvokeFunction
       Principal: "elasticloadbalancing.amazonaws.com"
+      SourceArn: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
 
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
@@ -90,16 +101,31 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Scheme: internet-facing 
-      Subnets: !Ref VpcSubnetListLoadBalancer      
+      Subnets: !Ref VpcSubnetListLoadBalancer
       SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+      #LoadBalancerAttributes:
+      #  - Key: "deletion_protection.enabled"
+      #    Value: "false"
+      Tags:
+        - Key: Name
+          Value: !Sub "route53-elb"
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     DependsOn: LambdaPermission
     Properties:
+      #HealthCheckIntervalSeconds: 15
+      #HealthCheckPath: "/"
+      #HealthCheckTimeoutSeconds: 10
+      #UnhealthyThresholdCount: 2
+      #Matcher:
+      #  HttpCode: "200"
+      #HealthyThresholdCount: 2
+      #HealthCheckEnabled: false
       TargetType: lambda
       Targets:
         - Id: !GetAtt LambdaFunction.Arn
+          AvailabilityZone: "all"
       TargetGroupAttributes: 
         - Key: lambda.multi_value_headers.enabled
           Value: true
@@ -110,9 +136,31 @@ Resources:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 80
       Protocol: HTTP
+      #DefaultActions:
+      #  - Type: fixed-response
+      #    FixedResponseConfig:
+      #      StatusCode: 404
+      #      MessageBody: Not Found.
+      #      ContentType: text/plain
       DefaultActions:
         - TargetGroupArn: !Ref TargetGroup
           Type: forward
+
+# DNS
+
+  Route53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub "${HostedZoneName}"
+      Comment: "Alias targeted to Application LoadBalancer"
+      RecordSets:
+      - Name: !Sub "${LoadBalancerSubDomainName}.${HostedZoneName}"
+        Type: A
+        AliasTarget:
+          HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+          DNSName: !GetAtt LoadBalancer.DNSName
+
+
 
 Outputs:
 
@@ -125,4 +173,8 @@ Outputs:
   LoadBalancerDomainName:
     Value: !GetAtt LoadBalancer.DNSName
 
+  LoadBalancerUrlHttp:
+    Value: !Sub "http://${LoadBalancer.DNSName}"
 
+  Route53UrlHttp:
+    Value: !Sub "http://${LoadBalancerSubDomainName}.${HostedZoneName}"
