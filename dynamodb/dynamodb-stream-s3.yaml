@@ -7,6 +7,11 @@ Parameters:
     Description: "BucketName"
     Type: String
     Default: "xxx"
+
+  BucketPath:
+    Description: "BucketPath"
+    Type: String
+    Default: "route53/evt/"
     
 Resources:
 
@@ -121,7 +126,7 @@ Resources:
                 }
                 
                 const bucket = '${BucketName}';
-                let key = 'route53/evt/' + record.dynamodb.Keys.CharacterName.S + '-' + record.dynamodb.Keys.Region.S + '.json';
+                let key = '${BucketPath}' + record.dynamodb.Keys.CharacterName.S + '-' + record.dynamodb.Keys.Region.S + '.json';
                 
                 const params = {
                   Bucket: bucket,
@@ -213,13 +218,15 @@ Resources:
             - Name: Profession
               Type: struct<S:string>
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
-          Location: !Sub s3://${BucketName}/route53/evt
+          Location: !Sub "s3://${BucketName}/${BucketPath}"
           SerdeInfo: #{"Profession":{"S":"Alchemist"},"Race":{"S":"Gnome5"},"CharacterName":{"S":"adria"},"Region":{"S":"us"}}
             Parameters:
               paths: CharacterName, Region, Profession
             #SerializationLibrary: org.apache.hive.hcatalog.data.JsonSerDe
             SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
- 
+
+# TODO Partition, Crawler
+
 Outputs:
 
   DynamoTableArn:
