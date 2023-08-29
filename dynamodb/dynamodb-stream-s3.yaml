@@ -169,6 +169,49 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
 
+######## GLUE #######################
+
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: "glue-db-dynamodb-streams-s3"
+        Description: "Glue container to hold metadata tables for the s3 crawler"
+
+  GlueTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId #The ID of the Data Catalog in which to create the Table. If none is supplied, the AWS account ID is used by default.
+      DatabaseName: !Ref GlueDatabase # The name of the database where the table metadata resides. For Hive compatibility, this must be all lowercase.
+      TableInput:
+        Name: "glue-table-dynamodb-streams-s3"
+        Description: "Glue Table"
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          skip.header.line.count: 0
+          has_encrypted_data: false
+          serialization.encoding: utf-8
+          classification: 'json'
+          EXTERNAL: true
+        StorageDescriptor:
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Columns: #https://demo-cloudformation.s3.eu-west-1.amazonaws.com/route53/dynamodb-stream-s3.yaml
+            - Name: CharacterName
+              Type: string
+            - Name: Region
+              Type: string
+            - Name: Profession
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub s3://${BucketName}/route53/evt
+          SerdeInfo: #{"Profession":{"S":"Alchemist"},"Race":{"S":"Gnome5"},"CharacterName":{"S":"adria"},"Region":{"S":"us"}}
+            Parameters:
+              paths: CharacterName, Region, Profession
+            #SerializationLibrary: org.apache.hive.hcatalog.data.JsonSerDe
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+ 
 Outputs:
 
   DynamoTableArn:
