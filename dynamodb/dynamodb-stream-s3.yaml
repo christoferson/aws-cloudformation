@@ -171,6 +171,14 @@ Resources:
 
 ######## GLUE #######################
 
+#Sample Data
+#{"Profession":{"S":"Alchemist"},"Race":{"S":"Gnome5"},"CharacterName":{"S":"adria"},"Region":{"S":"us"}}
+
+# Sample Query
+#SELECT * FROM "glue-table-dynamodb-streams-s3" limit 2
+#SELECT charactername.s, region.s, profession.s FROM "glue-table-dynamodb-streams-s3" limit 2
+#SELECT charactername.s as charactername, region.s as region, profession.s as profession FROM "glue-table-dynamodb-streams-s3" WHERE charactername.s LIKE '%ri%' limit 2
+
 
   GlueDatabase:
     Type: AWS::Glue::Database
@@ -197,13 +205,13 @@ Resources:
           EXTERNAL: true
         StorageDescriptor:
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
-          Columns: #https://demo-cloudformation.s3.eu-west-1.amazonaws.com/route53/dynamodb-stream-s3.yaml
+          Columns: #array<struct<Title:string,Year:int,imdbID:string>>
             - Name: CharacterName
-              Type: string
+              Type: struct<S:string>
             - Name: Region
-              Type: string
+              Type: struct<S:string>
             - Name: Profession
-              Type: string
+              Type: struct<S:string>
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
           Location: !Sub s3://${BucketName}/route53/evt
           SerdeInfo: #{"Profession":{"S":"Alchemist"},"Race":{"S":"Gnome5"},"CharacterName":{"S":"adria"},"Region":{"S":"us"}}
