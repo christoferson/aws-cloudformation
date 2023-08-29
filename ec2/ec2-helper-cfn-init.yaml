@@ -6,11 +6,11 @@ Parameters:
   VpcId:
     Type: "AWS::EC2::VPC::Id"
     Description: VPC ID
-    
+
   SubnetId:
     Type: "AWS::EC2::Subnet::Id"
     Description: SubnetId
-    
+
   KeyName:
     Type: "AWS::EC2::KeyPair::KeyName"
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
@@ -24,6 +24,10 @@ Parameters:
     Description: AMI Id
     Type: "AWS::SSM::Parameter::Value<String>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+  WebPageText:
+    Type: String
+    Description: WebPage Display
+    Default: "<p>Hello!</p>"
 
 Resources:
 
@@ -39,7 +43,7 @@ Resources:
           files:
             /var/www/html/index.html:
               content: !Sub |
-                <p>Hello!</p>
+                ${WebPageText}
               mode: '000644'
               owner: root
               group: root
