@@ -126,12 +126,19 @@ Resources:
                 }
                 
                 const bucket = '${BucketName}';
-                let key = '${BucketPath}' + record.dynamodb.Keys.CharacterName.S + '-' + record.dynamodb.Keys.Region.S + '.json';
+                //let key = '${BucketPath}' + 'region=' + record.dynamodb.Keys.Region.S + '/'; //Path with Partition
+                let key = '${BucketPath}'; //Path no Partition
+                key = key + record.dynamodb.Keys.CharacterName.S + '-' + record.dynamodb.Keys.Region.S + '.json'; // FileName
+                console.log(key);
+                
+                let row = record.dynamodb.NewImage;
+                row["Region"] = record.dynamodb.Keys.Region.S;
+                row["CharacterName"] = record.dynamodb.Keys.CharacterName.S;
                 
                 const params = {
                   Bucket: bucket,
                   Key: key,
-                  Body: JSON.stringify(record.dynamodb.NewImage),
+                  Body: JSON.stringify(row),
                 };
           
                 try {
@@ -200,7 +207,7 @@ Resources:
       DatabaseName: !Ref GlueDatabase # The name of the database where the table metadata resides. For Hive compatibility, this must be all lowercase.
       TableInput:
         Name: "glue-table-dynamodb-streams-s3"
-        Description: "Glue Table"
+        Description: "Glue Table 2"
         TableType: EXTERNAL_TABLE
         Parameters:
           skip.header.line.count: 0
@@ -208,13 +215,18 @@ Resources:
           serialization.encoding: utf-8
           classification: 'json'
           EXTERNAL: true
+        #PartitionKeys:
+        #  - Name: Region
+        #    Type: string
         StorageDescriptor:
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
           Columns: #array<struct<Title:string,Year:int,imdbID:string>>
             - Name: CharacterName
-              Type: struct<S:string>
-            - Name: Region
-              Type: struct<S:string>
+              Type: string
+            #- Name: Region  # Need to comment this out if already defined as PartitionKey, otherwise duplicate error
+            #  Type: struct<S:string>
+            - Name: Region  # Need to comment this out if already defined as PartitionKey, otherwise duplicate error
+              Type: string
             - Name: Profession
               Type: struct<S:string>
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
