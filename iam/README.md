@@ -8,6 +8,12 @@ Provision a Role with Role Policy
 
 [iam-role](iam-role.yaml)
 
+### IAM - Role
+
+Provision a Role with Role Policy and Permission Boundary
+
+[iam-role-permission-boundary](iam-role-permission-boundary.yaml)
+
 ### IAM - Service Linked Role
 
 Provision a Service Linked Role. Example uses AWS Config.

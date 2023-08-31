@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IAM Role - With Permission Boundary
+
+Parameters:
+
+  PermissionBoundaryManagedPolicyName:
+    Description: "PermissionBoundaryManagedPolicyName"
+    Type: String
+    Default: "managed-policy-custom-boundary"
+    
+Resources:
+
+  RoleWithPermissionBoundary: 
+    Type: AWS::IAM::Role
+    DependsOn: ManagedPolicyPermissionBoundary
+    Properties:
+      #RoleName:
+      Description: Demo Role With Permission Boundary
+      #Path: "/demo/" # must begin and end with / and contain only alphanumeric characters
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ssm:GetParameters"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:GetSecretValue" 
+                Resource: "*" #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                Resource: "*" #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/${PermissionBoundaryManagedPolicyName}" # !Ref RoleWithPermissionBoundary
+      Tags: 
+        - Key: "Name"
+          Value: "role-with-permission-boundary"
+
+  ManagedPolicyPermissionBoundary:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Custom Managed Policy"
+      ManagedPolicyName: !Ref PermissionBoundaryManagedPolicyName
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:GetObjectVersion"
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:PutImage"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
+            Effect: Allow
+            Resource: "*"
+
+Outputs:
+
+  RoleWithPermissionBoundaryArn:
+    Value: !GetAtt RoleWithPermissionBoundary.Arn
