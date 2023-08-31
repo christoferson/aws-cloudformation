@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "DynamoDB - Streams Enabled -> Lambda -> S3 (Partitioned)"
+
+Parameters:
+
+  ApplicationName:
+    Description: "Application Name"
+    Type: String
+    Default: "partitioned"
+
+  BucketName:
+    Description: "BucketName"
+    Type: String
+    Default: "xxx"
+
+  BucketPath:
+    Description: "BucketPath"
+    Type: String
+    Default: "route53/evt-partitioned/"
+    
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      #TableName: "Character5"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+        - 
+          AttributeName: "Race"
+          AttributeType: "S"
+        - 
+          AttributeName: "Profession"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      LocalSecondaryIndexes: 
+        - 
+          IndexName: "region-race"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Race"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Profession"
+            ProjectionType: "INCLUDE"
+        - 
+          IndexName: "region-profession"
+          KeySchema: 
+            - 
+              AttributeName: "Region"
+              KeyType: "HASH"
+            - 
+              AttributeName: "Profession"
+              KeyType: "RANGE"
+          Projection: 
+            NonKeyAttributes: 
+              - "CharacterName"
+              - "Race"
+            ProjectionType: "INCLUDE"
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "lambda-trigger-dynamodb-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "lambda-trigger-dynamodb-lambda"
+      Description: "Lambda Triggered by DynamoDB"
+      Runtime: nodejs16.x
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Code:
+        ZipFile: !Sub |
+          'use strict'
+          const AWS = require('aws-sdk');
+          const s3 = new AWS.S3();
+          exports.handler = async (event, context, callback) => {
+              event.Records.forEach((record) => {
+                console.log('Stream record: ', JSON.stringify(record, null, 2));
+                if (record.eventName == 'INSERT') {
+                    const item = record.dynamodb.NewImage;
+                    console.log('Inserted: %j', item);
+                } else if(record.eventName == 'MODIFY') {
+                    const item = record.dynamodb.NewImage;
+                    console.log('Updated: %j', item);
+                } else if(record.eventName == 'REMOVE') {
+                    const item = record.dynamodb.OldImage;
+                    console.log('Deleted: %j', item);
+                } else {
+                    console.log('NotSupported Type', record.eventName);
+                }
+                
+                const bucket = '${BucketName}';
+                let key = '${BucketPath}' + 'region=' + record.dynamodb.Keys.Region.S + '/'; //Path with Partition
+                //let key = '${BucketPath}'; //Path no Partition
+                key = key + record.dynamodb.Keys.CharacterName.S + '-' + record.dynamodb.Keys.Region.S + '.json'; // FileName
+                console.log(key);
+                
+                let row = record.dynamodb.NewImage;
+                row["Region"] = record.dynamodb.Keys.Region.S;
+                row["CharacterName"] = record.dynamodb.Keys.CharacterName.S;
+                
+                const params = {
+                  Bucket: bucket,
+                  Key: key,
+                  Body: JSON.stringify(row),
+                };
+          
+                try {
+                   
+                   s3.putObject(params, function(err, data) {
+                    if (err) {
+                      console.log(err, err.stack);
+                    } else {
+                      console.log(data);
+                    }
+                  });
+                   console.log("*** s3.putObject *** " + key);
+                } catch (error) {
+                  console.log ("*** error *** s3.putObject ***");
+                  console.log (error);
+                }
+          
+              });
+          
+              callback(null, `Successfully processed ${!event.Records.length} records.`);
+          };
+          
+          
+
+  LambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DynamoTable.StreamArn
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Enabled: true
+      BatchSize: 10
+      #MaximumBatchingWindowInSeconds: 1
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"Metadata1\": [ rule1 ], \"data\": { \"Data1\": [ rule2 ] }}" } ] }
+      #FilterCriteria: { "Filters": [ { "Pattern": "{ \"body\": { \"foo\": [ \"bar\" ] }}" } ] }
+      StartingPosition: LATEST
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+######## GLUE #######################
+
+#Sample Data
+#{"Profession":{"S":"Alchemist"},"Race":{"S":"Gnome5"},"CharacterName":{"S":"adria"},"Region":{"S":"us"}}
+
+# Sample Query
+#SELECT * FROM "glue-table-dynamodb-streams-s3" limit 2
+#SELECT charactername.s, region.s, profession.s FROM "glue-table-dynamodb-streams-s3" limit 2
+#SELECT charactername.s as charactername, region.s as region, profession.s as profession FROM "glue-table-dynamodb-streams-s3" WHERE charactername.s LIKE '%ri%' limit 2
+
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub "glue-db-dynamodb-streams-s3-${ApplicationName}"
+        Description: "Glue container to hold metadata tables for the s3 crawler"
+
+  GlueTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId #The ID of the Data Catalog in which to create the Table. If none is supplied, the AWS account ID is used by default.
+      DatabaseName: !Ref GlueDatabase # The name of the database where the table metadata resides. For Hive compatibility, this must be all lowercase.
+      TableInput:
+        Name: !Sub "glue-table-dynamodb-streams-s3-${ApplicationName}"
+        Description: "Glue Table 2"
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          skip.header.line.count: 0
+          has_encrypted_data: false
+          serialization.encoding: utf-8
+          classification: 'json'
+          EXTERNAL: true
+        PartitionKeys:
+          - Name: Region
+            Type: string
+        StorageDescriptor:
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Columns: #array<struct<Title:string,Year:int,imdbID:string>>
+            - Name: CharacterName
+              Type: string
+            #- Name: Region  # Need to comment this out if already defined as PartitionKey, otherwise duplicate error
+            #  Type: struct<S:string>
+            #- Name: Region  # Need to comment this out if already defined as PartitionKey, otherwise duplicate error
+            #  Type: string
+            - Name: Profession
+              Type: struct<S:string>
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub "s3://${BucketName}/${BucketPath}"
+          SerdeInfo: #{"Profession":{"S":"Alchemist"},"Race":{"S":"Gnome5"},"CharacterName":{"S":"adria"},"Region":{"S":"us"}}
+            Parameters:
+              paths: CharacterName, Region, Profession
+            #SerializationLibrary: org.apache.hive.hcatalog.data.JsonSerDe
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+
+# TODO Partition, Crawler
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
+
+  DynamoTableStreamArn:
+    Value: !GetAtt DynamoTable.StreamArn
+
