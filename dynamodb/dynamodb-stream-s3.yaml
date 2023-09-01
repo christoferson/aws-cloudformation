@@ -1,5 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "DynamoDB - Streams Enabled -> Lambda -> S3"
+Description: "DynamoDB - Streams Enabled -> Lambda -> S3 (JSON)"
+
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Streams Bucket Configuration"
+        Parameters:
+          - BucketName
+          - BucketPath
 
 Parameters:
 
@@ -18,7 +31,7 @@ Resources:
   DynamoTable: 
     Type: AWS::DynamoDB::Table
     Properties: 
-      TableName: "Character5"
+      #TableName: "Character5"
       AttributeDefinitions: 
         - 
           AttributeName: "Region"
@@ -236,8 +249,6 @@ Resources:
               paths: CharacterName, Region, Profession
             #SerializationLibrary: org.apache.hive.hcatalog.data.JsonSerDe
             SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
-
-# TODO Partition, Crawler
 
 Outputs:
 
