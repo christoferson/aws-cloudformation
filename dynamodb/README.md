@@ -32,15 +32,70 @@ Provision a DynamoDB with GSI
 
 Provision a DynamoDB with Streams Enabled. Lambda Function called on Item insertion and modification.
 
-StreamViewType
-KEYS_ONLY - Only the key attributes of the modified item are written to the stream.
-NEW_IMAGE - The entire item, as it appears after it was modified, is written to the stream.
-OLD_IMAGE - The entire item, as it appeared before it was modified, is written to the stream.
-NEW_AND_OLD_IMAGES - Both the new and the old item images of the item are written to the stream.
+##### StreamViewType
+- KEYS_ONLY - Only the key attributes of the modified item are written to the stream.
+- NEW_IMAGE - The entire item, as it appears after it was modified, is written to the stream.
+- OLD_IMAGE - The entire item, as it appeared before it was modified, is written to the stream.
+- NEW_AND_OLD_IMAGES - Both the new and the old item images of the item are written to the stream.
 
 [dynamodb-stream](dynamodb-stream.yaml)
 
-### DynamoDB - Auto Scaling (RCU and WCU)
+### DynamoDB - Stream - Lambda - S3 - Glue
+
+Writes out DynamoDB modifications to S3 using streams lambda. Format is JSON.
+
+Provisions Glue Database and Catalog to enable querying changes using Athena.
+
+Lambda outputs data in s3://<bucket>/route53/evt/adria-xx.json
+
+##### Athena Query Editor
+
+```
+SELECT * FROM "glue-table-dynamodb-streams-s3" limit 2
+SELECT charactername, region, profession.s AS profession FROM "glue-table-dynamodb-streams-s3" limit 2
+SELECT * FROM "glue-table-dynamodb-streams-s3" WHERE charactername LIKE '%ri%' limit 2
+```
+
+[dynamodb-stream-s3](dynamodb-stream-s3.yaml)
+
+
+### DynamoDB - Stream - Lambda - S3 - Glue (Partitioned)
+
+Writes out DynamoDB modifications to S3 using streams lambda. Format is JSON.
+
+Provisions Glue Database and Catalog to enable querying changes using Athena.
+
+Table is partitioned using region attribute. Lambda outputs data in s3://<bucket>/route53/evt-partitioned/region=xx/adria-xx.json
+
+##### Athena Query Editor
+
+```
+# Update Partition Information
+MSCK REPAIR TABLE `glue-table-dynamodb-streams-s3-partitioned`
+
+# Select Data
+SELECT * FROM "glue-table-dynamodb-streams-s3-partitioned"
+SELECT * FROM "glue-table-dynamodb-streams-s3-partitioned" where charactername like '%world'
+SELECT * FROM "glue-table-dynamodb-streams-s3-partitioned" WHERE region = 'us' AND charactername like 'A%'
+```
+
+##### Create table manualy in Athena Query Editior
+
+```
+CREATE EXTERNAL TABLE IF NOT EXISTS `glue-db-dynamodb-streams-s3-partitioned`.`glue-table-dynamodb-streams-s3-partitioned` (
+  `charactername` string,
+  `Profession` struct<S:string>
+)
+PARTITIONED BY (
+  `region` string
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+LOCATION 's3://bucket/route53/evt-partitioned/'
+```
+
+[dynamodb-stream-s3-partitioned](dynamodb-stream-s3-partitioned.yaml)
+
+### DynamoDB - Auto Scaling (RCU and WCU))
 
 Provision a DynamoDB table with Auto-scaling configuration for both RCU and WCU.
 
