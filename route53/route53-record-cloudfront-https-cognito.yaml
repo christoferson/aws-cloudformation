@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Route53 - Cloudfront(Lambda Origin)
+
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Hosted Zone Configuration"
+        Parameters:
+          - HostedZoneName
+      -
+        Label:
+          default: "Hosted Zone Sub Domain Configuration"
+        Parameters:
+          - CloudfrontSubDomainName
+          - DomainValidationHostedZoneId
+      -
+        Label:
+          default: "Certificate Configuration"
+        Parameters:
+          - CertificateManagerCertificateId
+      -
+        Label:
+          default: "Cognito Configuration"
+        Parameters:
+          - CognitoAuthorizerLambdaVersionArn
+
+Parameters:
+
+  HostedZoneName:
+    Description: "Must include a trailing dot (for example, www.example.com.)"
+    Type: String
+    Default: "foo.com"
+
+  DomainValidationHostedZoneId:
+    Description: "Identifier of the hosted zone"
+    Type: String
+    Default: "Z04854785"
+
+  CloudfrontSubDomainName:
+    Description: "Sub Domain Name of the Applicaiton Load Balancer"
+    Type: String
+    Default: "r53cfront"
+
+  CertificateManagerCertificateId:
+    Description: "Certificate Manager"
+    Type: String
+    Default: "xxxx-444-33-333-eeee"
+
+  CognitoAuthorizerLambdaVersion:
+    Description: "LambdaFunctionEdge You must specify the ARN of a function version; you can't specify an alias or $LATEST."
+    Type: String
+    Default: "route53-record-cloudfront-LambdaFunctionEdgeCognit-dddd:1"
+
+            
+Resources:
+
+# Origin - Lambda
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "cloudfront-lambda-origin-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+              - edgelambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "cloudfront-lambda-origin"
+      Description: "Basic Lambda"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Timeout: 15 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code: # c_security is header sent from cloudfront
+        ZipFile: |
+          exports.handler = async (event, context, callback) => {
+              console.log(event);
+              //if (event.headers["c_security"] !== "secret") {
+              //    return { statusCode: 401, body: JSON.stringify("Access Denied!"), };
+              //}
+              context.succeed(JSON.stringify("LambdaOrigin1!"));
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "cloudfront-lambda-origin"
+
+  LambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref LambdaFunction
+      #Qualifier: dev # The alias name.
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "https://*"
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      #FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionUrlAuthType: NONE
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+####
+
+  CloudFrontDistribution:
+    DependsOn: LambdaUrl
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        PriceClass: PriceClass_200 #PriceClass_100 | PriceClass_200 | PriceClass_All
+        HttpVersion: http2
+        IPV6Enabled: false
+        Comment: !Sub "Distribution with Lambda Function URL"
+        Origins:
+        - DomainName: !Select [2, !Split ["/", !GetAtt LambdaUrl.FunctionUrl]]
+          Id: LambdaOrigin
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          CustomOriginConfig:
+            HTTPSPort: 443
+            OriginProtocolPolicy: https-only #http-only | https-only | match-viewer
+            OriginKeepaliveTimeout: 5
+            OriginReadTimeout: 30
+          OriginCustomHeaders:
+            - HeaderName: c_security
+              HeaderValue: secret
+        DefaultCacheBehavior:
+          TargetOriginId: LambdaOrigin
+          CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6' #CachingOptimized
+          ViewerProtocolPolicy: redirect-to-https #allow-all | https-only | redirect-to-https
+          SmoothStreaming: 'false'
+          Compress: 'true'
+        CacheBehaviors:
+        - PathPattern: lambda/*
+          AllowedMethods:
+          - GET
+          - HEAD
+          DefaultTTL: 900
+          MaxTTL: 900
+          MinTTL: 900
+          ForwardedValues:
+            QueryString: false
+            #Headers:
+            #- Host
+          TargetOriginId: LambdaOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          LambdaFunctionAssociations:
+          - EventType: "viewer-request" #origin-request | origin-response | viewer-request | viewer-response
+            #IncludeBody:
+            #LambdaFunctionARN: !Ref CognitoAuthorizerLambdaVersionArn #You must specify the ARN of a function version; you can't specify an alias or $LATEST.
+            LambdaFunctionARN: !Sub "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:${CognitoAuthorizerLambdaVersion}"
+        Aliases:
+        - !Sub "${CloudfrontSubDomainName}.${HostedZoneName}"
+        ViewerCertificate:
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.1_2016 #SSLv3 | TLSv1 | TLSv1.1_2016 | TLSv1.2_2018 | TLSv1.2_2019 | TLSv1.2_2021 | TLSv1_2016
+          AcmCertificateArn: !Sub "arn:aws:acm:us-east-1:${AWS::AccountId}:certificate/${CertificateManagerCertificateId}"
+      Tags:
+        - Key: "Name"
+          Value: "cloudfront-cognito"
+
+#### 
+
+# DNS
+
+  Route53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub "${HostedZoneName}."
+      Comment: "Alias targeted to Cloudfront"
+      RecordSets:
+      - Name: !Sub "${CloudfrontSubDomainName}.${HostedZoneName}."
+        Type: A
+        AliasTarget:
+          HostedZoneId: "Z2FDTNDATAQYW2" #This is always the hosted zone ID when you create an alias record that routes traffic to a CloudFront distribution.
+          DNSName: !GetAtt CloudFrontDistribution.DomainName
+
+### Certificate
+
+#  CertificateManagerCertificate:
+#    DependsOn: Route53RecordSetGroup
+#    Type: AWS::CertificateManager::Certificate
+#    Properties:
+#      DomainName: !Sub "${CloudfrontSubDomainName}.${HostedZoneName}"
+#      DomainValidationOptions:
+#        - DomainName: !Sub "${CloudfrontSubDomainName}.${HostedZoneName}"
+#          HostedZoneId: !Ref DomainValidationHostedZoneId
+#      SubjectAlternativeNames:
+#        - !Sub "*.${CloudfrontSubDomainName}.${HostedZoneName}"
+#      ValidationMethod: DNS
+
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+  LambdaFunctionUrl:
+    Value: !GetAtt LambdaUrl.FunctionUrl
+
+  LambdaFunctionDomainName:
+    Value: !Select [2, !Split ["/", !GetAtt LambdaUrl.FunctionUrl]]
+
+  CloudFrontDomain:
+    Description: CloudFront default domain name configured
+    Value: !Sub https://${CloudFrontDistribution.DomainName}
+    
+  CloudFrontCustomDomain:
+    Description: CloudFront default domain name configured
+    Value: !Sub https://${CloudfrontSubDomainName}.${HostedZoneName}
