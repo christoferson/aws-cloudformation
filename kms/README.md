@@ -60,6 +60,7 @@
 - key policies are Regional. A key policy controls access only to a KMS key in the same Region. It has no effect on KMS keys in other Regions.
 
 ####  Key policy
+
 – Every KMS key has a key policy. It is the primary mechanism for controlling access to a KMS key. 
 You can use the key policy alone to control access, which means the full scope of access to the KMS key is defined in a single document (the key policy).
 
@@ -67,9 +68,22 @@ You can use the key policy alone to control access, which means the full scope o
 
 - This default key policy has one policy statement that gives the AWS account that owns the KMS key permission to use IAM policies to allow access to all AWS KMS operations on the KMS key.
 
+```
+{
+  "Sid": "Enable IAM User Permissions",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::111122223333:root"
+   },
+  "Action": "kms:*",
+  "Resource": "*"
+}
+```
+
 ##### Default key policy when you create a KMS key with the AWS Management Console
 
-- When you create a KMS key with the AWS Management Console, the key policy begins with the policy statement that allows access to the AWS account and enables IAM policies. The console then adds a key administrators statement, a key users statement, and (for most key types) a statement that allows principals to use the KMS key with other AWS services. 
+- When you create a KMS key with the AWS Management Console, the key policy begins with the policy statement that allows access to the AWS account and enables IAM policies. 
+The console then adds a key administrators statement, a key users statement, and (for most key types) a statement that allows principals to use the KMS key with other AWS services. 
 
 - Unlike other AWS resource policies, an AWS KMS key policy does not automatically give permission to the account or any of its identities. To give permission to account administrators, the key policy must include an explicit statement that provides this permission, like this one.
 
@@ -88,6 +102,194 @@ Without this permission, IAM policies that allow access to the key are ineffecti
 
 - kms:List* Allows kms:ListGrants, kms:ListKeyPolicies, and kms:ListResourceTags. (The kms:ListAliases and kms:ListKeys permissions, which are required to view KMS keys in the AWS Management Console, are valid only in IAM policies.)
 
+
+##### Key Policy to Administer Key
+
+- Key administrators have permissions to manage the KMS key, but do not have permissions to use the KMS key in cryptographic operations. 
+
+- Because key administrators have permission to change the key policy and create grants, they can give themselves and others AWS KMS permissions not specified in this policy.
+
+- IAM best practices discourage the use of IAM users with long-term credentials. Whenever possible, use IAM roles, which provide temporary credentials.
+
+```
+{
+  "Sid": "Allow access for Key Administrators",
+  "Effect": "Allow",
+  "Principal": {"AWS":"arn:aws:iam::111122223333:role/ExampleAdminRole"},
+  "Action": [
+    "kms:Create*",
+    "kms:Describe*",
+    "kms:Enable*",
+    "kms:List*",
+    "kms:Put*",
+    "kms:Update*",
+    "kms:Revoke*",
+    "kms:Disable*",
+    "kms:Get*",
+    "kms:Delete*",
+    "kms:TagResource",
+    "kms:UntagResource",
+    "kms:ScheduleKeyDeletion",
+    "kms:CancelKeyDeletion"
+  ],
+  "Resource": "*"
+}
+```
+
+##### Key Policy to Use the Key | [global-condition-keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#AvailableKeys) | [kms-condition-leys](https://docs.aws.amazon.com/kms/latest/developerguide/conditions-kms.html)
+
+- Gives key users permission to use the KMS key directly for all supported cryptographic operations for that type of KMS key.
+
+- Gives key users permission to allow AWS services that are integrated with AWS KMS to use the KMS key on their behalf to protect resources, such as Amazon S3 buckets and Amazon DynamoDB tables.
+
+- The kms:GrantIsForAWSResource policy condition doesn't allow the user to call these grant operations directly. When the key user allows it, an AWS service can create a grant on the user's behalf that allows the service to use the KMS key to protect the user's data.
+
+- The default key policy allows key users to delegate their grant permission to all integrated services that use grants. However, you can create a custom key policy that restricts the permission to specified AWS services. For more information, see the kms:ViaService condition key.
+
+```
+{
+  "Sid": "Allow use of the key",
+  "Effect": "Allow",
+  "Principal": {"AWS": [
+    "arn:aws:iam::111122223333:role/ExampleRole",
+    "arn:aws:iam::444455556666:root"
+  ]},
+  "Action": [
+    "kms:Encrypt",
+    "kms:Decrypt",
+    "kms:ReEncrypt*",
+    "kms:GenerateDataKey*",
+    "kms:DescribeKey"
+  ],
+  "Resource": "*"
+},
+{
+  "Sid": "Allow attachment of persistent resources",
+  "Effect": "Allow",
+  "Principal": {"AWS": [
+    "arn:aws:iam::111122223333:role/ExampleRole",
+    "arn:aws:iam::444455556666:root"
+  ]},
+  "Action": [
+    "kms:CreateGrant",
+    "kms:ListGrants",
+    "kms:RevokeGrant"
+  ],
+  "Resource": "*",
+  "Condition": {"Bool": {"kms:GrantIsForAWSResource": true}}
+}
+```
+
+##### KMS Policy - Autoscaling - Encryped EBS | [link](https://docs.aws.amazon.com/autoscaling/ec2/userguide/key-policy-requirements-EBS-encryption.html#policy-example-cmk-cross-account-access)
+
+- Set up the key policy that you need to launch Auto Scaling instances when you specify a customer managed key for Amazon EBS encryption.
+
+- Give the service-linked role named AWSServiceRoleForAutoScaling permissions to use the customer managed key.
+
+
+```
+{
+   "Sid": "Allow service-linked role use of the customer managed key",
+   "Effect": "Allow",
+   "Principal": {
+       "AWS": [
+           "arn:aws:iam::account-id:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
+       ]
+   },
+   "Action": [
+       "kms:Encrypt",
+       "kms:Decrypt",
+       "kms:ReEncrypt*",
+       "kms:GenerateDataKey*",
+       "kms:DescribeKey"
+   ],
+   "Resource": "*"
+}
+```
+
+```
+{
+   "Sid": "Allow attachment of persistent resources",
+   "Effect": "Allow",
+   "Principal": {
+       "AWS": [
+           "arn:aws:iam::account-id:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
+       ]
+   },
+   "Action": [
+       "kms:CreateGrant"
+   ],
+   "Resource": "*",
+   "Condition": {
+       "Bool": {
+           "kms:GrantIsForAWSResource": true
+       }
+    }
+}
+```
+
+- Customer managed key in a different account than the Auto Scaling group, you must use a grant in combination with the key policy to allow cross-account access to the key.
+
+```
+{
+   "Sid": "Allow external account 111122223333 use of the customer managed key",
+   "Effect": "Allow",
+   "Principal": {
+       "AWS": [
+           "arn:aws:iam::111122223333:root"
+       ]
+   },
+   "Action": [
+       "kms:Encrypt",
+       "kms:Decrypt",
+       "kms:ReEncrypt*",
+       "kms:GenerateDataKey*",
+       "kms:DescribeKey"
+   ],
+   "Resource": "*"
+}
+```
+```
+{
+   "Sid": "Allow attachment of persistent resources in external account 111122223333",
+   "Effect": "Allow",
+   "Principal": {
+       "AWS": [
+           "arn:aws:iam::111122223333:root"
+       ]
+   },
+   "Action": [
+       "kms:CreateGrant"
+   ],
+   "Resource": "*"
+}
+```
+
+- From the account that you want to create the Auto Scaling group in, create a grant that delegates the relevant permissions to the appropriate service-linked role. 
+
+```
+aws kms create-grant \
+  --region us-west-2 \
+  --key-id arn:aws:kms:us-west-2:444455556666:key/1a2b3c4d-5e6f-1a2b-3c4d-5e6f1a2b3c4d \
+  --grantee-principal arn:aws:iam::111122223333:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling \
+  --operations "Encrypt" "Decrypt" "ReEncryptFrom" "ReEncryptTo" "GenerateDataKey" "GenerateDataKeyWithoutPlaintext" "DescribeKey" "CreateGrant"
+```
+
+- User making the request must have permissions for the CreateGrant action.
+
+```
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCreationOfGrantForTheKMSKeyinExternalAccount444455556666",
+      "Effect": "Allow",
+      "Action": "kms:CreateGrant",
+      "Resource": "arn:aws:kms:us-west-2:444455556666:key/1a2b3c4d-5e6f-1a2b-3c4d-5e6f1a2b3c4d"
+    }
+  ]
+}
+```
 
 #### IAM policies 
 – You can use IAM policies in combination with the key policy and grants to control access to a KMS key. Controlling access this way enables you to manage all of the permissions for your IAM identities in IAM. To use an IAM policy to allow access to a KMS key, the key policy must explicitly allow it. 
@@ -149,6 +351,8 @@ Default Key Policy which permits everyone in the account.
 
 - https://docs.aws.amazon.com/kms/latest/developerguide/iam-policies.html
 - https://docs.aws.amazon.com/kms/latest/developerguide/grants.html
+
+- https://docs.aws.amazon.com/autoscaling/ec2/userguide/key-policy-requirements-EBS-encryption.html#policy-example-cmk-cross-account-access
 
 ### TODO
 
