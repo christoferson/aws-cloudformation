@@ -1,0 +1,30 @@
+{
+  "Sid": "Enable IAM User Permissions",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::111122223333:root"
+   },
+  "Action": "kms:*",
+  "Resource": "*"
+}
+
+# The key policy statement shown above gives the AWS account that owns the key permission to use IAM policies, 
+# as well as key policies, to allow all actions (kms:*) on the KMS key. 
+
+# The principal in this key policy statement is the account principal, which is represented by an ARN in this format: 
+# arn:aws:iam::account-id:root. The account principal represents the AWS account and its administrators.
+
+# When the principal in a key policy statement is the account principal, 
+# the policy statement doesn't give any IAM principal permission to use the KMS key. 
+# Instead, it allows the account to use IAM policies to delegate the permissions specified in the policy statement. 
+# This default key policy statement allows the account to use IAM policies to delegate permission for all actions (kms:*) on the KMS key.
+
+# Using account principal Reduces the risk of the KMS key becoming unmanageable.
+# Suppose you create a key policy that gives only one user access to the KMS key. 
+# If you then delete that user, the key becomes unmanageable and you must contact AWS Support to regain access to the KMS key.
+# The key policy statement shown above gives permission to control the key to the account principal, 
+# which represents the AWS account and its administrators, including the account root user. 
+# The account root user is the only principal that cannot be deleted unless you delete the AWS account. 
+ 
+
+ 
