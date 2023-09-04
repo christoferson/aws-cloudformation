@@ -1,0 +1,420 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Route53 + Application Load Balancer
+
+Parameters:
+
+  HostedZoneName:
+    Description: "must include a trailing dot (for example, www.example.com.)"
+    Type: String
+    Default: "example.com."
+
+  LoadBalancerSubDomainName:
+    Description: "Sub Domain Name of the Applicaiton Load Balancer"
+    Type: String
+    Default: "r53lb2"
+
+  CertificateManagerCertificateArn:
+    Description: "ARN of the certificate for HTTPS"
+    Type: String
+    Default: "arn:aws:acm:region:xxxx:certificate/bar"
+    
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnetListLoadBalancer:
+    Description: Public VpcSubnets for Load Balancer
+    Type: List<AWS::EC2::Subnet::Id>
+
+  CognitoUserPoolArn:
+    Description: "Cognito User Pool Arn"
+    Type: String
+    Default: "arn:aws:cognito-idp:us-west-1:xxx:userpool/eu-west-ddd"
+
+  CognitoUserPoolClientId:
+    Description: "Cognito User Pool Client ID"
+    Type: String
+    Default: "xxxx" #"ddd"
+
+  CognitoUserPoolDomainName:
+    Description: "Cognito User Pool DomainName - The domain prefix or fully-qualified domain name of the Amazon Cognito user pool."
+    Type: String
+    Default: "sss" #Default: "https://ddd.auth.eu-west-1.amazoncognito.com"
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "basic-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Timeout: 10 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              let now = new Date();
+              const response = {
+                  statusCode: 200,
+                  statusDescription: "200 OK",
+                  isBase64Encoded: false,
+                  headers: {
+                      "Content-Type": "text/html" 
+                  },
+                  body: `<html><body><p>Greetings: ${now}</p></body></html>`,
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "elasticloadbalancing.amazonaws.com"
+      SourceArn: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+# Load Balancer
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http on port 80
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing 
+      Subnets: !Ref VpcSubnetListLoadBalancer
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+      #LoadBalancerAttributes:
+      #  - Key: "deletion_protection.enabled"
+      #    Value: "false"
+      Tags:
+        - Key: Name
+          Value: !Sub "route53-elb"
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    #DependsOn: LambdaPermission
+    Properties:
+      HealthCheckIntervalSeconds: 45
+      HealthCheckPath: "/"
+      HealthCheckTimeoutSeconds: 30
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      HealthCheckEnabled: true
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
+          AvailabilityZone: "all"
+      TargetGroupAttributes: 
+        - Key: lambda.multi_value_headers.enabled
+          Value: true
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateManagerCertificateArn
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 404
+            MessageBody: <html>Top Page - RedBox</html>
+            ContentType: text/html
+      #DefaultActions:
+      #  - TargetGroupArn: !Ref TargetGroup
+      #    Type: forward
+
+  HTTPlistenerHttp: #Redirect HTTP (80) -> HTTPS (443)
+   Type: "AWS::ElasticLoadBalancingV2::Listener"
+   Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions:
+        - Type: "redirect"
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: 443
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
+
+# DNS
+
+  Route53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub "${HostedZoneName}"
+      Comment: "Alias targeted to Application LoadBalancer"
+      RecordSets:
+      - Name: !Sub "${LoadBalancerSubDomainName}.${HostedZoneName}"
+        Type: A
+        AliasTarget:
+          HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+          DNSName: !GetAtt LoadBalancer.DNSName
+
+# Backend Path #1 - Needs Cognito Authentication
+
+  LambdaFunction1:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Timeout: 10 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              let now = new Date();
+              const response = {
+                  statusCode: 200,
+                  statusDescription: "200 OK",
+                  isBase64Encoded: false,
+                  headers: {
+                      "Content-Type": "text/html" 
+                  },
+                  body: `<html><body><p>Lambda Function 1: ${now}</p></body></html>`,
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaPermission1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction1.Arn
+      Action: lambda:InvokeFunction
+      Principal: "elasticloadbalancing.amazonaws.com"
+      SourceArn: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
+
+  LambdaLogGroup1:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction1}"
+      RetentionInDays: 1
+
+  TargetGroup1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: LambdaPermission
+    Properties:
+    Properties:
+      HealthCheckIntervalSeconds: 45
+      HealthCheckPath: "/"
+      HealthCheckTimeoutSeconds: 30
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      HealthCheckEnabled: true
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction1.Arn
+          AvailabilityZone: "all"
+      TargetGroupAttributes: 
+        - Key: lambda.multi_value_headers.enabled
+          Value: true
+
+  ListenerRule1:
+    Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
+    Properties:
+      Priority: "1"
+      ListenerArn: !Ref HttpListener
+      Conditions:
+        - Field: "path-pattern"
+          Values:
+            - "/v1/lambda1"
+      Actions:
+        - Type: "authenticate-cognito"
+          Order: 1
+          AuthenticateCognitoConfig:
+              OnUnauthenticatedRequest: "authenticate" # allow | authenticate | deny
+              #Scope: "openid"
+              #SessionCookieName: "AWSELBAuthSessionCookie"
+              #SessionTimeout: 604800 #(7 days)
+              UserPoolArn: !Ref CognitoUserPoolArn
+              UserPoolClientId: !Ref CognitoUserPoolClientId
+              UserPoolDomain: !Ref CognitoUserPoolDomainName
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup1
+          Order: 2
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroup1
+                Weight: 1
+            TargetGroupStickinessConfig:
+              Enabled: false
+
+# Backend Path #2 - Public / Does not need Cognito Authentication
+
+  LambdaFunction2:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Timeout: 10 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              let now = new Date();
+              const response = {
+                  statusCode: 200,
+                  statusDescription: "200 OK",
+                  isBase64Encoded: false,
+                  headers: {
+                      "Content-Type": "text/html" 
+                  },
+                  body: `<html><body><p>Lambda Function 2: ${now}</p></body></html>`,
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaPermission2:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction2.Arn
+      Action: lambda:InvokeFunction
+      Principal: "elasticloadbalancing.amazonaws.com"
+      SourceArn: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
+
+  LambdaLogGroup2:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction2}"
+      RetentionInDays: 1
+
+  TargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: LambdaPermission
+    Properties:
+    Properties:
+      HealthCheckIntervalSeconds: 45
+      HealthCheckPath: "/"
+      HealthCheckTimeoutSeconds: 30
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      HealthCheckEnabled: true
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction2.Arn
+          AvailabilityZone: "all"
+      TargetGroupAttributes: 
+        - Key: lambda.multi_value_headers.enabled
+          Value: true
+
+  ListenerRule2:
+    Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
+    Properties:
+      Priority: "2"
+      ListenerArn: !Ref HttpListener
+      Conditions:
+        - Field: "path-pattern"
+          Values:
+            - "/v1/lambda2"
+      Actions:
+        #- Type: "authenticate-cognito"
+        #  Order: 1
+        #  AuthenticateCognitoConfig:
+        #      OnUnauthenticatedRequest: "authenticate" # allow | authenticate | deny
+        #      #Scope: "openid"
+        #      #SessionCookieName: "AWSELBAuthSessionCookie"
+        #      #SessionTimeout: 604800 #(7 days)
+        #      UserPoolArn: !Ref CognitoUserPoolArn
+        #      UserPoolClientId: !Ref CognitoUserPoolClientId
+        #      UserPoolDomain: !Ref CognitoUserPoolDomainName
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup2
+          Order: 2
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroup2
+                Weight: 1
+            TargetGroupStickinessConfig:
+              Enabled: false
+
+Outputs:
+
+  LambdaFunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+  LoadBalancerDomainName:
+    Value: !GetAtt LoadBalancer.DNSName
+
+  LoadBalancerUrlHttp:
+    Value: !Sub "http://${LoadBalancer.DNSName}"
+
+  Route53UrlHttp:
+    Value: !Sub "http://${LoadBalancerSubDomainName}.${HostedZoneName}"
