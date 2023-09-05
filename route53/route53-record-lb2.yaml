@@ -112,7 +112,7 @@ Resources:
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: LambdaPermission
+    #DependsOn: LambdaPermission
     Properties:
       #HealthCheckIntervalSeconds: 15
       #HealthCheckPath: "/"
@@ -136,15 +136,15 @@ Resources:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 80
       Protocol: HTTP
-      #DefaultActions:
-      #  - Type: fixed-response
-      #    FixedResponseConfig:
-      #      StatusCode: 404
-      #      MessageBody: Not Found.
-      #      ContentType: text/plain
       DefaultActions:
-        - TargetGroupArn: !Ref TargetGroup
-          Type: forward
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 404
+            MessageBody: <html>Not Found.</html>
+            ContentType: text/html
+      #DefaultActions:
+      #  - TargetGroupArn: !Ref TargetGroup
+      #    Type: forward
 
 # DNS
 
@@ -160,7 +160,39 @@ Resources:
           HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
           DNSName: !GetAtt LoadBalancer.DNSName
 
+# Backend Paths
 
+  TargetGroup1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: LambdaPermission
+    Properties:
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
+          AvailabilityZone: "all"
+      TargetGroupAttributes: 
+        - Key: lambda.multi_value_headers.enabled
+          Value: true
+
+  ListenerRule1:
+    Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
+    Properties:
+      Priority: "1"
+      ListenerArn: !Ref HttpListener
+      Conditions:
+        - Field: "path-pattern"
+          Values:
+            - "/v1/lambda1"
+      Actions:
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup1
+          Order: 1
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroup1
+                Weight: 1
+            TargetGroupStickinessConfig:
+              Enabled: false
 
 Outputs:
 
