@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Route53 + Application Load Balancer
+Description: Route53 + Application Load Balancer - HTTPS Enabled
 
 Parameters:
 
@@ -17,7 +17,7 @@ Parameters:
     Description: "ARN of the certificate for HTTPS"
     Type: String
     Default: "arn:aws:acm:region:xxxx:certificate/bar"
-    
+
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
@@ -25,6 +25,21 @@ Parameters:
   VpcSubnetListLoadBalancer:
     Description: Public VpcSubnets for Load Balancer
     Type: List<AWS::EC2::Subnet::Id>
+
+  CognitoUserPoolArn:
+    Description: "Cognito User Pool Arn"
+    Type: String
+    Default: "arn:aws:cognito-idp:eu-west-1:sss:userpool/eu-west-dddd"
+
+  CognitoUserPoolClientId:
+    Description: "Cognito User Pool Client ID"
+    Type: String
+    Default: "fdsf"
+
+  CognitoUserPoolDomainName:
+    Description: "Cognito User Pool DomainName - The domain prefix or fully-qualified domain name of the Amazon Cognito user pool."
+    Type: String
+    Default: "fdsf" #Default: "https://fdsf.auth.us-west-1.amazoncognito.com"
 
 Resources:
 
@@ -91,6 +106,8 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
 
+# Load Balancer
+
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -123,14 +140,14 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     #DependsOn: LambdaPermission
     Properties:
-      #HealthCheckIntervalSeconds: 15
-      #HealthCheckPath: "/"
-      #HealthCheckTimeoutSeconds: 10
-      #UnhealthyThresholdCount: 2
-      #Matcher:
-      #  HttpCode: "200"
-      #HealthyThresholdCount: 2
-      #HealthCheckEnabled: false
+      HealthCheckIntervalSeconds: 45
+      HealthCheckPath: "/"
+      HealthCheckTimeoutSeconds: 30
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      HealthCheckEnabled: true
       TargetType: lambda
       Targets:
         - Id: !GetAtt LambdaFunction.Arn
@@ -151,11 +168,27 @@ Resources:
         - Type: fixed-response
           FixedResponseConfig:
             StatusCode: 404
-            MessageBody: <html>Not Found.</html>
+            MessageBody: <html>Top Page - RedBox</html>
             ContentType: text/html
       #DefaultActions:
       #  - TargetGroupArn: !Ref TargetGroup
       #    Type: forward
+
+  HTTPlistenerHttp: #Redirect HTTP (80) -> HTTPS (443)
+   Type: "AWS::ElasticLoadBalancingV2::Listener"
+   Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions:
+        - Type: "redirect"
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: 443
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
 
 # DNS
 
@@ -171,15 +204,70 @@ Resources:
           HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
           DNSName: !GetAtt LoadBalancer.DNSName
 
-# Backend Paths
+# Backend Paths #1
+
+  LambdaFunction1:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda"
+      Description: "Basic Lambda"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          databaseName: lambdadb
+          databaseUser: admin
+      Timeout: 10 #The default is 3 seconds. The maximum allowed value is 900 seconds.
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              let now = new Date();
+              const response = {
+                  statusCode: 200,
+                  statusDescription: "200 OK",
+                  isBase64Encoded: false,
+                  headers: {
+                      "Content-Type": "text/html" 
+                  },
+                  body: `<html><body><p>Lambda Function 1: ${now}</p></body></html>`,
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaPermission1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction1.Arn
+      Action: lambda:InvokeFunction
+      Principal: "elasticloadbalancing.amazonaws.com"
+      SourceArn: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
+
+  LambdaLogGroup1:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction1}"
+      RetentionInDays: 1
 
   TargetGroup1:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     DependsOn: LambdaPermission
     Properties:
+    Properties:
+      HealthCheckIntervalSeconds: 45
+      HealthCheckPath: "/"
+      HealthCheckTimeoutSeconds: 30
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      HealthCheckEnabled: true
       TargetType: lambda
       Targets:
-        - Id: !GetAtt LambdaFunction.Arn
+        - Id: !GetAtt LambdaFunction1.Arn
           AvailabilityZone: "all"
       TargetGroupAttributes: 
         - Key: lambda.multi_value_headers.enabled
@@ -195,15 +283,26 @@ Resources:
           Values:
             - "/v1/lambda1"
       Actions:
+        - Type: "authenticate-cognito"
+          Order: 1
+          AuthenticateCognitoConfig:
+              OnUnauthenticatedRequest: "authenticate" # allow | authenticate | deny
+              #Scope: "openid"
+              #SessionCookieName: "AWSELBAuthSessionCookie"
+              #SessionTimeout: 604800 #(7 days)
+              UserPoolArn: !Ref CognitoUserPoolArn
+              UserPoolClientId: !Ref CognitoUserPoolClientId
+              UserPoolDomain: !Ref CognitoUserPoolDomainName
         - Type: "forward"
           TargetGroupArn: !Ref TargetGroup1
-          Order: 1
+          Order: 2
           ForwardConfig:
             TargetGroups:
               - TargetGroupArn: !Ref TargetGroup1
                 Weight: 1
             TargetGroupStickinessConfig:
               Enabled: false
+
 
 Outputs:
 
