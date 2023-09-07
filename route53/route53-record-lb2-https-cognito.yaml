@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Route53 + Application Load Balancer
+Description: Route53 + Application Load Balancer + HTTPS Enabled + Cognito
 
 Parameters:
 
@@ -9,15 +9,15 @@ Parameters:
     Default: "example.com."
 
   LoadBalancerSubDomainName:
-    Description: "Sub Domain Name of the Applicaiton Load Balancer"
+    Description: "Sub Domain Name of the Application Load Balancer"
     Type: String
-    Default: "r53lb2"
+    Default: "xx"
 
   CertificateManagerCertificateArn:
     Description: "ARN of the certificate for HTTPS"
     Type: String
     Default: "arn:aws:acm:region:xxxx:certificate/bar"
-    
+
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
@@ -29,17 +29,17 @@ Parameters:
   CognitoUserPoolArn:
     Description: "Cognito User Pool Arn"
     Type: String
-    Default: "arn:aws:cognito-idp:us-west-1:xxx:userpool/eu-west-ddd"
+    Default: "arn:aws:cognito-idp:eu-west-1:zzzz:userpool/us-west-dddd"
 
   CognitoUserPoolClientId:
     Description: "Cognito User Pool Client ID"
     Type: String
-    Default: "xxxx" #"ddd"
+    Default: "dddd" #"163koseq7col9s52fe4fn9d6bn"
 
   CognitoUserPoolDomainName:
     Description: "Cognito User Pool DomainName - The domain prefix or fully-qualified domain name of the Amazon Cognito user pool."
     Type: String
-    Default: "sss" #Default: "https://ddd.auth.eu-west-1.amazoncognito.com"
+    Default: "ddd" #Default: "https://eeee.auth.us-west-1.amazoncognito.com"
 
 Resources:
 
