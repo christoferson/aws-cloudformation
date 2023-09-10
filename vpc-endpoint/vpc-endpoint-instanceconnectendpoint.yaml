@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Vpc Endpoint (Interface Endpoint) - SSM"
+
+# https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-create-vpc.html
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: lab
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  VpcSubnet:
+    Description: "Private VpcSubnets for Endpoint"
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+
+  EicSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "InstanceConnectEndpoint"
+      VpcId: !Ref VpcId
+        
+  EicEndpoint:
+    Type: "AWS::EC2::InstanceConnectEndpoint"
+    Properties: 
+      ClientToken: "foobar"
+      SecurityGroupIds: 
+        - !Ref EicSecurityGroup
+      SubnetId: !Ref VpcSubnet
