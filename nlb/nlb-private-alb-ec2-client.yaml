@@ -1,0 +1,194 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: NLB - Private Subnet - ALB - EC2
+
+Metadata:
+
+  StackVersion: 1
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcPrivateSubnetListLoadBalancer
+
+      -
+        Label:
+          default: "Endpoint Service Configuration"
+        Parameters:
+          - VpcEndpointServiceName
+      -
+        Label:
+          default: "Instance Configuration"
+        Parameters:
+          - VpcPrivateSubnet
+          - InstanceImageId
+          - InstanceType
+          
+Parameters:
+
+  Prefix:
+    Type: String
+    Default: "vpc-b"
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcPrivateSubnetList:
+    Description: Private VpcSubnets for Load Balancer
+    Type: List<AWS::EC2::Subnet::Id>
+
+  VpcEndpointServiceName:
+    Type: String
+    Description: "Vpc Endpoint Service Name"
+    Default: "com.amazonaws.vpce.eu-west-1.vpce-svc-xxxxx"
+
+
+  VpcPrivateSubnet:
+    Description: EC2 subnet
+    Type: AWS::EC2::Subnet::Id
+
+  InstanceImageId:
+    Description: EC2 AMI ID
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
+  InstanceType:
+    Description: EC2 InstanceType
+    Type: String
+    Default: t2.micro
+
+Resources:
+
+
+#### Instance in Private Subnet
+
+  InstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: /
+      Policies: !Ref "AWS::NoValue"
+      RoleName: !Ref "AWS::NoValue"
+
+  InstanceRolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: InstanceRolePolicies
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:List*
+          Resource:
+          - "*"
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogStreams
+          Resource:
+          - arn:aws:logs:*:*:*
+      Roles:
+      - !Ref "InstanceIAMRole"
+
+  InstanceIAMProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn: InstanceIAMRole
+    Properties:
+      Path: /
+      Roles:
+      - !Ref InstanceIAMRole
+
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref "VpcId"
+      GroupDescription: "Allow HTTP from Anywhere"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: "0.0.0.0/0"
+
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !Ref InstanceImageId
+      InstanceType: !Ref InstanceType
+      #KeyName: !Ref InstanceInstanceKeyName
+      IamInstanceProfile: !Ref InstanceIAMProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: "gp2"
+            VolumeSize: "8"
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref VpcPrivateSubnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<h1>Hello from $(hostname -f)</h1>" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: "nlb-private-alb-ec2-client"
+        - Key: Environment
+          Value: "dev"
+          
+
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref "VpcId"
+      GroupDescription: "Allow HTTP from Anywhere"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+      #- IpProtocol: tcp
+      #  FromPort: 80
+      #  ToPort: 80
+      #  SourceSecurityGroupId: !ImportValue EC2SecurityGroup-VpcA
+      Tags:
+        - Key: Name
+          Value: !Sub ${Prefix}-nlb-vpc-endpoint-sg
+          
+  VpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      ServiceName: !Ref VpcEndpointServiceName
+      VpcId: !Ref "VpcId"
+      SubnetIds: !Ref VpcPrivateSubnetList
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+
