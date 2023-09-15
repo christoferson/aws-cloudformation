@@ -111,6 +111,12 @@ aws ecr describe-repositories --region eu-west-1
 
 [vpc-endpoint-interface](vpc-endpoint-interface.yaml)
 
+### Vpc Endpoint Interface Endpoint - Instance Connect
+
+
+
+[vpc-endpoint-instanceconnectendpoint](vpc-endpoint-instanceconnectendpoint.yaml)
+
 ---
 
 ### Links
