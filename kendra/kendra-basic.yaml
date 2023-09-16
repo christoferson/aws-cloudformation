@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Kendra - Basic
+
+Resources:
+
+  KendraServiceRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "KendraServiceRole"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "kendra.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      #ManagedPolicyArns:
+      #  - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      #  - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+      Policies:
+        - PolicyName: inline-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    "cloudwatch:namespace": "AWS/Kendra"
+              - Effect: Allow
+                Action:
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    "kms:ViaService": !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
+      Tags:
+        - Key: "Name"
+          Value: "kendra-service-role"
+
+  KendraServiceRolePolicy: 
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: "root"
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Action: "s3:*"
+            Resource: "*"
+      Roles: 
+        - Ref: "KendraServiceRole"
+
+  KendraIndex:
+    Type: AWS::Kendra::Index
+    Properties:
+      Name: "kendra-basic-index"
+      Description: "Kendra Index"
+      Edition: "DEVELOPER_EDITION" #DEVELOPER_EDITION | ENTERPRISE_EDITION
+      RoleArn: !GetAtt KendraServiceRole.Arn
+      Tags:
+        -
+          Key: Name
+          Value: "kendra-basic-index"
+
+
+Outputs:
+
+  KendraIndexId:
+    Value: !Ref KendraIndex
