@@ -1,6 +1,6 @@
 # AWS Cloudformation Templates
 
-**Collection of Cloudformation templates group by services.**
+**Collection of Cloudformation templates grouped by services.**
 
 ##### [API Gateway](api-gateway/README.md)
 
