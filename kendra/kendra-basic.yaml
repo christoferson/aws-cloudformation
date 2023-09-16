@@ -80,6 +80,89 @@ Resources:
           Key: Name
           Value: "kendra-basic-index"
 
+  KendraDataSourceBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      AccessControl: "Private"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+         Status: Suspended
+      BucketEncryption: # SSE-KMS
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: 'aws:kms' #AES256 | aws:kms | aws:kms:dsse
+            KMSMasterKeyID: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+          BucketKeyEnabled: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      NotificationConfiguration:
+         EventBridgeConfiguration:
+            EventBridgeEnabled: true
+      Tags:
+        - Key: "Name"
+          Value: "kendra-basic-ds-s3-bucket"
+
+  KendraDatasourceServiceRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "KendraDatasourceServiceRole"
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "kendra.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: inline-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${KendraDataSourceBucket}/*'
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${KendraDataSourceBucket}'
+              - Effect: Allow
+                Action:
+                  - 'kendra:BatchPutDocument'
+                  - 'kendra:BatchDeleteDocument'
+                Resource: !Sub 'arn:aws:kendra:${AWS::Region}:${AWS::AccountId}:index/${KendraIndex}'
+      Tags:
+        - Key: "Name"
+          Value: "kendra-ds-service-role"
+
+  KendraDatasource:
+    Type: AWS::Kendra::DataSource
+    Properties:
+      IndexId: !Ref KendraIndex
+      Type: "S3" #ALFRESCO | BOX | CONFLUENCE | CUSTOM | DATABASE | FSX | GITHUB | GOOGLEDRIVE | JIRA | ONEDRIVE | QUIP | S3 | SALESFORCE | SERVICENOW | SHAREPOINT | SLACK | TEMPLATE | WEBCRAWLER | WORKDOCS
+      Name: "kendra-basic-ds-s3"
+      Description: "KendraDatasource"
+      RoleArn: !GetAtt KendraDatasourceServiceRole.Arn
+      #Schedule:
+      DataSourceConfiguration:
+        S3Configuration:
+          BucketName: !Ref KendraDataSourceBucket
+          ExclusionPatterns: 
+            - "**/*internal*"
+          InclusionPrefixes:
+            - "whitepapers/"
+      Tags:
+        -
+          Key: Name
+          Value: "kendra-basic-ds-s3"
 
 Outputs:
 
