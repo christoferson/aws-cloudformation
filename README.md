@@ -4,17 +4,53 @@
 
 ##### [API Gateway](api-gateway/README.md)
 
+##### [App Composer](app-composer/README.md)
+
 ##### [Backup](backup/README.md)
 
 ##### [Batch](batch/README.md)
 
-##### [CodeCommit](codecommit/README.md)
 
-##### [CodeBuild](codebuild/README.md)
+##### [Certificate Manager](certificate-manager/README.md)
+
+##### [Cloudformation](cloudformation/README.md)
 
 ##### [Cloudfront](cloudfront/README.md)
 
+##### [Cloudfront Functions](cloudfront-functions/README.md)
+
+##### [CloudTrail](cloudtrail/README.md)
+
+##### [CloudWatch](cloudwatch/README.md)
+
+##### [CloudWatch Alarm](cloudwatch-alarm/README.md)
+
+##### [CloudWatch Dashboard](cloudwatch-dashboard/README.md)
+
+##### [CodeArtifact](codeartifact/README.md)
+
+##### [CodeBuild](codebuild/README.md)
+
+##### [CodeCommit](codecommit/README.md)
+
+##### [CodeDeploy](codedeploy/README.md)
+
+##### [CodeGuru](codeguru/README.md)
+
+##### [Code Pipeline](codepipeline/README.md)
+
+##### [CodeStar](codestar/README.md)
+
 ##### [Cognito](cognito/README.md)
+
+##### [Config](config/README.md)
+
+
+##### [DataSync](datasync/README.md)
+
+##### [DynamoDB](dynamodb/README.md)
+
+
 
 ##### [EC2](/ec2/README.md)
 
