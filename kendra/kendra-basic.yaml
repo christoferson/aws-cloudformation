@@ -75,6 +75,21 @@ Resources:
       Description: "Kendra Index"
       Edition: "DEVELOPER_EDITION" #DEVELOPER_EDITION | ENTERPRISE_EDITION
       RoleArn: !GetAtt KendraServiceRole.Arn
+      DocumentMetadataConfigurations:
+        - Name: "_category"
+          Type: "STRING_VALUE"
+          Search:
+            Facetable: true
+            Searchable: false
+            Displayable: false
+            Sortable: true
+        - Name: "number_of_pages"
+          Type: "LONG_VALUE"
+          Search:
+            Facetable: true
+            Searchable: false
+            Displayable: false
+            Sortable: false
       Tags:
         -
           Key: Name
