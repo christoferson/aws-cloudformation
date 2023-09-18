@@ -36,12 +36,41 @@ Parameters:
 
 Resources:
 
+  PrivateInstanceConnectSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: !Sub "PrivateInstanceConnectSecurityGroup"
+      Tags:
+        - Key: Name
+          Value: !Sub "${VpcId}-private-instance-connect-sg"
+
+  PrivateInstanceSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #GroupName: !Sub ""
+      GroupDescription: !Sub "PrivateInstanceSecurityGroup"
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref PrivateInstanceConnectSecurityGroup
+          SourceSecurityGroupOwnerId: !Ref AWS::AccountId
+          Description: !Sub "instance-connect-to-instance"
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: !Sub "${VpcId}-private-instance-sg"
+
   LambdaSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
       VpcId: !Ref VpcId
       #GroupName: !Sub ""
-      GroupDescription: !Sub "Database Proxy Security Group"
+      GroupDescription: !Sub "Lambda Security Group"
       SecurityGroupIngress:
         - CidrIp: "0.0.0.0/0"
           IpProtocol: tcp
@@ -52,7 +81,7 @@ Resources:
           IpProtocol: -1
       Tags:
         - Key: Name
-          Value: !Sub "${Application}-{Environment}-lambda-sg"
+          Value: !Sub "${VpcId}-lambda-sg"
 
   DatabaseProxySecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
@@ -72,7 +101,7 @@ Resources:
           IpProtocol: -1
       Tags:
         - Key: Name
-          Value: !Sub "${Application}-{Environment}-database-proxy-sg"
+          Value: !Sub "${VpcId}-database-proxy-sg"
           
   DatabaseSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
@@ -92,5 +121,5 @@ Resources:
           IpProtocol: -1
       Tags:
         - Key: Name
-          Value: !Sub "${Application}-{Environment}-database-sg"
+          Value: !Sub "${VpcId}-database-sg"
 
