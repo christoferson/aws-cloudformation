@@ -1,7 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Vpc Endpoint (Interface Endpoint) - SSM"
-
-# https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-create-vpc.html
+Description: "Vpc Endpoint - Instance Connect Endpoint"
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -39,6 +37,11 @@ Parameters:
     Description: "Private VpcSubnets for Endpoint"
     Type: AWS::EC2::Subnet::Id
 
+  InstanceConnectClientToken:
+    Type: String
+    Default: "foobar432987432"
+    Description: InstanceConnectClientToken
+
 Resources:
 
   EicSecurityGroup:
@@ -50,7 +53,11 @@ Resources:
   EicEndpoint:
     Type: "AWS::EC2::InstanceConnectEndpoint"
     Properties: 
-      ClientToken: "foobar"
-      SecurityGroupIds: 
+      ClientToken: !Ref InstanceConnectClientToken #Unique, case-sensitive identifier that you provide to ensure the idempotency of the request.
+      PreserveClientIp: "true"
+      SecurityGroupIds: #One or more security groups to associate with the endpoint. 
         - !Ref EicSecurityGroup
       SubnetId: !Ref VpcSubnet
+      Tags:
+        - Key: Name
+          Value: "instance-connect-endpoint"
