@@ -12,6 +12,27 @@
 - AWS::NotificationARNs
 - AWS::NoValue
 
+## Dynamic References | [link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/dynamic-references.html)
+
+For transforms, such as AWS::Include and AWS::Serverless, AWS CloudFormation doesn't resolve dynamic references before invoking any transforms. 
+
+Do not create a dynamic reference that has a backslash (\) as the final value. AWS CloudFormation cannot resolve those references, which results in a resource failure.
+
+
+- ssm, for plaintext values stored in AWS Systems Manager Parameter Store.
+
+- ssm-secure, for secure strings stored in AWS Systems Manager Parameter Store.
+
+- secretsmanager, for entire secrets or secret values stored in AWS Secrets Manager.
+
+- {{resolve:ssm:parameter-name:version}}
+
+- {{resolve:ssm-secure:parameter-name:version}}
+
+- {{resolve:secretsmanager:secret-id:secret-string:json-key:version-stage:version-id}}
+  e.g. {{resolve:secretsmanager:MyRDSSecret:SecretString:password}}
+
+
 ## Intrinsic Functions
 
 ### Condition intrinsic functions | [link](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference-conditions.html)

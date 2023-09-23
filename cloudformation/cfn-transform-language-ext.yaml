@@ -2,6 +2,14 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::LanguageExtensions
 Description: LanguageExtensions
 
+#The AWS::LanguageExtensions transform is a macro hosted by AWS CloudFormation that lets you use intrinsic functions 
+#and other functionalities not included by default in AWS CloudFormation. 
+
+# Fn::ForEach
+# Fn::Length
+# Fn::ToJsonString
+# Fn::FindInMap enhancements
+
 Parameters:
 
   InputText:
