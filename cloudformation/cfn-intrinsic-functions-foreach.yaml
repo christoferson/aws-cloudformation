@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: 'AWS::LanguageExtensions'
+Description: Intrinsic Functions - ForEach
+
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/intrinsic-function-reference-foreach.html
+
+Parameters:
+
+  TopicNamePrefixList:
+    Description: List of Topic Name Prefix
+    Type: CommaDelimitedList
+    Default: "Success,Failure,Timeout"
+
+Resources:
+
+  'Fn::ForEach::Topics':
+    - TopicName # Loop Variable Name
+    - !Ref TopicNamePrefixList # Collection to loop
+    - 'SnsTopic${TopicName}': # LogicalName of generated resource
+        Type: 'AWS::SNS::Topic'
+        Properties:
+          TopicName: 
+           'Fn::Join':
+            - '.'
+            - - !Ref TopicName
+              - fifo
+          FifoTopic: true
