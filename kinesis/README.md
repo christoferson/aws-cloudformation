@@ -65,3 +65,48 @@
 - Talend
 
 ----------------
+
+### Kinesis Data Firehose
+
+#### Producers
+
+[link](https://docs.aws.amazon.com/firehose/latest/dev/basic-write.html)
+
+##### Kinesis Data Streams
+
+##### MSK
+
+##### Kinesis Agent
+
+##### SDK
+
+##### CloudWatch Logs
+
+##### CloudWatch Events
+
+##### IoT
+
+
+#### Delivery Target
+
+##### S3
+
+##### Redshift
+
+##### OpenSearch
+
+##### OpenSearch Serverless
+
+##### Splunk
+
+##### HTTP endpoint destination	
+
+- Datadog
+- Dynatrace
+- LogicMonitor
+- MongoDB
+- New Relic
+- Coralogix
+- Elastic
+
+Spark and KCL do not read from Firehose only from KDS
