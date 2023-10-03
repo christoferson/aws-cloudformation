@@ -10,11 +10,14 @@ Metadata:
     ParameterGroups:
       -
         Label:
+          default: "Application Configuration"
+        Parameters:
+          - Prefix
+      -
+        Label:
           default: "Network Configuration"
         Parameters:
           - VpcId
-          - VpcPrivateSubnetListLoadBalancer
-
       -
         Label:
           default: "Endpoint Service Configuration"
@@ -22,9 +25,14 @@ Metadata:
           - VpcEndpointServiceName
       -
         Label:
+          default: "Endpoint Client Configuration"
+        Parameters:
+          - VpcEndpointClientPrivateSubnetList
+      -
+        Label:
           default: "Instance Configuration"
         Parameters:
-          - VpcPrivateSubnet
+          - InstanceVpcPrivateSubnet
           - InstanceImageId
           - InstanceType
           
@@ -32,23 +40,22 @@ Parameters:
 
   Prefix:
     Type: String
-    Default: "vpc-b"
+    Default: "vpc-e-client"
 
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
-
-  VpcPrivateSubnetList:
-    Description: Private VpcSubnets for Load Balancer
+    
+  VpcEndpointClientPrivateSubnetList:
+    Description: Private VpcSubnets for Vpc Endpoint Client
     Type: List<AWS::EC2::Subnet::Id>
 
   VpcEndpointServiceName:
     Type: String
     Description: "Vpc Endpoint Service Name"
-    Default: "com.amazonaws.vpce.eu-west-1.vpce-svc-xxxxx"
+    Default: "com.amazonaws.vpce.region.vpce-svc-ddddd"
 
-
-  VpcPrivateSubnet:
+  InstanceVpcPrivateSubnet:
     Description: EC2 subnet
     Type: AWS::EC2::Subnet::Id
 
@@ -65,11 +72,13 @@ Parameters:
 Resources:
 
 
-#### Instance in Private Subnet
+#### Instance in Private Subnet (To Test The Endpoint)
 
-  InstanceIAMRole:
+  InstanceRole:
     Type: AWS::IAM::Role
     Properties:
+      Path: /
+      RoleName: !Ref "AWS::NoValue"
       AssumeRolePolicyDocument:
         Statement:
         - Effect: Allow
@@ -80,22 +89,15 @@ Resources:
           - sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-      Path: /
       Policies: !Ref "AWS::NoValue"
-      RoleName: !Ref "AWS::NoValue"
 
-  InstanceRolePolicies:
+  InstanceRolePolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: InstanceRolePolicies
+      PolicyName: !Sub "${Prefix}-instance-role-policy"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-        - Effect: Allow
-          Action:
-          - s3:List*
-          Resource:
-          - "*"
         - Effect: Allow
           Action:
           - logs:CreateLogGroup
@@ -105,22 +107,21 @@ Resources:
           Resource:
           - arn:aws:logs:*:*:*
       Roles:
-      - !Ref "InstanceIAMRole"
+      - !Ref "InstanceRole"
 
-  InstanceIAMProfile:
+  InstanceProfile:
     Type: AWS::IAM::InstanceProfile
-    DependsOn: InstanceIAMRole
+    DependsOn: InstanceRole
     Properties:
       Path: /
       Roles:
-      - !Ref InstanceIAMRole
-
+      - !Ref InstanceRole
 
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref "VpcId"
-      GroupDescription: "Allow HTTP from Anywhere"
+      GroupDescription: "Allow SSH from Anywhere"
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
@@ -131,13 +132,13 @@ Resources:
         ToPort: 22
         CidrIp: "0.0.0.0/0"
 
-  EC2Instance:
+  InstanceServer:
     Type: "AWS::EC2::Instance"
     Properties:
       ImageId: !Ref InstanceImageId
       InstanceType: !Ref InstanceType
       #KeyName: !Ref InstanceInstanceKeyName
-      IamInstanceProfile: !Ref InstanceIAMProfile
+      IamInstanceProfile: !Ref InstanceProfile
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -146,21 +147,12 @@ Resources:
             VolumeSize: "8"
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
-      SubnetId: !Ref VpcPrivateSubnet
-      UserData:
-        Fn::Base64: |
-          #!/bin/bash
-          yum update -y
-          yum install -y httpd
-          systemctl start httpd
-          systemctl enable httpd
-          echo "<h1>Hello from $(hostname -f)</h1>" > /var/www/html/index.html
+      SubnetId: !Ref InstanceVpcPrivateSubnet
       Tags:
         - Key: Name
           Value: "nlb-private-alb-ec2-client"
         - Key: Environment
           Value: "dev"
-          
 
   VpcEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -186,9 +178,18 @@ Resources:
       VpcEndpointType: Interface
       PrivateDnsEnabled: false
       ServiceName: !Ref VpcEndpointServiceName
-      VpcId: !Ref "VpcId"
-      SubnetIds: !Ref VpcPrivateSubnetList
+      VpcId: !Ref VpcId
+      SubnetIds: !Ref VpcEndpointClientPrivateSubnetList
       SecurityGroupIds:
         - !Ref VpcEndpointSecurityGroup
 
+Outputs:
 
+  VpcEndpointCreationTimestamp:
+    Value: !GetAtt VpcEndpoint.CreationTimestamp
+
+  VpcEndpointDnsEntries:
+    Value: !Select ['1', !Split [':', !Select ['0', !GetAtt VpcEndpoint.DnsEntries]]]
+
+  VpcEndpointId:
+    Value: !GetAtt VpcEndpoint.Id
