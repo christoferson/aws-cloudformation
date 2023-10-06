@@ -83,6 +83,38 @@ Also includes settings to transform the input Event into a custom output format.
 
 [eventbridge-rule-s3-call-batch](s3/eventbridge-rule-s3-call-batch.yaml)
 
+------------------------------------------------------------------
+
+
+### EventBridge - Rule - S3 - Trigger Step Functions
+
+[eventbridge-rule-config-sns](eventbridge-rule-config-sns.yaml)
+
+
+------------------------------------------------------------------
+
+### EventBridge - Rule - Batch - Trigger SNS
+
+Provision EventBridge rules that monitor Batch Jobs and Trigger SNS Notifications
+
+[eventbridge-rule-batch-call-sns](batch/eventbridge-rule-batch-call-sns.yaml)
+
+------------------------------------------------------------------
+
+### EventBridge - Rule - StepFunction - Trigger SNS
+
+Provision EventBridge rules that monitor Step Functions and Trigger SNS Notifications
+
+[eventbridge-rule-stepfunctions-call-sns](batch/eventbridge-rule-stepfunctions-call-sns.yaml)
+
+### Errors
+
+##### Input Transformer: Invalid InputTemplate
+
+CWE rule only allows users to use a String (with double quotes) or a JSON in the input template.
+
+https://repost.aws/questions/QU-uwSGaM_S4GZ_wvF9FfJzQ/error-while-saving-rule-with-input-transformer-invalid-input-template
+
 ### References
 
 - https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/AWS_Events.html

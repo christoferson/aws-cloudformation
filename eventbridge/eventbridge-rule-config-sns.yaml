@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EventBridge Rule (Config) - Transform Output - Send to SNS
+
+Metadata:
+
+  StackVersion: 1
+
+Resources:
+
+  EventBridgeConfigSnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      #TopicName: !Sub "eventbridge-config-sns-topic"
+      DisplayName: "Config - On ec2-security-group-attached-to-eni"
+      #KmsMasterKeyId: alias/aws/sns
+      #FifoTopic: false
+      Tags:
+        - Key: "Name"
+          Value: "manual"
+
+  EventBridgeRuleConfig: 
+    Type: AWS::Events::Rule
+    Properties: 
+      #Name: eventbridge-rule-config-sns
+      Description: "Config  Trigger"
+      #EventBusName: default
+      EventPattern:
+        source:
+          - aws.config
+        detail-type:
+          - "Config Rules Compliance Change"
+        detail:
+          messageType:
+            - "ComplianceChangeNotification"
+          configRuleName:
+            - "ec2-security-group-attached-to-eni"
+          resourceType:
+            - "AWS::EC2::SecurityGroup"
+          newEvaluationResult:
+            complianceType:
+              - "NON_COMPLIANT"
+      State: "ENABLED"
+      Targets:
+        -
+          Arn: !Ref EventBridgeConfigSnsTopic
+          Id: "TargetSnsTopic"
+          InputTransformer: 
+            InputPathsMap:
+              "awsRegion" : "$.detail.awsRegion"
+              "resourceId" : "$.detail.resourceId"
+              "awsAccountId" : "$.detail.awsAccountId"
+              "compliance" : "$.detail.newEvaluationResult.complianceType"
+              "rule" : "$.detail.configRuleName"
+              "time" : "$.detail.newEvaluationResult.resultRecordedTime"
+              "resourceType" : "$.detail.resourceType"
+            InputTemplate: |
+              "On <time> AWS Config rule <rule> evaluated the <resourceType> with Id <resourceId> in the account <awsAccountId> region <awsRegion> as <compliance> For more details open the AWS Config console at https://console.aws.amazon.com/config/home?region=<awsRegion>#/timeline/<resourceType>/<resourceId>/configuration"
+
+
+  InvokeSnsTopicPermissionConfig:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EventBridgeConfigSnsTopic
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sns:Publish'
+            #Resource: '*'
+            Resource: !Ref EventBridgeConfigSnsTopic
+
+
+Outputs:
+
+  EventBridgeConfigSnsTopicArn:
+    Value: !Ref EventBridgeConfigSnsTopic
+
+  EventBridgeRuleConfigArn:
+    Value: !GetAtt EventBridgeRuleConfig.Arn
