@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IAM Role - PassRole
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      #GroupName: "Group than can pass LambdaExecutionRole to Lambda"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+      Path: "/"
+      Policies:
+      - PolicyName: inline-1
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: Allow
+            Action:
+              - iam:ListRoles
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+              - iam:GetRole
+            Resource: !GetAtt LambdaExecutionRole.Arn
+            Condition:
+              StringEquals:
+                "iam:PassedToService": 
+                  - "lambda.amazonaws.com"
+              #ArnLike:
+              #  iam:AssociatedResourceARN:
+              #    - "arn:aws:ec2:us-east-1:111122223333:instance/*":
+          - Effect: Allow
+            Action:
+            - iam:CreateServiceLinkedRole
+            Resource: "*"
+
+Outputs:
+
+  LambdaExecutionRole:
+    Value: !GetAtt LambdaExecutionRole.Arn
