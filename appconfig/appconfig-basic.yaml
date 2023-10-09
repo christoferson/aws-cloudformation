@@ -50,7 +50,15 @@ Resources:
           Value: !Ref Application
         - Key: "Environment"
           Value: !Ref Environment
-          
+
+  AppConfigConfigurationProfile:
+    Type: "AWS::AppConfig::ConfigurationProfile"
+    Properties:
+      Name: MyFeatureFlags
+      ApplicationId: !Ref AppConfigApplication
+      LocationUri: hosted
+      Type: AWS.AppConfig.FeatureFlags
+
 Outputs:
 
   AppConfigApplicationId:
