@@ -39,7 +39,18 @@ Resources:
         - Key: "Environment"
           Value: !Ref Environment
 
-
+  AppConfigEnvironment:
+    Type: "AWS::AppConfig::Environment"
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      Name: "Dev"
+      Description: !Sub "App Config Envionment ${Application}-${Environment}"
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+          
 Outputs:
 
   AppConfigApplicationId:
