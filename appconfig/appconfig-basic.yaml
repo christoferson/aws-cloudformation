@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AppConfig - Basic
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+Resources:
+
+  AppConfigApplication:
+    Type: "AWS::AppConfig::Application"
+    Properties:
+      Name: "MyApplication"
+      Description: !Sub "App Config Application ${Application}-${Environment}"
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+
+
+Outputs:
+
+  AppConfigApplicationId:
+    Value: !Ref AppConfigApplication
