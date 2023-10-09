@@ -54,10 +54,25 @@ Resources:
   AppConfigConfigurationProfile:
     Type: "AWS::AppConfig::ConfigurationProfile"
     Properties:
-      Name: MyFeatureFlags
+      Name: "MyFeatureFlags"
       ApplicationId: !Ref AppConfigApplication
       LocationUri: hosted
       Type: AWS.AppConfig.FeatureFlags
+
+  AppConfigDeploymentStrategy:
+    Type: AWS::AppConfig::DeploymentStrategy
+    Properties:
+      Name: "MyDeploymentStrategy"
+      Description: "Example deployment strategy"
+      DeploymentDurationInMinutes: 3
+      FinalBakeTimeInMinutes: 4
+      GrowthFactor: 10
+      GrowthType: LINEAR
+      ReplicateTo: NONE
+      Tags:
+        - Key: Env
+          Value: test
+
 
 Outputs:
 
