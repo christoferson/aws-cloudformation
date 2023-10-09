@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Transform: 'AWS::LanguageExtensions'
 Description: AppConfig - Basic
 
 Metadata:
@@ -59,6 +60,42 @@ Resources:
       LocationUri: hosted
       Type: AWS.AppConfig.FeatureFlags
 
+  AppConfigHostedConfigurationVersion:
+    Type: 'AWS::AppConfig::HostedConfigurationVersion'
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      ConfigurationProfileId: !Ref AppConfigConfigurationProfile
+      ContentType: application/json
+      VersionLabel: "v1.0.0"
+      Content: 
+        Fn::ToJsonString:
+            flags:
+              allow-cryptocurrency-at-checkout:
+                attributes:
+                  allowed-currency:
+                    constraints:
+                      elements:
+                        enum:
+                          - BTC
+                          - ETH
+                          - XRP
+                        type: string
+                      type: array
+                  bitcoin-discount-percentage:
+                    constraints:
+                      maximum: 25
+                      minimum: 0
+                      type: number
+                name: Allow Cryptocurrency at Checkout
+            values:
+              allow-cryptocurrency-at-checkout:
+                allowed-currency:
+                  - BTC
+                  - ETH
+                bitcoin-discount-percentage: 5
+                enabled: true
+            version: '1'
+            
   AppConfigDeploymentStrategy:
     Type: AWS::AppConfig::DeploymentStrategy
     Properties:
@@ -73,7 +110,21 @@ Resources:
         - Key: Env
           Value: test
 
-
+  AppConfigDeployment:
+    Type: "AWS::AppConfig::Deployment"
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      EnvironmentId: !Ref AppConfigEnvironment
+      DeploymentStrategyId: !Ref AppConfigDeploymentStrategy
+      ConfigurationProfileId: !Ref AppConfigConfigurationProfile
+      ConfigurationVersion: !Ref AppConfigHostedConfigurationVersion
+      Description: !Sub "App Config Deployment ${Application}-${Environment}"
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+          
 Outputs:
 
   AppConfigApplicationId:
