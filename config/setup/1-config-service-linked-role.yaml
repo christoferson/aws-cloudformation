@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Enable AWS Config
+Description: Setup and Enable AWS Config
 
 Resources:
 

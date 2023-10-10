@@ -1,5 +1,44 @@
 ## Config Cloudformation Templates
 
+AWS Config will help you track resource inventory and changes and evaluate configurations of your AWS resources. 
+
+An AWS Config rule represents your desired configuration settings for specific AWS resources or for an entire AWS account. If a resource does not pass a rule check, AWS Config flags the resource and the rule as noncompliant, and AWS Config notifies you through Amazon SNS.
+
+COMPLIANT - the rule passes the conditions of the compliance check.
+
+NON_COMPLIANT - the rule fails the conditions of the compliance check.
+
+ERROR - the one of the required/optional parameters is not valid, not of the correct type, or is formatted incorrectly.
+
+NOT_APPLICABLE - used to filter out resources that the logic of the rule cannot be applied to. For example, the alb-desync-mode-check rule only checks Application Load Balancers, and ignores Network Load Balancers and Gateway Load Balancers.
+
+AWS Config Managed Rules are predefined, customizable rules created by AWS Config. [list](https://docs.aws.amazon.com/config/latest/developerguide/managed-rules-by-aws-config.html)
+
+AWS Config Custom Rules are rules that you create from scratch. There are two ways to create AWS Config custom rules: with Lambda functions (AWS Lambda Developer Guide) and with Guard (Guard GitHub Repository), a policy-as-code language. AWS Config custom rules created with AWS Lambda are called AWS Config Custom Lambda Rules and AWS Config custom rules created with Guard are called AWS Config Custom Policy Rules.
+
+Trigger Types
+
+- Configuration changes - runs evaluations for the rule when there is a resource that matches the rule's scope and there is a change in configuration of the resource. 
+
+- Periodic AWS Config runs evaluations for the rule at a frequency that you choose; for example, every 24 hours.
+
+- Hybrid evaluates your resources when it detects a configuration change and also at the frequency that you specify. 
+
+
+Evaluation modes
+
+- Proactive Proactive rules do not remediate resources that are flagged as NON_COMPLIANT or prevent them from being deployed.
+
+- Detective Use detective evaluation to evaluate resources that have already been deployed. This allows you to evaluate the configuration settings of your existing resources.
+
+Conformance Packs 
+
+A conformance pack is a collection of AWS Config rules and remediation actions that can be easily deployed as a single entity in an account and a Region or across an organization in AWS Organizations.
+
+Conformance packs are created by authoring a YAML template that contains the list of AWS Config managed or custom rules and remediation actions. You can deploy the template by using the AWS Config console or the AWS CLI.  [example](https://github.com/awslabs/aws-config-rules/blob/master/aws-config-conformance-packs/AWS-Control-Tower-Detective-Guardrails.yaml)
+
+-----
+
 - To enable AWS Config, you must create a configuration recorder and a delivery channel.
 
 - AWS Config uses the delivery channel to deliver the configuration changes to your Amazon S3 bucket or Amazon SNS topic.
