@@ -96,6 +96,12 @@ Resources:
           Key: Name
           Value: "kendra-s3-index-1"
 
+  KendraIndexLambdaLogGroup1:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kendra/${KendraIndex}"
+      RetentionInDays: 1
+      
   KendraIndex2:
     Type: AWS::Kendra::Index
     Properties:
@@ -115,6 +121,12 @@ Resources:
         -
           Key: Name
           Value: "kendra-s3-index-2"
+
+  KendraIndexLambdaLogGroup2:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kendra/${KendraIndex2}"
+      RetentionInDays: 1
 
   KendraDataSourceBucket:
     Type: "AWS::S3::Bucket"
