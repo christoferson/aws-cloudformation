@@ -1,14 +1,18 @@
 ## Service Catalog Cloudformation Templates
 
+[schema](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_ServiceCatalog.html)
+
 ### Concept
 
 #### Products
-A product is an IT service that you want to make available for deployment on AWS. A product consists of one or more AWS resources, such as EC2 instances, storage volumes, databases, monitoring configurations, and networking components, or packaged AWS Marketplace products.
+A product is an IT service that you want to make available for deployment on AWS. 
+A product consists of one or more AWS resources, such as EC2 instances, storage volumes, databases, 
+monitoring configurations, and networking components, or packaged AWS Marketplace products.
 
 #### Portfolios
 A portfolio is a collection of products that contains configuration information. Portfolios help manage who can use specific products and how they can use them. With Service Catalog, you can create a customized portfolio for each type of user in your organization and selectively grant access to the appropriate portfolio. 
 
-##### Versioning
+#### Versioning
 Service Catalog allows you to manage multiple versions of the products in your catalog. This approach allows you to add new versions of templates and associated resources based on software updates or configuration changes.
 
 #### Permissions
@@ -50,6 +54,18 @@ Provision Product using Cloudformation Provider and associate with Portfolio.
 
 - Package properties validation failed: Could not read package properties from JSON. (Service: AWSServiceCatalog; Status Code: 400; Error Code: InvalidParametersException;
 
+- The parameter groupName cannot be used with the parameter subnet
+
+```
+--security-groups (list)
+
+[EC2-Classic, default VPC] The names of the security groups. For a nondefault VPC, you must use security group IDs instead.
+
+If you specify a network interface, you must specify any security groups as part of the network interface.
+
+Default: Amazon EC2 uses the default security group.
+```
+
 ### Links
 
 - https://docs.aws.amazon.com/servicecatalog/latest/adminguide/introduction.html
@@ -57,3 +73,9 @@ Provision Product using Cloudformation Provider and associate with Portfolio.
 - https://docs.aws.amazon.com/servicecatalog/latest/userguide/end-user-console.html
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_ServiceCatalog.html
+
+- [blogs](https://aws.amazon.com/about-aws/whats-new/management-and-governance/?whats-new-content.sort-by=item.additionalFields.postDateTime&whats-new-content.sort-order=desc&awsf.whats-new-products=general-products%23aws-service-catalog)
+
+- AWS AppRegistry
+
+CodeCommit -> Lambda -> Service Catalog
