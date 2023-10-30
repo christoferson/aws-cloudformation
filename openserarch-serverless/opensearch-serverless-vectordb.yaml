@@ -12,6 +12,15 @@ Resources:
       Policy: >-
         [{"Rules":[{"ResourceType":"collection","Resource":["collection/myvectordb"]}, {"ResourceType":"dashboard","Resource":["collection/myvectordb"]}],"AllowFromPublic":true}]
 
+  SecurityEncryptionPolicy:
+    Type: "AWS::OpenSearchServerless::SecurityPolicy"
+    Properties:
+      Name: myvectordb-encryption-policy
+      Type: encryption
+      Description: Encryption policy for myvectordb collection
+      Policy: >-
+        {"Rules":[{"ResourceType":"collection","Resource":["collection/myvectordb"]}],"AWSOwnedKey":true}
+
   Collection:
     Type: "AWS::OpenSearchServerless::Collection"
     Properties:
