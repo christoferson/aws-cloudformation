@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Amazon OpenSearch Serverless template to create an IAM user, encryption policy, data access policy and collection'
+
+Resources:
+
+  SecurityNetworkPolicy:
+    Type: 'AWS::OpenSearchServerless::SecurityPolicy'
+    Properties:
+      Name: myvectordb-network-policy
+      Type: network
+      Description: Network policy for myvectordb collection
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/myvectordb"]}, {"ResourceType":"dashboard","Resource":["collection/myvectordb"]}],"AllowFromPublic":true}]
+
+  Collection:
+    Type: "AWS::OpenSearchServerless::Collection"
+    Properties:
+      Name: myvectordb
+      Type: VECTORSEARCH
+      Description: VectorDBExample
+
+Outputs:
+
+  CollectionEndpoint:
+    Value: !GetAtt Collection.CollectionEndpoint
+    
+  CollectionArn:
+    Value: !GetAtt Collection.Arn
