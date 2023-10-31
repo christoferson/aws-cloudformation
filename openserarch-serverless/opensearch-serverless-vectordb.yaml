@@ -21,6 +21,17 @@ Resources:
       Policy: >-
         {"Rules":[{"ResourceType":"collection","Resource":["collection/myvectordb"]}],"AWSOwnedKey":true}
 
+  SecurityDataAccessPolicy:
+    Type: 'AWS::OpenSearchServerless::AccessPolicy'
+    Properties:
+      Name: myvectordb-access-policy
+      Type: data
+      Description: Access policy for myvectordb collection
+      Policy: !Sub >-
+        [{"Description":"Access for cfn user","Rules":[{"ResourceType":"index","Resource":["index/*/*"],"Permission":["aoss:*"]},
+        {"ResourceType":"collection","Resource":["collection/myvectordb"],"Permission":["aoss:*"]}],
+        "Principal":["arn:aws:iam::${AWS::AccountId}:user/admin"]}]
+        
   Collection:
     Type: "AWS::OpenSearchServerless::Collection"
     Properties:
