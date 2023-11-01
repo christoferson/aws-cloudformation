@@ -226,15 +226,15 @@ Resources:
       Protocol: HTTPS
       Certificates:
         - CertificateArn: !Ref CertificateManagerCertificateArn
-      DefaultActions:
-        - Type: fixed-response
-          FixedResponseConfig:
-            StatusCode: 200
-            MessageBody: <html>Top Page - RedBox</html>
-            ContentType: text/html
       #DefaultActions:
-      #  - TargetGroupArn: !Ref TargetGroup
-      #    Type: forward
+      #  - Type: fixed-response
+      #    FixedResponseConfig:
+      #      StatusCode: 200
+      #      MessageBody: <html>Top Page - RedBox</html>
+      #      ContentType: text/html
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
 
   HTTPlistenerHttp: #Redirect HTTP (80) -> HTTPS (443)
    Type: "AWS::ElasticLoadBalancingV2::Listener"
