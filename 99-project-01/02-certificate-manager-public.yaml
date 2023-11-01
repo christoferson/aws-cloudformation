@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Route53 + Application Load Balancer
+
+Parameters:
+
+  DomainValidationHostedZoneId:
+    Description: "Identifier of the hosted zone"
+    Type: String
+    Default: "Z0YYY732MXXXH4KEQ999"
+    
+  DomainName:
+    Description: "must NOT include a trailing dot (for example, www.example.com.)"
+    Type: String
+    Default: "xxx.example.com"
+
+Resources:
+
+  CertificateManagerCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "${DomainName}"
+      DomainValidationOptions:
+        - DomainName: !Sub "${DomainName}"
+          HostedZoneId: !Ref DomainValidationHostedZoneId
+      SubjectAlternativeNames:
+        - !Sub "*.${DomainName}"
+      ValidationMethod: DNS
+
+Outputs:
+
+  CertificateManagerCertificateArn:
+    Value: !Ref CertificateManagerCertificate
+
