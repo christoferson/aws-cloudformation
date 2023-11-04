@@ -309,6 +309,19 @@ Resources:
         #      UserPoolArn: !Ref CognitoUserPoolArn
         #      UserPoolClientId: !Ref CognitoUserPoolClientId
         #      UserPoolDomain: !Ref CognitoUserPoolDomainName
+        #- Type: "authenticate-oidc"
+        #  Order: 1
+        #  AuthenticateOidcConfig:
+        #    Issuer: "" #OpenID provider."
+        #    AuthorizationEndpoint: ""
+        #    TokenEndpoint: ""
+        #    UserInfoEndpoint: ""
+        #    ClientId: ""
+        #    ClientSecret: ""
+        #    OnUnauthenticatedRequest: "authenticate"
+        #    Scope: "openid"
+        #    SessionCookieName: "AWSELBAuthSessionCookie"
+        #    SessionTimeout: "604800" #7 Days
         - Type: "forward"
           TargetGroupArn: !Ref TargetGroup1
           Order: 2

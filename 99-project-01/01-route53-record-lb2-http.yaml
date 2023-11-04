@@ -109,7 +109,7 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 1
-      
+
   # Load Balancer definition
 
   LoadBalancerSecurityGroup:
