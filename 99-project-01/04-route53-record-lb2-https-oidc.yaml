@@ -1,5 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Route53 + Application Load Balancer - HTTPS Enabled + Lambda + OIDC
+# https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration
+# https://docs.aws.amazon.com/ja_jp/elasticloadbalancing/latest/application/listener-authenticate-users.html
+# https://docs.microsoft.com/ja-jp/azure/active-directory/develop/active-directory-optional-claims
+# X-AMZN-OIDC-*
+# https://learn.microsoft.com/en-us/entra/architecture/auth-oidc
 
 Metadata:
   "AWS::CloudFormation::Interface":
@@ -23,7 +28,7 @@ Metadata:
           - VpcId
           - VpcSubnetListLoadBalancer
       - Label: 
-          default: "OIDC Provider Configuration"
+          default: "OIDC Identity Provider IdP Configuration"
         Parameters: 
           - OidcIssuer
           - OidcAuthorizationEndpoint
@@ -79,22 +84,22 @@ Parameters:
   OidcIssuer:
     Description: "OidcIssuer"
     Type: String
-    Default: "xxxx"
+    Default: "https://login.microsoftonline.com/${self:custom.oidc.tenantId}/v2.0"
 
   OidcAuthorizationEndpoint:
     Description: "OidcAuthorizationEndpoint"
     Type: String
-    Default: "xxxx"
+    Default: "https://login.microsoftonline.com/${self:custom.oidc.tenantId}/oauth2/v2.0/authorize"
 
   OidcTokenEndpoint:
     Description: "OidcTokenEndpoint"
     Type: String
-    Default: "xxxx"
+    Default: "https://login.microsoftonline.com/${self:custom.oidc.tenantId}/oauth2/v2.0/token"
 
   OidcUserInfoEndpoint:
     Description: "OidcUserInfoEndpoint"
     Type: String
-    Default: "xxxx"
+    Default: "https://graph.microsoft.com/oidc/userinfo"
 
   OidcClientId: #!Sub '{{resolve:ssm:${OidcClientSecret}:1}}'
     Description: "OidcClientId"
@@ -123,7 +128,7 @@ Parameters:
         
 Resources:
 
-  # Backing Lambda Function - Called via the Load Balancer (1)
+  # Backing Lambda Function - Called via the Load Balancer (1) Resource server
 
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -389,19 +394,19 @@ Resources:
         #      UserPoolArn: !Ref CognitoUserPoolArn
         #      UserPoolClientId: !Ref CognitoUserPoolClientId
         #      UserPoolDomain: !Ref CognitoUserPoolDomainName
-        #- Type: "authenticate-oidc"
-        #  Order: 1
-        #  AuthenticateOidcConfig:
-        #    Issuer: "" #OpenID provider."
-        #    AuthorizationEndpoint: ""
-        #    TokenEndpoint: ""
-        #    UserInfoEndpoint: ""
-        #    ClientId: ""
-        #    ClientSecret: ""
-        #    OnUnauthenticatedRequest: "authenticate"
-        #    Scope: "openid"
-        #    SessionCookieName: "AWSELBAuthSessionCookie"
-        #    SessionTimeout: "604800" #7 Days
+        - Type: "authenticate-oidc"
+          Order: 1
+          AuthenticateOidcConfig:
+            Issuer: !Ref OidcIssuer
+            AuthorizationEndpoint: !Ref OidcAuthorizationEndpoint
+            TokenEndpoint: !Ref OidcTokenEndpoint
+            UserInfoEndpoint: !Ref OidcUserInfoEndpoint
+            ClientId: !Sub "{{resolve:ssm:${OidcClientId}}}"
+            ClientSecret: !Sub "{{resolve:ssm:${OidcClientSecret}}}"
+            OnUnauthenticatedRequest: "authenticate"
+            Scope: !Ref OidcScope
+            SessionCookieName: !Ref OidcSessionCookieName #"AWSELBAuthSessionCookie"
+            SessionTimeout: !Ref OidcSessionTimeout #"604800" #7 Days
         - Type: "forward"
           TargetGroupArn: !Ref TargetGroup1
           Order: 2
@@ -433,8 +438,8 @@ Outputs:
   Route53UrlHttpsLambda1:
     Value: !Sub "https://${LoadBalancerSubDomainName}.${HostedZoneName}/v1/lambda1"
 
-  ClientId:
-    Value: !Sub '{{resolve:ssm:${OidcClientId}}}'
+#  ClientId:
+#    Value: !Sub '{{resolve:ssm:${OidcClientId}}}'
 
 
 
