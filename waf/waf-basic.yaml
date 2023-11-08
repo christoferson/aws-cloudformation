@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  Application:
+    Type: String
+    Description: "Application Name"
+    Default: app
+
+  Environment:
+    Type: String
+    Description: "Environment"
+    Default: develop
+
+  Scope:
+    Type: String
+    Description: "Select in the scope of waf(REGIONAL or CLOUDFRONT)"
+    AllowedValues:
+      - "REGIONAL"   # Regional resources (Application Load Balancers, Amazon API Gateway REST APIs, Amazon App Runner services, AWS AppSync GraphQL APIs, Amazon Cognito user pools and AWS Verified Access Instances)
+      - "CLOUDFRONT" # Amazon CloudFront distributions
+    Default: REGIONAL
+
+  WebAclAssociationResourceArn:
+    Type: String
+    Description: Enter RegionalResource(ALB,APIGateway,AppSync) ARN or CloudFront ARN to associate with WEBACL.
+    Default: "arn:aws:elasticloadbalancing:ap-northeast-1:XXXXXXXXXXXX:loadbalancer/app/XXXXXXXXXXXX"
+
+Resources:
+
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties: 
+      Name: !Sub "${Environment}-${Application}-web-acl"
+      Description: "Demo WAF 1"
+      Scope: !Ref Scope
+      DefaultAction: # web request doesn't match any of the rules in the WebACL
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+        MetricName: !Sub ${Environment}-${Application}-web-acl
+      Rules:
+        -
+          Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 1 #AWS WAF processes rules with lower priority first. 
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules:
+                - Name: NoUserAgent_HEADER
+                - Name: UserAgent_BadBots_HEADER
+                - Name: SizeRestrictions_QUERYSTRING
+                - Name: SizeRestrictions_Cookie_HEADER
+                - Name: SizeRestrictions_BODY
+                - Name: SizeRestrictions_URIPATH
+                - Name: EC2MetaDataSSRF_BODY
+                - Name: EC2MetaDataSSRF_COOKIE
+                - Name: EC2MetaDataSSRF_URIPATH
+                - Name: EC2MetaDataSSRF_QUERYARGUMENTS
+                - Name: GenericLFI_QUERYARGUMENTS
+                - Name: GenericLFI_URIPATH
+                - Name: GenericLFI_BODY
+                - Name: RestrictedExtensions_URIPATH
+                - Name: RestrictedExtensions_QUERYARGUMENTS
+                - Name: GenericRFI_QUERYARGUMENTS
+                - Name: GenericRFI_BODY
+                - Name: GenericRFI_URIPATH
+                - Name: CrossSiteScripting_COOKIE
+                - Name: CrossSiteScripting_QUERYARGUMENTS
+                - Name: CrossSiteScripting_BODY
+                - Name: CrossSiteScripting_URIPATH
+          OverrideAction:
+            None: {}
+          VisibilityConfig: # Defines and enables Amazon CloudWatch metrics and web request sample collection. 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesCommonRuleSet
+      Tags:
+        - Key: "Name"
+          Value: "demo-waf"
+          
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref WebAclAssociationResourceArn
+      WebACLArn: !GetAtt WebAcl.Arn
+
+Outputs:
+
+  WebAclInfo:
+    Value: !Sub "${WebAcl}"
