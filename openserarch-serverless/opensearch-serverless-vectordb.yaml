@@ -7,7 +7,12 @@ Parameters:
     Type: String
     Description: Collection Name
     Default: myvectordb
-    
+
+  UserName:
+    Type: String
+    Description: User Name
+    Default: admin
+        
 Resources:
 
   SecurityNetworkPolicy:
@@ -37,7 +42,7 @@ Resources:
       Policy: !Sub >-
         [{"Description":"Access for cfn user","Rules":[{"ResourceType":"index","Resource":["index/*/*"],"Permission":["aoss:*"]},
         {"ResourceType":"collection","Resource":["collection/${CollectionName}"],"Permission":["aoss:*"]}],
-        "Principal":["arn:aws:iam::${AWS::AccountId}:user/admin"]}]
+        "Principal":["arn:aws:iam::${AWS::AccountId}:user/${UserName}"]}]
         
   Collection:
     Type: "AWS::OpenSearchServerless::Collection"
