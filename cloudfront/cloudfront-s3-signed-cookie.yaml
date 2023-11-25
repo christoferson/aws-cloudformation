@@ -39,6 +39,8 @@ Resources:
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
+    DependsOn:
+      - CloudFrontKeyGroup
     Properties:
       DistributionConfig:
         Enabled: true
@@ -51,6 +53,21 @@ Resources:
             Id: oac-test-bucket
             OriginAccessControlId: !GetAtt OriginAccessControl.Id
             S3OriginConfig: {}
+        CacheBehaviors:
+          - PathPattern: /secure/*
+            AllowedMethods:
+              - GET
+              - HEAD
+            TargetOriginId: oac-test-bucket
+            ViewerProtocolPolicy: redirect-to-https
+            #CachePolicyId: !Ref 'CloudFrontStaticCachePolicy'
+            Compress: true
+            ForwardedValues:
+              Cookies:
+                Forward: none
+              QueryString: false
+            TrustedKeyGroups: # When a cache behavior contains trusted key groups, CloudFront requires signed URLs or signed cookies for all requests that match the cache behavior.
+              - !Ref 'CloudFrontKeyGroup'
         DefaultCacheBehavior:
           ForwardedValues:
               QueryString: 'false'
@@ -84,8 +101,43 @@ Resources:
               AWS:SourceArn: 
                 - !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
+##
+
+  CloudFrontPublicKey:
+    Type: AWS::CloudFront::PublicKey
+    Properties:
+      PublicKeyConfig:
+        Name: "cfn-public-key"
+        Comment: cfn-example signed public key
+        CallerReference: "20230208000512.523756"
+        EncodedKey: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0ZCz4OoFhfPm38JraZKT
+          85GRaxS2mfZC2IWfatpzirsBb7vX1HIVyEhE7uiLAyftO6Y0xj9HzKQFkzuIl9iD
+          oI69MovHGtb+BM5f4VnN4Srf2CkWgpF5jqwf8jRTpvKkoKyNGABWCTIYIbJrt0JM
+          xIg5xt4UFa7ARGxiMejqOwvlf2dwtmwEaNvdZGxCpnDQ9cpKUvlxzs6sn+KclsR3
+          WhRQPueY5nfy0C+ICyzwXSc+yUharjtuyFYbh5WKgrFcXRgixKzHVaIhAaaAkuA6
+          z9cn/AbbTO4NzhP/pKwyw0dm1E0RkOkCprEVLWvWA9bgxYLQRoO1ii0khtUtBZ6Z
+          PwIDAQAB
+          -----END PUBLIC KEY-----
+
+  CloudFrontKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    DependsOn:
+      - CloudFrontPublicKey
+    Properties:
+      KeyGroupConfig:
+        Name: "cfn-public-key-group-config"
+        Comment: cfn-example signed key group
+        Items:
+          - !Ref 'CloudFrontPublicKey'
+
 Outputs:
 
   BucketDomainName:
     Description: S3 Bucket DomainName
     Value: !Sub "${Bucket.DomainName}"
+    
+  CloudFrontDistributionUrl:
+    Description: CloudFrontDistributionUrl 
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
