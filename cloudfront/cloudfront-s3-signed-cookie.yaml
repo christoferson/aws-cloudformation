@@ -3,6 +3,82 @@ Description: Cloudfront Signed Cookies
 
 Resources:
 
+  ## Signer (Optional)
+  
+  
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: "cloudfront-lambda-origin-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      #FunctionName : "basic-lambda-python"
+      Description: "Basic Lambda Python"
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          COOKIE_KEYPAIR: CloudFront-Key-Pair-Id=foo; Path=/
+          COOKIE_POLICY: CloudFront-Policy=foo; Path=/
+          COOKIE_SIGNATURE: CloudFront-Signature=foo; Path=/
+      Code:
+        ZipFile: |
+            import json
+            import boto3
+            import os
+            def handler(event, context):
+              COOKIE_KEYPAIR = os.environ['COOKIE_KEYPAIR']
+              COOKIE_POLICY = os.environ['COOKIE_POLICY']
+              COOKIE_SIGNATURE = os.environ['COOKIE_SIGNATURE']
+              return { 'statusCode': 200, 'body': "<html><div><b>V3</b></div></html>",  "headers": { "Content-Type": "text/html" }, "cookies": [ COOKIE_KEYPAIR, COOKIE_POLICY, COOKIE_SIGNATURE ] }
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "Name"
+          Value: "cloudfront-signer"
+
+  LambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref LambdaFunction
+      #Qualifier: dev # The alias name.
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "https://*"
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      #FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionUrlAuthType: NONE
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+      
+  ##
+
   Bucket:
     Type: "AWS::S3::Bucket"
     Properties:
@@ -53,7 +129,7 @@ Resources:
             Id: oac-test-bucket
             OriginAccessControlId: !GetAtt OriginAccessControl.Id
             S3OriginConfig: {}
-          - DomainName: "TODO" #TODO #!Ref LambdaEndpoint
+          - DomainName: !Select [2, !Split ["/", !GetAtt LambdaUrl.FunctionUrl]]
             Id: LambdaOrigin
             ConnectionAttempts: 3
             ConnectionTimeout: 10
@@ -76,11 +152,11 @@ Resources:
             Compress: true
             ForwardedValues:
               Cookies:
-                Forward: none
+                Forward: none #all | none | whitelist
               QueryString: false
             TrustedKeyGroups: # When a cache behavior contains trusted key groups, CloudFront requires signed URLs or signed cookies for all requests that match the cache behavior.
               - !Ref 'CloudFrontKeyGroup'
-          - PathPattern: "sign/*"
+          - PathPattern: "/sign/*"
             AllowedMethods:
             - GET
             - HEAD
@@ -88,6 +164,8 @@ Resources:
             MaxTTL: 900
             MinTTL: 900
             ForwardedValues:
+              Cookies:
+                Forward: all #all | none | whitelist
               QueryString: false
             TargetOriginId: LambdaOrigin
             ViewerProtocolPolicy: redirect-to-https
@@ -165,3 +243,6 @@ Outputs:
   CloudFrontDistributionUrl:
     Description: CloudFrontDistributionUrl 
     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  LambdaFunctionUrl:
+    Value: !GetAtt LambdaUrl.FunctionUrl
