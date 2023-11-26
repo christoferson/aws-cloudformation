@@ -61,6 +61,12 @@ Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
 
 [cloudfront-s3-oac-origin](cloudfront-s3-oac-origin.yaml)
 
+### Cloudfront - Signed Cookie
+
+Provision an S3 Bucket fronted by Cloudfront. Path /secure can only be accessed using Signed Url or Cookies.
+
+[cloudfront-s3-signed-cookie](cloudfront-s3-signed-cookie)
+
 ### Errors
 
 - Internal error reported from downstream service during operation 'null'
@@ -77,7 +83,7 @@ Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
 - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-cloudfront-originaccesscontrol.html
 - https://aws.amazon.com/about-aws/whats-new/2022/08/amazon-cloudfront-origin-access-control/?nc1=h_ls
-
+- https://aws.amazon.com/jp/about-aws/whats-new/2023/11/amazon-cloudfront-keyvaluestore-globally-managed-key-value-datastore/
 
 ### TODO
 - Origin
@@ -90,6 +96,9 @@ Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
 - Error Response
 - Multi Path
 - Origin ALB
+- Signed Cookies
 
 Migrating from origin access identity (OAI) to origin access control (OAC)
 https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
+
+
