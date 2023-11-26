@@ -53,6 +53,18 @@ Resources:
             Id: oac-test-bucket
             OriginAccessControlId: !GetAtt OriginAccessControl.Id
             S3OriginConfig: {}
+          - DomainName: "TODO" #TODO #!Ref LambdaEndpoint
+            Id: LambdaOrigin
+            ConnectionAttempts: 3
+            ConnectionTimeout: 10
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only #http-only | https-only | match-viewer
+              OriginKeepaliveTimeout: 5
+              OriginReadTimeout: 30
+            OriginCustomHeaders:
+              - HeaderName: c_security
+                HeaderValue: secret
         CacheBehaviors:
           - PathPattern: /secure/*
             AllowedMethods:
@@ -68,6 +80,18 @@ Resources:
               QueryString: false
             TrustedKeyGroups: # When a cache behavior contains trusted key groups, CloudFront requires signed URLs or signed cookies for all requests that match the cache behavior.
               - !Ref 'CloudFrontKeyGroup'
+          - PathPattern: "sign/*"
+            AllowedMethods:
+            - GET
+            - HEAD
+            DefaultTTL: 900
+            MaxTTL: 900
+            MinTTL: 900
+            ForwardedValues:
+              QueryString: false
+            TargetOriginId: LambdaOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            Compress: true
         DefaultCacheBehavior:
           ForwardedValues:
               QueryString: 'false'
