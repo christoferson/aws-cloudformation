@@ -65,6 +65,8 @@ Provision a cloudfront for S3. Access files using Origin Access Identifier (OAI)
 
 Provision an S3 Bucket fronted by Cloudfront. Path /secure can only be accessed using Signed Url or Cookies.
 
+Also Creates a lambda that can be used to generate the signed cookies available from path /sign/xx. Make sure to set the values in the Environment Variables.
+
 [cloudfront-s3-signed-cookie](cloudfront-s3-signed-cookie)
 
 ### Errors
@@ -84,6 +86,7 @@ Provision an S3 Bucket fronted by Cloudfront. Path /secure can only be accessed 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-cloudfront-originaccesscontrol.html
 - https://aws.amazon.com/about-aws/whats-new/2022/08/amazon-cloudfront-origin-access-control/?nc1=h_ls
 - https://aws.amazon.com/jp/about-aws/whats-new/2023/11/amazon-cloudfront-keyvaluestore-globally-managed-key-value-datastore/
+- https://repost.aws/questions/QU4VpxEkw_Q6yQotN5JhkBEA/lambda-function-url-not-returning-multiple-cookies
 
 ### TODO
 - Origin
