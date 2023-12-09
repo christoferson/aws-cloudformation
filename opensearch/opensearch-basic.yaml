@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: OpenSearch Basic
+
+Parameters:
+
+  Application:
+    Type: String
+    Description: Application
+    Default: demo
+
+  DomainName:
+    Type: String
+    Description: Application
+    Default: demo-oss-domain
+
+  UserName:
+    Type: String
+    Description: User Name
+    Default: admin
+
+  UserNetworkAddress:
+    Type: String
+    Description: UserNetworkAddress
+    Default: xxxx.yyyy.zzzz.aaaa
+
+  InstanceCount:
+    Type: Number
+    Default: 1
+    
+  InstanceType:
+    Type: String
+    Default: "t3.small.search"
+
+Resources:
+
+  OpenSearchServiceDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Sub "${DomainName}"
+      EngineVersion: "OpenSearch_2.11"
+      ClusterConfig:
+        DedicatedMasterEnabled: false
+        InstanceCount: !Ref InstanceCount
+        InstanceType: !Ref InstanceType
+        WarmEnabled: false
+        ZoneAwarenessEnabled: false
+      CognitoOptions:
+        Enabled: false
+      AdvancedSecurityOptions:
+        Enabled: false
+        InternalUserDatabaseEnabled: false
+      DomainEndpointOptions:
+        CustomEndpointEnabled: false
+        EnforceHTTPS: true
+        TLSSecurityPolicy: "Policy-Min-TLS-1-0-2019-07"
+      EBSOptions:
+        EBSEnabled: true
+        VolumeSize: "10" #!Ref VolumeSize
+        VolumeType: gp3
+      #VPCOptions
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Deny"
+            Principal: "*"
+            Action: "es:*"
+            Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${DomainName}/*"
+            Condition:
+              NotIpAddress:
+                aws:SourceIp:
+                - !Ref UserNetworkAddress
+          -
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:user/${UserName}"
+            Action: "es:*"
+            Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${DomainName}/*
+      #Tags
