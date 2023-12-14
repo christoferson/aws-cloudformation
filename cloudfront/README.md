@@ -67,6 +67,54 @@ Provision an S3 Bucket fronted by Cloudfront. Path /secure can only be accessed 
 
 Also Creates a lambda that can be used to generate the signed cookies available from path /sign/xx. Make sure to set the values in the Environment Variables.
 
+#### Process:
+
+1. Create Private and Public Key
+
+openssl.exe genrsa -out private_key.pem 2048
+openssl.exe rsa -pubout -in private_key.pem -out public_key.pem
+
+2. Create the Public Key and Key Group via AWS Console (Alternative)
+
+Cloudfront > Key Management > Public keys > Create Public Key. Take note of the ID 
+Cloudfront > Key Management > Key groups > Create Key Group
+
+This is equivalent to the below  definition in cloudfront-s3-signed-cookie
+
+```(yaml)
+  CloudFrontPublicKey:
+    Type: AWS::CloudFront::PublicKey
+    Properties:
+      PublicKeyConfig:
+        Name: "cfn-public-key"
+        Comment: cfn-example signed public key
+        CallerReference: "20230208000512.523756"
+        EncodedKey: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0ZCz4OoFhfPm38JraZKT
+          85GRaxS2mfZC2IWfatpzirsBb7vX1HIVyEhE7uiLAyftO6Y0xj9HzKQFkzuIl9iD
+          oI69MovHGtb+BM5f4VnN4Srf2CkWgpF5jqwf8jRTpvKkoKyNGABWCTIYIbJrt0JM
+          xIg5xt4UFa7ARGxiMejqOwvlf2dwtmwEaNvdZGxCpnDQ9cpKUvlxzs6sn+KclsR3
+          WhRQPueY5nfy0C+ICyzwXSc+yUharjtuyFYbh5WKgrFcXRgixKzHVaIhAaaAkuA6
+          z9cn/AbbTO4NzhP/pKwyw0dm1E0RkOkCprEVLWvWA9bgxYLQRoO1ii0khtUtBZ6Z
+          PwIDAQAB
+          -----END PUBLIC KEY-----
+
+  CloudFrontKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    DependsOn:
+      - CloudFrontPublicKey
+    Properties:
+      KeyGroupConfig:
+        Name: "cfn-public-key-group-config"
+        Comment: cfn-example signed key group
+        Items:
+          - !Ref 'CloudFrontPublicKey'
+```
+
+3. 
+
+
 [cloudfront-s3-signed-cookie](cloudfront-s3-signed-cookie)
 
 ### Errors
