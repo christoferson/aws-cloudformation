@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Dynamo DB - Point in time Recovery"
+
+Resources:
+
+  DynamoTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      #TableName: "Character"
+      AttributeDefinitions: 
+        - 
+          AttributeName: "Region"
+          AttributeType: "S"
+        - 
+          AttributeName: "CharacterName"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "Region"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CharacterName"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+Outputs:
+
+  DynamoTableArn:
+    Description: Dynamo Database Arn
+    Value: !GetAtt DynamoTable.Arn
