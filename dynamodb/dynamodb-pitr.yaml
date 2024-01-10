@@ -15,10 +15,10 @@ Resources:
           AttributeName: "CharacterName"
           AttributeType: "S"
       KeySchema: 
-        - 
+        -
           AttributeName: "Region"
           KeyType: "HASH"
-        - 
+        -
           AttributeName: "CharacterName"
           KeyType: "RANGE"
       ProvisionedThroughput: 
@@ -26,6 +26,12 @@ Resources:
         WriteCapacityUnits: "1"
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      BillingMode: PROVISIONED
+      #SSESpecification:
+      #  KMSMasterKeyId: "alias/aws/dynamodb
+      #  SSEEnabled: true
+      #  SSEType: KMS"
+      
 
 Outputs:
 
