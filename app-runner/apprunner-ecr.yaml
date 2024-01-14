@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  EcrRepositoryUri:
+    Type: String
+
+  ContainerServicePort:
+    Type: String
+    
+Resources:
+
+  AppRunnerServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - build.apprunner.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      #ServiceName: 
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerServiceRole.Arn
+        AutoDeploymentsEnabled: true
+        ImageRepository:
+          ImageIdentifier: !Ref EcrRepositoryUri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: !Ref ContainerServicePort
+      InstanceConfiguration:
+        Cpu: 1 vCPU
+        Memory: 2 GB
+
+Outputs:    
+
+  AppRunnerServiceUrl:
+    Value: !GetAtt AppRunnerService.ServiceUrl
