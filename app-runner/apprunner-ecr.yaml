@@ -4,10 +4,16 @@ Parameters:
 
   ContainerImageUri:
     Type: String
+    Default: "public.ecr.aws/aws-containers/hello-app-runner:latest"
 
   ContainerServicePort:
     Type: String
-    
+    Default: "8080"
+
+  ContainerRepositoryType:
+    Type: String
+    Default: "ECR" #ECR_PUBLIC
+
 Resources:
 
   AppRunnerServiceRole:
@@ -36,7 +42,7 @@ Resources:
         AutoDeploymentsEnabled: true
         ImageRepository:
           ImageIdentifier: !Ref ContainerImageUri
-          ImageRepositoryType: ECR
+          ImageRepositoryType: !Ref ContainerRepositoryType
           ImageConfiguration:
             Port: !Ref ContainerServicePort
       InstanceConfiguration:
