@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+
+Resources:
+
+  BedrockAgentRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      ManagedPolicyArns:
+        - !Ref BedrockAgentRolePolicy
+
+  BedrockAgentRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "BedrockAgent Role ManagedPolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:GetObjectVersion'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'bedrock:*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'lambda:InvokeFunction'
+            Effect: Allow
+            Resource: '*'
