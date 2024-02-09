@@ -161,3 +161,47 @@ Resources:
             Effect: Allow
             Resource: "*" # "arn:aws:kms:region:account-id:key/key-id"
 
+  # AmazonBedrockExecutionRoleForModelCustomization
+
+  BedrockModelCustomizationRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "AmazonBedrockExecutionRoleForModelCustomization_007"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "bedrock.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+            #Condition:
+            #  StringEquals:
+            #    "aws:SourceAccount": !Sub "${AWS::AccountId}"
+            #  ArnLike:
+            #    "AWS:SourceArn": !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:model-customization-job/*"
+      Path: /
+      ManagedPolicyArns:
+        - !Ref BedrockModelCustomizationRolePolicy
+
+  BedrockModelCustomizationRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Bedrock Model Customization Role ManagedPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: Allow
+            Resource: "*"
+          - Action: # Permissions to access training and validation files and to write output files in S3
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:GetObjectVersion"
+              - "s3:ListBucket"
+            Effect: Allow
+            Resource: "*"
