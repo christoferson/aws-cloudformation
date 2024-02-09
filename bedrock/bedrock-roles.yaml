@@ -6,6 +6,8 @@ Description: Bedrock - Roles
 
 Resources:
 
+  # AmazonBedrockExecutionRoleForAgents
+
   BedrockAgentRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -51,12 +53,24 @@ Resources:
               - "bedrock:*"
             Effect: Allow
             Resource: "*"
-          - Action:
+          - Action: # Permissions to access your action group Lambda functions
               - "lambda:InvokeFunction"
             Effect: Allow
-            Resource: "*"
-          - Action:
+            Resource: "*" # "arn:aws:lambda:region:account-id:function:function-name"
+            #Condition:
+            #  StringEquals:
+            #    "AWS:SourceAccount": !Sub "${AWS::AccountId}"
+            #  ArnLike:
+            #    "AWS:SourceArn": !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/agent-id"
+          - Action: # (Optional) Permissions to access your knowledge bases
               - "bedrock:Retrieve"
               - "bedrock:RetrieveAndGenerate"
             Effect: Allow
-            Resource: "*"
+            Resource: "*" # "arn:aws:bedrock:*:account-id:knowledge-base/knowledge-base-id"
+          - Action: # Permissions to access Amazon Bedrock models
+              - "bedrock:InvokeModel"
+            Effect: Allow
+            Resource:
+              - "arn:aws:bedrock:region::foundation-model/anthropic.claude-v2"
+              - "arn:aws:bedrock:region::foundation-model/anthropic.claude-v2:1"
+              - "arn:aws:bedrock:region::foundation-model/anthropic.claude-instant-v1"
