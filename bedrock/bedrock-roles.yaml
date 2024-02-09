@@ -49,10 +49,10 @@ Resources:
               - "s3:GetObjectVersion"
             Effect: Allow
             Resource: "*"
-          - Action:
-              - "bedrock:*"
-            Effect: Allow
-            Resource: "*"
+          #- Action:
+          #    - "bedrock:*"
+          #  Effect: Allow
+          #  Resource: "*"
           - Action: # Permissions to access your action group Lambda functions
               - "lambda:InvokeFunction"
             Effect: Allow
@@ -71,6 +71,7 @@ Resources:
               - "bedrock:InvokeModel"
             Effect: Allow
             Resource:
-              - "arn:aws:bedrock:region::foundation-model/anthropic.claude-v2"
-              - "arn:aws:bedrock:region::foundation-model/anthropic.claude-v2:1"
-              - "arn:aws:bedrock:region::foundation-model/anthropic.claude-instant-v1"
+              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-v2"
+              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-v2:1"
+              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-instant-v1"
+
