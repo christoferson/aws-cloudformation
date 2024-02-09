@@ -1,20 +1,29 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Description: Bedrock - Roles
 
+# Agents for Bedrock Service Role
+### Create an IAM role with the prefix AmazonBedrockExecutionRoleForAgents_
 
 Resources:
 
   BedrockAgentRole:
     Type: "AWS::IAM::Role"
     Properties:
+      RoleName: "AmazonBedrockExecutionRoleForAgents_007"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service:
-                - bedrock.amazonaws.com
+                - "bedrock.amazonaws.com"
             Action:
               - "sts:AssumeRole"
+            #Condition:
+            #  StringEquals:
+            #    "aws:SourceAccount": !Sub "${AWS::AccountId}"
+            #  ArnLike:
+            #    "AWS:SourceArn": !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*"
       Path: /
       ManagedPolicyArns:
         - !Ref BedrockAgentRolePolicy
@@ -27,22 +36,27 @@ Resources:
         Version: 2012-10-17
         Statement:
           - Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 's3:GetObject'
-              - 's3:PutObject'
-              - 's3:GetObjectVersion'
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:GetObjectVersion"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 'bedrock:*'
+              - "bedrock:*"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
           - Action:
-              - 'lambda:InvokeFunction'
+              - "lambda:InvokeFunction"
             Effect: Allow
-            Resource: '*'
+            Resource: "*"
+          - Action:
+              - "bedrock:Retrieve"
+              - "bedrock:RetrieveAndGenerate"
+            Effect: Allow
+            Resource: "*"
