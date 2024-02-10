@@ -1,8 +1,29 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Bedrock - Roles
 
-# Agents for Bedrock Service Role
-### Create an IAM role with the prefix AmazonBedrockExecutionRoleForAgents_
+Metadata:
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
 
 Resources:
 
@@ -12,6 +33,7 @@ Resources:
     Type: "AWS::IAM::Role"
     Properties:
       RoleName: "AmazonBedrockExecutionRoleForAgents_007"
+      Description: "AmazonBedrockExecutionRoleForAgents"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -29,6 +51,13 @@ Resources:
       Path: /
       ManagedPolicyArns:
         - !Ref BedrockAgentRolePolicy
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-bedrock-svc-role-agents"
 
   BedrockAgentRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
@@ -205,3 +234,8 @@ Resources:
               - "s3:ListBucket"
             Effect: Allow
             Resource: "*"
+
+Outputs:
+
+  BedrockAgentRoleArn:
+    Value: !GetAtt BedrockAgentRole.Arn
