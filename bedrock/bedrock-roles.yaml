@@ -127,6 +127,13 @@ Resources:
       Path: /
       ManagedPolicyArns:
         - !Ref BedrockKnowledgeBaseRolePolicy
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-bedrock-svc-role-kb"
 
   BedrockKnowledgeBaseRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
@@ -213,6 +220,13 @@ Resources:
       Path: /
       ManagedPolicyArns:
         - !Ref BedrockModelCustomizationRolePolicy
+      Tags:
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "Environment"
+          Value: !Ref Environment
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-bedrock-svc-role-model-customization"
 
   BedrockModelCustomizationRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
@@ -239,3 +253,11 @@ Outputs:
 
   BedrockAgentRoleArn:
     Value: !GetAtt BedrockAgentRole.Arn
+
+  BedrockKnowledgeBaseRoleArn:
+    Value: !GetAtt BedrockKnowledgeBaseRole.Arn
+
+  BedrockModelCustomizationRoleArn:
+    Value: !GetAtt BedrockModelCustomizationRole.Arn
+
+    
