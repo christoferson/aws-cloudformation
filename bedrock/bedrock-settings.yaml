@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Bedrock - Settings
+
+Resources:
+
+  BedrockSettingsModelLoggerRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      #RoleName: "???"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "bedrock.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Sub "${AWS::AccountId}"
+      Path: /
+      ManagedPolicyArns:
+        - !Ref BedrockSettingsModelLoggerRolePolicy
+
+  BedrockSettingsModelLoggerRolePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "BedrockLogger Role ManagedPolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - "s3:PutObject"
+            Effect: Allow
+            Resource: "*" #"arn:aws:s3:::bucketName/prefix/AWSLogs/accountId/BedrockModelInvocationLogs/*"
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Sub "${AWS::AccountId}"
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*"
+          - Action:
+              - "kms:GenerateDataKey"
+            Effect: Allow
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Sub "${AWS::AccountId}"
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*"
+
+  BedrockModelLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "/my/bedrock/model/logs"
+      RetentionInDays: 7
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: app
