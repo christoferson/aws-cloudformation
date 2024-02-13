@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Bedrock Agent Action Group Lambda 
+
+Resources:
+
+  BedrockAgentLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  BedrockAgentLambdaExecutionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: root
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+            - ec2:*
+          Resource:
+            - '*'
+      Roles:
+      - !Ref BedrockAgentLambdaExecutionRole
+
+  BedrockAgentLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "BedrockAgent Lambda"
+      Runtime: python3.11
+      Role: !GetAtt BedrockAgentLambdaExecutionRole.Arn
+      Handler: index.handler
+      Timeout: 900
+      Environment:
+        Variables:
+          foo: bar
+          zig: zag
+      Code:
+        ZipFile: |
+            import boto3
+            import json
+
+            def handler(event, context):
+                
+                ec2 = boto3.client('ec2')
+                
+                api_path = event["apiPath"]
+                response_body = {"application/json": {"body": "api path not found"}}
+                status_code = 404
+                if api_path == '/create-ec2':
+                    param = event['requestBody']['content']['application/json']['properties']
+                    instance_type = next(item for item in param if item['name'] == 'instance_type')['value']
+                    ami_id = next(item for item in param if item['name'] == 'ami_id')['value']
+
+                    instances = ec2.run_instances(
+                        ImageId=ami_id,
+                        InstanceType=instance_type,
+                        MinCount=1,
+                        MaxCount=1
+                    )
+                    
+                    response_body = {"application/json": {"body": json.dumps('Instance Created: ' + str(instances))}}
+                    status_code = 200
+                
+                action_response = {
+                    "actionGroup": event["actionGroup"],
+                    "apiPath": event["apiPath"],
+                    "httpMethod": event["httpMethod"],
+                    "httpStatusCode": status_code,
+                    "responseBody": response_body,
+                }
+
+                api_response = {"messageVersion": "1.0", "response": action_response}
+                return api_response
+      TracingConfig:
+        Mode: "Active"
+
+  BedrockAgentLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${BedrockAgentLambdaFunction}"
+      RetentionInDays: 1
+
+  BedrockAgentLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt BedrockAgentLambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: bedrock.amazonaws.com
+      SourceArn: !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/" 
+    
+Outputs:
+
+  BedrockAgentLambdaFunctionArn:
+    Value: !GetAtt BedrockAgentLambdaFunction.Arn
+
+  BedrockAgentLambdaExecutionRoleArn:
+    Value: !GetAtt BedrockAgentLambdaExecutionRole.Arn
