@@ -16,3 +16,4 @@ For CLOUDFRONT, you must create your WAFv2 resources in the US East (N. Virginia
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-wafv2-webacl.html
 
+- https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-wafv2-webacl-ratebasedstatement.html

@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "WAF"
+
+Parameters:
+
+  Application:
+    Type: String
+    Description: "Application Name"
+    Default: app
+
+  Environment:
+    Type: String
+    Description: "Environment"
+    Default: develop
+
+  Scope:
+    Type: String
+    Description: "Select in the scope of waf(REGIONAL or CLOUDFRONT)"
+    AllowedValues:
+      - "REGIONAL"   # Regional resources (Application Load Balancers, Amazon API Gateway REST APIs, Amazon App Runner services, AWS AppSync GraphQL APIs, Amazon Cognito user pools and AWS Verified Access Instances)
+      - "CLOUDFRONT" # Amazon CloudFront distributions
+    Default: REGIONAL
+
+  WebAclAssociationResourceArn:
+    Type: String
+    Description: Enter RegionalResource(ALB,APIGateway,AppSync) ARN or CloudFront ARN to associate with WEBACL.
+    Default: "arn:aws:elasticloadbalancing:ap-northeast-1:XXXXXXXXXXXX:loadbalancer/app/XXXXXXXXXXXX"
+
+Resources:
+
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties: 
+      Name: !Sub "${Environment}-${Application}-web-acl"
+      Description: "Demo WAF 1"
+      Scope: !Ref Scope
+      DefaultAction: # web request doesn't match any of the rules in the WebACL
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+        MetricName: !Sub ${Environment}-${Application}-web-acl
+      Rules:
+        -
+          Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 10 #AWS WAF processes rules with lower priority first. 
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules:
+                - Name: NoUserAgent_HEADER
+          OverrideAction:
+            None: {}
+          VisibilityConfig: # Defines and enables Amazon CloudWatch metrics and web request sample collection. 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesCommonRuleSet
+        -
+          Name: AWS-AWSManagedRulesAmazonIpReputationList
+          Priority: 8 #AWS WAF processes rules with lower priority first. 
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+          OverrideAction:
+            Count: {}
+          VisibilityConfig: # Defines and enables Amazon CloudWatch metrics and web request sample collection. 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesAmazonIpReputationList
+        -
+          Name: My-RateLimitRuleByForwardedIp
+          Priority: 5 #AWS WAF processes rules with lower priority first. 
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: FORWARDED_IP
+              ForwardedIPConfig:
+                HeaderName: X-Forwarded-For
+                FallbackBehavior: MATCH
+          Action:
+            Block: {}
+          VisibilityConfig: # Defines and enables Amazon CloudWatch metrics and web request sample collection. 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: My-RateLimitRuleByForwardedIp
+      Tags:
+        - Key: "Name"
+          Value: "demo-waf"
+          
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref WebAclAssociationResourceArn
+      WebACLArn: !GetAtt WebAcl.Arn
+
+Outputs:
+
+  WebAclInfo:
+    Value: !Sub "${WebAcl}"
