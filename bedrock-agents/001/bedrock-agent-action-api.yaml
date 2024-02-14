@@ -1,0 +1,38 @@
+openapi: 3.0.0
+info:
+  title: Create EC2 API
+  version: 1.0.0
+  description: API for create EC2
+paths:
+  /create-ec2:
+    post:
+      summary: API for create EC2.
+      description: Create EC2 that posted instance type, ami-id
+      operationId: send
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instance_type:
+                  type: string
+                  description: Instance Type
+                ami_id:
+                  type: string
+                  description: AMI ID for Instance
+              required:
+              - instance_type
+              - ami_id
+      responses:
+        '200':
+          description: EC2 Creation Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  body:
+                    type: string
+                    description: Information of Created Instance.
