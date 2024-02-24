@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 - Basic HTTP Server
+
+Metadata:
+
+  StackVersion: 1
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcEc2Subnet
+
+      -
+        Label:
+          default: "Instance Configuration"
+        Parameters:
+          - Ec2ImageId
+          - ServerInstanceType
+
+Parameters:
+
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
+  VpcEc2Subnet:
+    Description: EC2 subnet
+    Type: AWS::EC2::Subnet::Id
+
+  Ec2ImageId:
+    Description: EC2 AMI ID
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  ServerInstanceType:
+    Description: EC2 InstanceType
+    Type: String
+    Default: t2.micro
+
+Resources:
+
+  ServerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: /
+      Policies: !Ref 'AWS::NoValue'
+      RoleName: !Ref 'AWS::NoValue'
+
+  ServerInstanceRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ServerInstanceRolePolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:*
+          Resource:
+          - '*'
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogStreams
+          Resource:
+          - arn:aws:logs:*:*:*
+      Roles:
+      - !Ref 'ServerInstanceRole'
+
+  ServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn: ServerInstanceRole
+    Properties:
+      Path: /
+      Roles:
+      - !Ref ServerInstanceRole
+
+
+  ServerInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: allow ICMP via same VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+
+  ServerInstance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !Ref Ec2ImageId
+      InstanceType: !Ref ServerInstanceType
+      #KeyName: !Ref ServerInstanceKeyName
+      IamInstanceProfile: !Ref ServerInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: "gp2"
+            VolumeSize: "8"
+      SecurityGroupIds:
+        - !Ref ServerInstanceSecurityGroup
+      SubnetId: !Ref VpcEc2Subnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<h1>Hello from $(hostname -f)</h1>" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: "dev-machine"
+        - Key: Environment
+          Value: "dev"
+
+Outputs:
+
+  ServerInstancePublicIp:
+    Value: !GetAtt ServerInstance.PublicIp
