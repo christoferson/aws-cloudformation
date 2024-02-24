@@ -92,6 +92,24 @@ Use the following command to get the latest metadata
 ##### cfn-init 
 Executes logic defined in the metadata AWS::CloudFormation::Init. AWS::CloudFormation::Init contains statements to install packages, files, and start services.
 
+```(yaml)
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init -v \
+          --stack ${AWS::StackName} \
+          --resource ServerInstance \
+          --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
+```
+
+```
+cat /var/log/cloud-init-output.log
+cat /var/log/cloud-init.log
+cat /var/log/cfn-init.log
+cat /var/log/cfn-init-cmd.log
+```
+
 ##### cfn-metadata
 Detects changes in AWS::CloudFormation::Init and applies the changes.
 
@@ -118,6 +136,9 @@ TODO: Add Dynamic Scaling
 
 [ec2-alb](./ec2-alb.yaml)
 
+### EC2 Private with SSM Access
+
+[ec2-private-ssm](ec2-private-ssm.yaml)
 
 
 ### Cloudformation Documentation
