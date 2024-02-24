@@ -1,6 +1,29 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: EC2 - Cfn Helper Script
 
+Metadata:
+
+  StackVersion: 1
+
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - SubnetId
+
+      -
+        Label:
+          default: "Instance Configuration"
+        Parameters:
+          - KeyName
+          - InstanceMachineImageId
+          - WebPageText
+          - FromIpAddress
+
 Parameters:
 
   VpcId:
@@ -24,6 +47,7 @@ Parameters:
     Description: AMI Id
     Type: "AWS::SSM::Parameter::Value<String>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
   WebPageText:
     Type: String
     Description: WebPage Display
@@ -47,6 +71,9 @@ Resources:
               mode: '000644'
               owner: root
               group: root
+          commands:
+            hello:
+              command: "echo 'hello word'"
           services:
             sysvinit:
               httpd:
@@ -62,10 +89,11 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
+          dnf update -y aws-cfn-bootstrap
           /opt/aws/bin/cfn-init -v \
           --stack ${AWS::StackName} \
           --resource ServerInstance \
-          --region ${AWS::Region}
+          --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
 
   InstanceSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
@@ -83,3 +111,9 @@ Resources:
           ToPort: 80
           CidrIp: !Ref FromIpAddress
       VpcId: !Ref VpcId
+
+Outputs:
+  
+  ServerInstancePublicIp:
+    Value: !GetAtt ServerInstance.PublicIp
+    
