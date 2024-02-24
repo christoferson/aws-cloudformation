@@ -40,7 +40,7 @@ Resources:
     Properties:
       #FunctionName : "basic-lambda-python"
       Description: "Basic Lambda Python"
-      Runtime: python3.9
+      Runtime: python3.12
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
       Environment:

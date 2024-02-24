@@ -103,8 +103,8 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       #FunctionName : "client-lambda"
-      Description: "Lambda Client RDS (S3)"
-      Runtime: nodejs18.x
+      Description: "Lambda VPC"
+      Runtime: nodejs20.x
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
       Timeout: 30
