@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EC2 - Basic HTTP Server
+Description: EC2 - LaunchTemplate
 
 Metadata:
 
@@ -13,7 +13,7 @@ Metadata:
           default: "Network Configuration"
         Parameters:
           - VpcId
-          - VpcEc2Subnet
+          - VpcSubnetId
 
       -
         Label:
@@ -28,7 +28,7 @@ Parameters:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
 
-  VpcEc2Subnet:
+  VpcSubnetId:
     Description: EC2 subnet
     Type: AWS::EC2::Subnet::Id
 
@@ -87,7 +87,6 @@ Resources:
 
   ServerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
-    DependsOn: ServerInstanceRole
     Properties:
       Path: /
       Roles:
@@ -159,7 +158,7 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref ServerInstanceLaunchTemplate
         Version: !GetAtt "ServerInstanceLaunchTemplate.LatestVersionNumber"
-      SubnetId: !Ref VpcEc2Subnet
+      SubnetId: !Ref VpcSubnetId
 
 Outputs:
 
