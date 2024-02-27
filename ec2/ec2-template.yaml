@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EC2
+Description: EC2 - LaunchTemplate
 
 Metadata:
 
@@ -14,15 +14,15 @@ Metadata:
         Parameters:
           - VpcId
           - VpcSubnetCidr
-          - VpcEc2Subnet
+          - VpcSubnetId
           - StaticIPforSSH
       -
         Label:
           default: "Instance Configuration"
         Parameters:
-          - Ec2ImageId
-          - Ec2InstanceType
-          - Ec2InstanceKeyName
+          - ServerInstanceImageId
+          - ServerInstanceType
+          - ServerInstanceKeyName
 
 Parameters:
 
@@ -35,7 +35,7 @@ Parameters:
     Type: String
     Default: 10.0.0.0/16
 
-  VpcEc2Subnet:
+  VpcSubnetId:
     Description: EC2 subnet
     Type: AWS::EC2::Subnet::Id
 
@@ -44,24 +44,25 @@ Parameters:
     Type: String
     Default: 127.0.0.1/32
 
-  Ec2ImageId:
-    Description: AMI ID
-    Type: String
-    Default: ami-01efa4023f0f3a042
+  ServerInstanceImageId:
+    Description: EC2 AMI ID
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    #Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
 
-  Ec2InstanceType:
+  ServerInstanceType:
     Description: EC2 InstanceType
     Type: String
     Default: t2.micro
 
-  Ec2InstanceKeyName:
+  ServerInstanceKeyName:
     Description: EC2 SSH KEY
     Type: AWS::EC2::KeyPair::KeyName
     Default: SSHKey
 
 Resources:
 
-  Ec2IAMRole:
+  ServerInstanceRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -78,10 +79,10 @@ Resources:
       Policies: !Ref 'AWS::NoValue'
       RoleName: !Ref 'AWS::NoValue'
 
-  Ec2RolePolicies:
+  ServerInstanceRolePolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: Ec2RolePolicies
+      PolicyName: ServerInstanceRolePolicy
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -99,56 +100,59 @@ Resources:
           Resource:
           - arn:aws:logs:*:*:*
       Roles:
-      - !Ref 'Ec2IAMRole'
+      - !Ref 'ServerInstanceRole'
 
-  Ec2IAMProfile:
+  ServerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
-    DependsOn: Ec2IAMRole
     Properties:
       Path: /
       Roles:
-      - !Ref Ec2IAMRole
+      - !Ref ServerInstanceRole
 
-
-  Ec2SecurityGroup:
+  ServerInstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: !Ref 'VpcId'
-      GroupDescription: allow ICMP via same VPC
+      VpcId: !Ref VpcId
+      GroupDescription: "Instance Serurity Group"
       SecurityGroupIngress:
       - IpProtocol: icmp
         FromPort: -1
         ToPort: -1
-        CidrIp: !Ref 'VpcSubnetCidr'
+        CidrIp: !Ref VpcSubnetCidr
       - IpProtocol: tcp
         FromPort: 80
         ToPort: 80
         CidrIp: "0.0.0.0/0"
 
-  Ec2SecurityGroupSSH:
+  ServerInstanceSecurityGroupSSH:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref 'VpcId'
-      GroupDescription: allow SSH via static IP
+      GroupDescription: "Instance Serurity Group SSH"
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
-        CidrIp: !Ref 'StaticIPforSSH'
+        CidrIp: !Ref StaticIPforSSH
 
-  Ec2InstanceLaunchTemplate:
+  ServerInstanceLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData:
-        ImageId: !Ref 'Ec2ImageId'
-        InstanceType: !Ref 'Ec2InstanceType'
+        ImageId: !Ref 'ServerInstanceImageId'
+        InstanceType: !Ref 'ServerInstanceType'
         IamInstanceProfile:
-          Arn: !GetAtt 'Ec2IAMProfile.Arn'
-        KeyName: !Ref 'Ec2InstanceKeyName'
+          Arn: !GetAtt 'ServerInstanceProfile.Arn'
+        KeyName: !Ref 'ServerInstanceKeyName'
         SecurityGroupIds:
-        - !Ref 'Ec2SecurityGroup'
-        - !Ref 'Ec2SecurityGroupSSH'
+        - !Ref 'ServerInstanceSecurityGroup'
+        - !Ref 'ServerInstanceSecurityGroupSSH'
         InstanceInitiatedShutdownBehavior: terminate
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpPutResponseHopLimit: 1
+          HttpTokens: required #IMDSv2 is required
+          InstanceMetadataTags: disabled
         Monitoring:
           Enabled: false
         BlockDeviceMappings:
@@ -179,10 +183,18 @@ Resources:
           - Key: Name
             Value: !Ref 'AWS::StackName'
 
-  EC2Instance:
+  ServerInstance:
     Type: AWS::EC2::Instance
     Properties:
       LaunchTemplate:
-        LaunchTemplateId: !Ref Ec2InstanceLaunchTemplate
-        Version: !GetAtt "Ec2InstanceLaunchTemplate.LatestVersionNumber"
-      SubnetId: !Ref VpcEc2Subnet
+        LaunchTemplateId: !Ref ServerInstanceLaunchTemplate
+        Version: !GetAtt "ServerInstanceLaunchTemplate.LatestVersionNumber"
+      SubnetId: !Ref VpcSubnetId
+
+Outputs:
+
+  ServerInstancePublicIp:
+    Value: !GetAtt ServerInstance.PublicIp
+
+  ServerInstanceLaunchTemplateLatestVersionNumber:
+    Value: !GetAtt ServerInstanceLaunchTemplate.LatestVersionNumber
