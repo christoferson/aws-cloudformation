@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EC2 - Basic HTTP Server
+Description: EC2 - Private Subnet - Access Using SSM
 
 Metadata:
 
@@ -13,38 +13,102 @@ Metadata:
           default: "Network Configuration"
         Parameters:
           - VpcId
-          - VpcEc2Subnet
+          - VpcPrivateSubnet
 
       -
         Label:
           default: "Instance Configuration"
         Parameters:
-          - Ec2ImageId
-          - Ec2InstanceType
+          - InstanceImageId
+          - InstanceType
 
 Parameters:
+
+  Prefix:
+    Type: String
+    Default: "vpc-a"
 
   VpcId:
     Description: VPC ID
     Type: AWS::EC2::VPC::Id
 
-  VpcEc2Subnet:
+  VpcPrivateSubnet:
     Description: EC2 subnet
     Type: AWS::EC2::Subnet::Id
 
-  Ec2ImageId:
+  InstanceImageId:
     Description: EC2 AMI ID
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
-  Ec2InstanceType:
+  InstanceType:
     Description: EC2 InstanceType
     Type: String
     Default: t2.micro
 
 Resources:
 
-  Ec2IAMRole:
+  # ------------------------------------------------------------#
+  #  VPC Endpoint
+  # ------------------------------------------------------------#
+  SsmVpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${Prefix}-ssm-vpc-endpoint-sg
+      GroupName: !Sub ${Prefix}-ssm-vpc-endpoint-sg
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${Prefix}-ssm-vpc-endpoint-sg
+
+  SsmVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcId: !Ref VpcId
+      SubnetIds:
+        - !Ref VpcPrivateSubnet
+      SecurityGroupIds:
+        - !Ref SsmVpcEndpointSecurityGroup
+
+  SsmMessagesVpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${Prefix}-ssmmessages-vpc-endpoint-sg
+      GroupName: !Sub ${Prefix}-ssmmessages-vpc-endpoint-sg
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${Prefix}-ssmmessages-vpc-endpoint-sg
+
+  SsmMessagesVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcId: !Ref VpcId
+      SubnetIds:
+        - !Ref VpcPrivateSubnet
+      SecurityGroupIds:
+        - !Ref SsmMessagesVpcEndpointSecurityGroup
+
+
+#### Instance in Private Subnet
+
+  InstanceIAMRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -58,21 +122,21 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Path: /
-      Policies: !Ref 'AWS::NoValue'
-      RoleName: !Ref 'AWS::NoValue'
+      Policies: !Ref "AWS::NoValue"
+      RoleName: !Ref "AWS::NoValue"
 
-  Ec2RolePolicies:
+  InstanceRolePolicies:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: Ec2RolePolicies
+      PolicyName: InstanceRolePolicies
       PolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
         - Effect: Allow
           Action:
           - s3:List*
           Resource:
-          - '*'
+          - "*"
         - Effect: Allow
           Action:
           - logs:CreateLogGroup
@@ -82,22 +146,22 @@ Resources:
           Resource:
           - arn:aws:logs:*:*:*
       Roles:
-      - !Ref 'Ec2IAMRole'
+      - !Ref "InstanceIAMRole"
 
-  Ec2IAMProfile:
+  InstanceIAMProfile:
     Type: AWS::IAM::InstanceProfile
-    DependsOn: Ec2IAMRole
+    DependsOn: InstanceIAMRole
     Properties:
       Path: /
       Roles:
-      - !Ref Ec2IAMRole
+      - !Ref InstanceIAMRole
 
 
-  Ec2SecurityGroup:
+  InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: !Ref 'VpcId'
-      GroupDescription: allow ICMP via same VPC
+      VpcId: !Ref "VpcId"
+      GroupDescription: "Allow HTTP from Anywhere"
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
@@ -108,10 +172,10 @@ Resources:
   EC2Instance:
     Type: "AWS::EC2::Instance"
     Properties:
-      ImageId: !Ref Ec2ImageId
-      InstanceType: !Ref Ec2InstanceType
-      #KeyName: !Ref Ec2InstanceKeyName
-      IamInstanceProfile: !Ref Ec2IAMProfile
+      ImageId: !Ref InstanceImageId
+      InstanceType: !Ref InstanceType
+      #KeyName: !Ref InstanceInstanceKeyName
+      IamInstanceProfile: !Ref InstanceIAMProfile
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -119,8 +183,8 @@ Resources:
             VolumeType: "gp2"
             VolumeSize: "8"
       SecurityGroupIds:
-        - !Ref Ec2SecurityGroup
-      SubnetId: !Ref VpcEc2Subnet
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref VpcPrivateSubnet
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -135,7 +199,3 @@ Resources:
         - Key: Environment
           Value: "dev"
 
-Outputs:
-
-  EC2InstancePublicIp:
-    Value: !GetAtt EC2Instance.PublicIp
