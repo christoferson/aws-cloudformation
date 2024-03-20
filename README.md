@@ -1,5 +1,7 @@
 # AWS Cloudformation Templates
 
+##### [release history](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/ReleaseHistory.html)
+
 **Collection of Cloudformation templates grouped by services.**
 
 ##### [API Gateway](api-gateway/README.md)
@@ -129,3 +131,9 @@ aws cloudformation validate-template --template-body file://C:\xxx\yyy\zzz\lambd
 https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues
 
 https://github.com/awsdocs/aws-cloudformation-user-guide/blob/main/CONTRIBUTING.md
+
+
+https://docs.aws.amazon.com/vpc/latest/userguide/aws-ip-ranges.html
+
+
+https://github.com/aws/Trusted-Advisor-Tools/tree/master/ExposedAccessKeys
