@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Description: "Provision an AppRunner Service Role, Instance Role and Service backed by ECR Public Image"
 
 Parameters:
 
@@ -12,7 +13,12 @@ Parameters:
 
   ContainerRepositoryType:
     Type: String
-    Default: "ECR_PUBLIC" #ECR_PUBLIC
+    Default: "ECR_PUBLIC"
+
+  ObservabilityConfigurationArn:
+    Type: String
+    Description: "ObservabilityConfiguration"
+    Default: "arn:aws:apprunner:us-east-1:0000000000:observabilityconfiguration/name"
 
 Resources:
 
@@ -84,7 +90,13 @@ Resources:
       InstanceConfiguration:
         Cpu: 1 vCPU
         Memory: 2 GB
-        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn 
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      ObservabilityConfiguration:
+        ObservabilityEnabled: true
+        ObservabilityConfigurationArn: !Ref ObservabilityConfigurationArn
+      Tags:
+        - Key: "Name"
+          Value: "AppRunnerService"
 
 Outputs:    
 
