@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+
+  AppRunnerAutoScalingConfiguration:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      #AutoScalingConfigurationName: "AUTO_SCALING_CONFIGURATION_NAME"
+      MaxConcurrency: 100
+      MaxSize: 25
+      MinSize: 1
+      Tags:
+        - Key: "Name"
+          Value: "AppRunnerAutoScalingCfg"
+
+Outputs:    
+
+  AppRunnerAutoScalingConfigurationArn:
+    Value: !Sub "${AppRunnerAutoScalingConfiguration.AutoScalingConfigurationArn}"
+
+  #AppRunnerAutoScalingConfigurationRevision:
+  #  Value: !Sub "${AppRunnerAutoScalingConfiguration.AutoScalingConfigurationArn}:${AppRunnerAutoScalingConfiguration.AutoScalingConfigurationRevision}"
