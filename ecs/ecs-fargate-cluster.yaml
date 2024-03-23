@@ -72,7 +72,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref 'VpcId'
-      GroupDescription: "LoadBalancer SecurityGroup"
+      GroupDescription: !Sub "${Application} ${Environment} LoadBalancer SecurityGroup"
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 80
@@ -91,13 +91,10 @@ Resources:
 # ------------------------------------------------------------#
 #  Internet ALB
 # ------------------------------------------------------------#
-  InternetALB:
+  LoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties:
-      Name: !Sub "${ProjectName}-${InternetALBName}"
-      Tags:
-        - Key: Name
-          Value: !Sub "${Application}-${Environment}-${InternetALBName}"
+      #Name: !Sub "${ProjectName}-${InternetALBName}"
       Scheme: "internet-facing"
       LoadBalancerAttributes:
         - Key: "deletion_protection.enabled"
@@ -113,6 +110,22 @@ Resources:
       Subnets:
         - !Ref ALBSubnetId1
         - !Ref ALBSubnetId2
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-${InternetALBName}"
+
+  LoadBalancerListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: "text/plain"
+            MessageBody: "Forbidden!"
+            StatusCode: "503"
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
 
   ECSCluster:
     Type: "AWS::ECS::Cluster"
@@ -149,6 +162,8 @@ Outputs:
   ClusterArn:
     Value: !GetAtt ECSCluster.Arn
 
-  InternetALBDomainName:
-    Value: !GetAtt InternetALB.DNSName
+  LoadBalancerDomainName:
+    Value: !GetAtt LoadBalancer.DNSName
 
+  LoadBalancerListenerArn:
+    Value: !GetAtt LoadBalancerListener.ListenerArn
