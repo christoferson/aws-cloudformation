@@ -26,13 +26,14 @@ Metadata:
       - Label:
           default: "Service Configuration"
         Parameters:
+          - ECSServiceName
+          - ServicePath
           - ECSTaskName
           - ECSTaskCPUUnit
           - ECSTaskMemory
           - ECSContainerName
           - ECSContainerPort
           - ECSImageName
-          - ECSServiceName
           - ECSTaskDesiredCount
 
 
@@ -96,6 +97,15 @@ Parameters:
     Description : "ECS Subnet 2nd - Private Subnet"
     Type : AWS::EC2::Subnet::Id
 
+  ECSServiceName:
+    Type: String
+    Default: "service"
+
+  ServicePath:
+    Description: "Server Path"
+    Type: String
+    Default: "/"
+
   ECSTaskName:
     Type: String
     Default: "task"
@@ -122,9 +132,7 @@ Parameters:
     Type: String
     Default: "httpd:latest"
 
-  ECSServiceName:
-    Type: String
-    Default: "service"
+
 
   ECSTaskDesiredCount:
     Type: Number
@@ -177,7 +185,7 @@ Resources:
       Conditions:
         - Field: "path-pattern"
           Values:
-            - "/v1"
+            - !Ref ServicePath
       Actions:
         #- Type: "authenticate-cognito"
         #  Order: 1
