@@ -17,8 +17,11 @@ Parameters:
 
   ObservabilityConfigurationArn:
     Type: String
-    Description: "ObservabilityConfiguration"
-    Default: "arn:aws:apprunner:us-east-1:0000000000:observabilityconfiguration/name"
+    Default: "arn:aws:apprunner:us-west-1:0000000000:observabilityconfiguration/name"
+  
+  AppRunnerAutoScalingConfigurationArn:
+    Type: String
+    Default: "arn:aws:apprunner:us-west-1:0000000000:autoscalingconfiguration/name"
 
 Resources:
 
@@ -94,6 +97,7 @@ Resources:
       ObservabilityConfiguration:
         ObservabilityEnabled: true
         ObservabilityConfigurationArn: !Ref ObservabilityConfigurationArn
+      AutoScalingConfigurationArn: !Ref AppRunnerAutoScalingConfigurationArn
       Tags:
         - Key: "Name"
           Value: "AppRunnerService"
