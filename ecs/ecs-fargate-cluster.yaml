@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate with Application Load Balancer (Cluster Only)
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Name Prefix"
+        Parameters:
+          - ProjectName
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - ALBSubnetId1
+          - ALBSubnetId2
+      - Label:
+          default: "Load Balancer Configuration"
+        Parameters:
+          - InternetALBName
+      - Label:
+          default: "ECS Fargate Configuration"
+        Parameters:
+          - ECSClusterName
+
+    ParameterLabels:
+      InternetALBName:
+        default: "InternetALBName"
+
+Parameters:
+
+  ProjectName:
+    Default: ecsdev
+    Type: String
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  ALBSubnetId1:
+    Description : "ALB Subnet 1st - Public Subnet"
+    Type : AWS::EC2::Subnet::Id
+
+  ALBSubnetId2:
+    Description : "ALB Subnet 2nd - Public Subnet"
+    Type : AWS::EC2::Subnet::Id
+
+  InternetALBName:
+    Type: String
+    Default: "alb"
+
+  ECSClusterName:
+    Type: String
+    Default: "cluster"
+
+Resources:
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: "LoadBalancer SecurityGroup"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: "0.0.0.0/0"
+
+  EcsServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: "ECS Security Group. Only allow inbound access from the Load Balancer"
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        IpProtocol: -1
+
+# ------------------------------------------------------------#
+#  Internet ALB
+# ------------------------------------------------------------#
+  InternetALB:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Sub "${ProjectName}-${InternetALBName}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${InternetALBName}"
+      Scheme: "internet-facing"
+      LoadBalancerAttributes:
+        - Key: "deletion_protection.enabled"
+          Value: false
+        - Key: "idle_timeout.timeout_seconds"
+          Value: 60
+        #- Key: "access_logs.s3.enabled"
+        #  Value: true
+        #- Key: "access_logs.s3.bucket"
+        #  Value: !Sub "alb-log-${AWS::AccountId}"
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - !Ref ALBSubnetId1
+        - !Ref ALBSubnetId2
+
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: !Sub "${ProjectName}-${ECSClusterName}"
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+      Configuration:
+        ExecuteCommandConfiguration:
+            Logging: DEFAULT
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled #enabled
+      Tags:
+        - Key: environment
+          Value: production
+
+  ECSLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-group"
+      RetentionInDays: 1
+
+Outputs:
+
+  InternetALBDomainName:
+    Value: !GetAtt InternetALB.DNSName
+
