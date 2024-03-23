@@ -6,8 +6,10 @@ Metadata:
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label:
-          default: "Project Name Prefix"
+          default: "Application Configuration"
         Parameters:
+          - Application
+          - Environment
           - ProjectName
       - Label:
           default: "Network Configuration"
@@ -30,8 +32,18 @@ Metadata:
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: ecsfargate
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
   ProjectName:
-    Default: ecsdev
+    Default: ecsfargatedev
     Type: String
 
   VpcId:
@@ -67,14 +79,14 @@ Resources:
         ToPort: 80
         CidrIp: "0.0.0.0/0"
 
-  EcsServiceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      VpcId: !Ref 'VpcId'
-      GroupDescription: "ECS Security Group. Only allow inbound access from the Load Balancer"
-      SecurityGroupIngress:
-      - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
-        IpProtocol: -1
+  #EcsServiceSecurityGroup:
+  #  Type: AWS::EC2::SecurityGroup
+  #  Properties:
+  #    VpcId: !Ref 'VpcId'
+  #    GroupDescription: "ECS Security Group. Only allow inbound access from the Load Balancer"
+  #    SecurityGroupIngress:
+  #    - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+  #      IpProtocol: -1
 
 # ------------------------------------------------------------#
 #  Internet ALB
@@ -85,7 +97,7 @@ Resources:
       Name: !Sub "${ProjectName}-${InternetALBName}"
       Tags:
         - Key: Name
-          Value: !Sub "${ProjectName}-${InternetALBName}"
+          Value: !Sub "${Application}-${Environment}-${InternetALBName}"
       Scheme: "internet-facing"
       LoadBalancerAttributes:
         - Key: "deletion_protection.enabled"
@@ -121,16 +133,21 @@ Resources:
         - Name: containerInsights
           Value: disabled #enabled
       Tags:
-        - Key: environment
-          Value: production
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-${ECSClusterName}"
 
   ECSLogGroup:
     Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-group"
       RetentionInDays: 1
 
 Outputs:
+
+  ClusterArn:
+    Value: !GetAtt ECSCluster.Arn
 
   InternetALBDomainName:
     Value: !GetAtt InternetALB.DNSName
