@@ -10,50 +10,54 @@ Metadata:
         Parameters:
           - Application
           - Environment
-          - ProjectName
       - Label:
           default: "Network Configuration"
         Parameters:
           - VpcId
-          - ECSSubnetId1
-          - ECSSubnetId2
+          - VpcSubnetListCluster
       - Label:
           default: "Cluster Configuration"
         Parameters:
           - ClusterArn
-          - LoadBalancerArn
+          - LoadBalancerListenerArn
           - LoadBalancerSecurityGroupId
       - Label:
           default: "Service Configuration"
         Parameters:
-          - ECSServiceName
-          - ServicePath
-          - ECSTaskName
-          - ECSTaskCPUUnit
-          - ECSTaskMemory
-          - ECSContainerName
-          - ECSContainerPort
-          - ECSImageName
-          - ECSTaskDesiredCount
+          - ClusterServiceName
+          - ClusterServicePath
+      - Label:
+          default: "Task Configuration"
+        Parameters:
+          - TaskName
+          - TaskCpu
+          - TaskMemory
+          - TaskDesiredCount
+      - Label:
+          default: "Container Configuration"
+        Parameters:
+          - ContainerName
+          - ContainerPort
+          - ContainerImageName
 
 
     ParameterLabels:
-      ECSTaskName:
-        default: "ECSTaskName"
-      ECSTaskCPUUnit:
-        default: "ECSTaskCPUUnit"
-      ECSTaskMemory:
-        default: "ECSTaskMemory"
-      ECSContainerName:
-        default: "ECSContainerName"
-      ECSContainerPort:
-        default: "ECSContainerPort"
-      ECSImageName:
-        default: "ECSImageName"
-      ECSServiceName:
-        default: "ECSServiceName"
-      ECSTaskDesiredCount:
-        default: "ECSTaskDesiredCount"
+      TaskName:
+        default: "TaskName"
+      TaskCpu:
+        default: "TaskCpu"
+      TaskMemory:
+        default: "TaskMemory"
+      ContainerName:
+        default: "ContainerName"
+      ContainerPort:
+        default: "ContainerPort"
+      ContainerImageName:
+        default: "ContainerImageName"
+      ClusterServiceName:
+        default: "ClusterServiceName"
+      TaskDesiredCount:
+        default: "TaskDesiredCount"
 
 
 Parameters:
@@ -68,17 +72,18 @@ Parameters:
     Default: dev
     Description: Environment
 
-  ProjectName:
-    Default: ecsdev
-    Type: String
-
   VpcId:
     Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
 
-  LoadBalancerArn:
-    Description : "LoadBalancerArn"
+  #LoadBalancerArn:
+  #  Description : "LoadBalancerArn"
+  #  Type: String
+
+  LoadBalancerListenerArn:
+    Description : "LoadBalancerListenerArn"
     Type: String
+
 
   LoadBalancerSecurityGroupId:
     Description : "LoadBalancerSecurityGroupId"
@@ -89,58 +94,60 @@ Parameters:
     Description : "short name or full Amazon Resource Name (ARN) of the cluster that you run your service on"
     Type: String
 
-  ECSSubnetId1:
-    Description : "ECS Subnet 1st - Private Subnet"
-    Type : AWS::EC2::Subnet::Id
+  VpcSubnetListCluster:
+    Description: Private VpcSubnets for Cluster
+    Type: List<AWS::EC2::Subnet::Id>
 
-  ECSSubnetId2:
-    Description : "ECS Subnet 2nd - Private Subnet"
-    Type : AWS::EC2::Subnet::Id
+  #ECSSubnetId1:
+  #  Description : "ECS Subnet 1st - Private Subnet"
+  #  Type : AWS::EC2::Subnet::Id
 
-  ECSServiceName:
+  #ECSSubnetId2:
+  #  Description : "ECS Subnet 2nd - Private Subnet"
+  #  Type : AWS::EC2::Subnet::Id
+
+  ClusterServiceName:
     Type: String
     Default: "service"
 
-  ServicePath:
+  ClusterServicePath:
     Description: "Server Path"
     Type: String
     Default: "/"
 
-  ECSTaskName:
+  TaskName:
     Type: String
     Default: "task"
 
-  ECSTaskCPUUnit:
+  TaskCpu:
     AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
     Type: String
     Default: 256
 
-  ECSTaskMemory:
+  TaskMemory:
     AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
     Type: String
     Default: 512
 
-  ECSContainerName:
-    Type: String
-    Default: "container"
-
-  ECSContainerPort:
-    Type: Number
-    Default: 80
-
-  ECSImageName:
-    Type: String
-    Default: "httpd:latest"
-
-
-
-  ECSTaskDesiredCount:
+  TaskDesiredCount:
     Type: Number
     Default: 1
 
+  ContainerName:
+    Type: String
+    Default: "container"
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+
+  ContainerImageName:
+    Type: String
+    Default: "httpd:latest"
+
 Resources:
 
-  EcsServiceSecurityGroup:
+  ClusterServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref 'VpcId'
@@ -158,34 +165,21 @@ Resources:
       VpcId: !Ref VpcId
       #Name: !Sub "${ProjectName}-${TargetGroupName}"
       Protocol: HTTP
-      Port: !Ref ECSContainerPort
+      Port: !Ref ContainerPort
       TargetType: ip
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
       HealthyThresholdCount: 5
 
-  ALBListener:
-    Type: "AWS::ElasticLoadBalancingV2::Listener"
-    Properties:
-      DefaultActions:
-        - Type: fixed-response
-          FixedResponseConfig:
-            ContentType: "text/plain"
-            MessageBody: "Forbidden!"
-            StatusCode: "503"
-      LoadBalancerArn: !Ref LoadBalancerArn
-      Port: 80
-      Protocol: HTTP
-
   ListenerRule:
     Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
     Properties:
       Priority: "1"
-      ListenerArn: !GetAtt ALBListener.ListenerArn
+      ListenerArn: !Ref LoadBalancerListenerArn
       Conditions:
         - Field: "path-pattern"
           Values:
-            - !Ref ServicePath
+            - !Ref ClusterServicePath
       Actions:
         #- Type: "authenticate-cognito"
         #  Order: 1
@@ -223,10 +217,10 @@ Resources:
 # ------------------------------------------------------------#
 #  ECS Task Execution Role
 # ------------------------------------------------------------#
-  ECSTaskExecutionRole:
+  TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: !Sub "${ProjectName}-ECSTaskExecutionRolePolicy"
+      #RoleName: !Sub "${ProjectName}-TaskExecutionRolePolicy"
       Path: /
       AssumeRolePolicyDocument:
         Version: 2012-10-17
@@ -244,10 +238,10 @@ Resources:
 # ------------------------------------------------------------#
 #  ECS Task Role
 # ------------------------------------------------------------#
-  ECSTaskRole:
+  TaskRole:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: !Sub "${ProjectName}-ECSTaskRole"
+      #RoleName: !Sub "${ProjectName}-TaskRole"
       Path: /
       AssumeRolePolicyDocument:
         Version: 2012-10-17
@@ -284,38 +278,39 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Retain
     Properties:
-      LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-task"
+      #LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-task"
+      LogGroupName: !Sub "/ecs/logs/${Application}/${Environment}/task"
       RetentionInDays: 1
 
 # ------------------------------------------------------------#
 #  ECS TaskDefinition
 # ------------------------------------------------------------#
-  ECSTaskDefinition:
+  TaskDefinition:
     Type: "AWS::ECS::TaskDefinition"
     Properties:
-      Cpu: !Ref ECSTaskCPUUnit
-      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
-      TaskRoleArn: !Ref ECSTaskRole
-      Family: !Sub "${ProjectName}-${ECSTaskName}"
-      Memory: !Ref ECSTaskMemory
+      Cpu: !Ref TaskCpu
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !Ref TaskRole
+      Family: !Sub "${Application}-${Environment}-${TaskName}"
+      Memory: !Ref TaskMemory
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
       ContainerDefinitions:
-        - Name: !Sub "${ProjectName}-${ECSContainerName}"
-          Image: !Ref ECSImageName
+        - Name: !Sub "${Application}-${Environment}-${ContainerName}"
+          Image: !Ref ContainerImageName
           Essential: true
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: !Ref TaskLogGroup
               awslogs-region: !Ref "AWS::Region"
-              awslogs-stream-prefix: !Ref ProjectName
+              awslogs-stream-prefix: !Ref Application
           MemoryReservation: 128
           PortMappings:
             - Protocol: tcp
-              #HostPort: !Ref ECSContainerPort
-              ContainerPort: !Ref ECSContainerPort
+              #HostPort: !Ref ContainerPort
+              ContainerPort: !Ref ContainerPort
           #HealthCheck
           #Secrets
       #PlacementConstraints
@@ -326,28 +321,28 @@ Resources:
 # ------------------------------------------------------------#
 #  ECS Service
 # ------------------------------------------------------------#
-  ECSService:
+  ClusterService:
     Type: AWS::ECS::Service
-    DependsOn: ALBListener
+    #DependsOn: ALBListener
     Properties:
       Cluster: !Ref ClusterArn
-      DesiredCount: !Ref ECSTaskDesiredCount
+      DesiredCount: !Ref TaskDesiredCount
       LaunchType: FARGATE
       LoadBalancers:
         -
           TargetGroupArn: !Ref TargetGroup
-          ContainerPort: !Ref ECSContainerPort
-          ContainerName: !Sub "${ProjectName}-${ECSContainerName}"
+          ContainerPort: !Ref ContainerPort
+          ContainerName: !Sub "${Application}-${Environment}-${ContainerName}"
       NetworkConfiguration:
        AwsvpcConfiguration:
            AssignPublicIp: ENABLED
            SecurityGroups:
-             - !Ref EcsServiceSecurityGroup
-           Subnets:
-             - !Ref ECSSubnetId1
-             - !Ref ECSSubnetId2
-      ServiceName: !Sub "${ProjectName}-${ECSServiceName}"
-      TaskDefinition: !Ref ECSTaskDefinition
+             - !Ref ClusterServiceSecurityGroup
+           Subnets: !Ref VpcSubnetListCluster
+           #  - !Ref ECSSubnetId1
+           #  - !Ref ECSSubnetId2
+      ServiceName: !Sub "${Application}-${Environment}-${ClusterServiceName}"
+      TaskDefinition: !Ref TaskDefinition
       HealthCheckGracePeriodSeconds: 60
       #PropagateTags: SERVICE | TASK_DEFINITION
       #SchedulingStrategy: DAEMON | REPLICA
