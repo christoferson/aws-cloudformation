@@ -10,25 +10,11 @@ Metadata:
         Parameters:
           - Application
           - Environment
-          - ProjectName
       - Label:
           default: "Network Configuration"
         Parameters:
           - VpcId
-          - ALBSubnetId1
-          - ALBSubnetId2
-      - Label:
-          default: "Load Balancer Configuration"
-        Parameters:
-          - InternetALBName
-      - Label:
-          default: "ECS Fargate Configuration"
-        Parameters:
-          - ECSClusterName
-
-    ParameterLabels:
-      InternetALBName:
-        default: "InternetALBName"
+          - VpcSubnetListLoadBalancer
 
 Parameters:
 
@@ -42,29 +28,33 @@ Parameters:
     Default: dev
     Description: Environment
 
-  ProjectName:
-    Default: ecsfargatedev
-    Type: String
+  #ProjectName:
+  #  Default: ecsfargatedev
+  #  Type: String
 
   VpcId:
     Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
 
-  ALBSubnetId1:
-    Description : "ALB Subnet 1st - Public Subnet"
-    Type : AWS::EC2::Subnet::Id
+  VpcSubnetListLoadBalancer:
+    Description: Public VpcSubnets for Load Balancer
+    Type: List<AWS::EC2::Subnet::Id>
 
-  ALBSubnetId2:
-    Description : "ALB Subnet 2nd - Public Subnet"
-    Type : AWS::EC2::Subnet::Id
+  #ALBSubnetId1:
+  #  Description : "ALB Subnet 1st - Public Subnet"
+  #  Type : AWS::EC2::Subnet::Id
 
-  InternetALBName:
-    Type: String
-    Default: "alb"
+  #ALBSubnetId2:
+  #  Description : "ALB Subnet 2nd - Public Subnet"
+  #  Type : AWS::EC2::Subnet::Id
 
-  ECSClusterName:
-    Type: String
-    Default: "cluster"
+  #InternetALBName:
+  #  Type: String
+  #  Default: "alb"
+
+  #ECSClusterName:
+  #  Type: String
+  #  Default: "cluster"
 
 Resources:
 
@@ -107,12 +97,12 @@ Resources:
         #  Value: !Sub "alb-log-${AWS::AccountId}"
       SecurityGroups:
         - !Ref LoadBalancerSecurityGroup
-      Subnets:
-        - !Ref ALBSubnetId1
-        - !Ref ALBSubnetId2
+      Subnets: !Ref VpcSubnetListLoadBalancer
+      #  - !Ref ALBSubnetId1
+      #  - !Ref ALBSubnetId2
       Tags:
         - Key: Name
-          Value: !Sub "${Application}-${Environment}-${InternetALBName}"
+          Value: !Sub "${Application}-${Environment}-loadbalancer"
 
   LoadBalancerListener:
     Type: "AWS::ElasticLoadBalancingV2::Listener"
@@ -127,10 +117,10 @@ Resources:
       Port: 80
       Protocol: HTTP
 
-  ECSCluster:
+  Cluster:
     Type: "AWS::ECS::Cluster"
     Properties:
-      ClusterName: !Sub "${ProjectName}-${ECSClusterName}"
+      #ClusterName: !Sub "${Application}-${Environment}-cluster"
       CapacityProviders:
         - FARGATE
         - FARGATE_SPOT
@@ -147,20 +137,20 @@ Resources:
           Value: disabled #enabled
       Tags:
         - Key: Name
-          Value: !Sub "${Application}-${Environment}-${ECSClusterName}"
+          Value: !Sub "${Application}-${Environment}-cluster"
 
-  ECSLogGroup:
+  ClusterLogGroup:
     Type: "AWS::Logs::LogGroup"
     DeletionPolicy: Delete
     UpdateReplacePolicy: Retain
     Properties:
-      LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-group"
+      LogGroupName: !Sub "/ecs/logs/${Application}/${Environment}/cluster"
       RetentionInDays: 1
 
 Outputs:
 
   ClusterArn:
-    Value: !GetAtt ECSCluster.Arn
+    Value: !GetAtt Cluster.Arn
 
   LoadBalancerDomainName:
     Value: !GetAtt LoadBalancer.DNSName
