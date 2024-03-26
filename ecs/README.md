@@ -20,3 +20,30 @@ Example that provisions an ECS Fargate Cluster with Application Load Balancer + 
 Example that provisions an ECS Fargate Cluster with Application Load Balancer + AutoScaling Target Tracking
 
 [ecs-fargate-scale-targettrack](ecs-fargate-scale-targettrack.yaml)
+
+
+-------------------------------------
+
+### ECS - Fargate Cluster
+
+Cluster Only
+
+[ecs-fargate-cluster](ecs-fargate-cluster.yaml)
+
+### ECS - Fargate Cluster Service
+
+Cluster Service & Task
+
+[ecs-fargate-cluster-service](ecs-fargate-cluster-service.yaml)
+
+-------------------------------------
+
+## EC2
+
+By default, your container instance launches into your default cluster. To launch into a non-default cluster, choose the Advanced Details list. Then, paste the following script into the User data field, replacing your_cluster_name with the name of your cluster. [link](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/launch_container_instance.html)
+
+```
+#!/bin/bash
+echo ECS_CLUSTER=your_cluster_name >> /etc/ecs/ecs.config
+```
+
