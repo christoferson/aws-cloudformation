@@ -137,3 +137,5 @@ https://docs.aws.amazon.com/vpc/latest/userguide/aws-ip-ranges.html
 
 
 https://github.com/aws/Trusted-Advisor-Tools/tree/master/ExposedAccessKeys
+
+- https://repost.aws/knowledge-center/auto-scaling-group-rolling-updates
