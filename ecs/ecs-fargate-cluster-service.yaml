@@ -76,19 +76,13 @@ Parameters:
     Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
 
-  #LoadBalancerArn:
-  #  Description : "LoadBalancerArn"
-  #  Type: String
-
   LoadBalancerListenerArn:
     Description : "LoadBalancerListenerArn"
     Type: String
 
-
   LoadBalancerSecurityGroupId:
     Description : "LoadBalancerSecurityGroupId"
     Type: AWS::EC2::SecurityGroup::Id
-
 
   ClusterArn:
     Description : "short name or full Amazon Resource Name (ARN) of the cluster that you run your service on"
@@ -97,14 +91,6 @@ Parameters:
   VpcSubnetListCluster:
     Description: Private VpcSubnets for Cluster
     Type: List<AWS::EC2::Subnet::Id>
-
-  #ECSSubnetId1:
-  #  Description : "ECS Subnet 1st - Private Subnet"
-  #  Type : AWS::EC2::Subnet::Id
-
-  #ECSSubnetId2:
-  #  Description : "ECS Subnet 2nd - Private Subnet"
-  #  Type : AWS::EC2::Subnet::Id
 
   ClusterServiceName:
     Type: String
@@ -169,7 +155,7 @@ Resources:
       TargetType: ip
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
-      HealthyThresholdCount: 5
+      HealthyThresholdCount: 3
 
   ListenerRule:
     Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
@@ -293,7 +279,7 @@ Resources:
       TaskRoleArn: !Ref TaskRole
       Family: !Sub "${Application}-${Environment}-${TaskName}"
       Memory: !Ref TaskMemory
-      NetworkMode: awsvpc
+      NetworkMode: awsvpc #none, bridge, awsvpc, and host default is bridge
       RequiresCompatibilities:
         - FARGATE
       ContainerDefinitions:
@@ -352,3 +338,7 @@ Resources:
         - Key: "Name"
           Value: !Sub "${Application}-${Environment}-ecs-service"
 
+Outputs:
+
+  TaskDefinitionArn:
+    Value: !GetAtt TaskDefinition.TaskDefinitionArn

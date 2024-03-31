@@ -28,10 +28,6 @@ Parameters:
     Default: dev
     Description: Environment
 
-  #ProjectName:
-  #  Default: ecsfargatedev
-  #  Type: String
-
   VpcId:
     Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
@@ -39,22 +35,6 @@ Parameters:
   VpcSubnetListLoadBalancer:
     Description: Public VpcSubnets for Load Balancer
     Type: List<AWS::EC2::Subnet::Id>
-
-  #ALBSubnetId1:
-  #  Description : "ALB Subnet 1st - Public Subnet"
-  #  Type : AWS::EC2::Subnet::Id
-
-  #ALBSubnetId2:
-  #  Description : "ALB Subnet 2nd - Public Subnet"
-  #  Type : AWS::EC2::Subnet::Id
-
-  #InternetALBName:
-  #  Type: String
-  #  Default: "alb"
-
-  #ECSClusterName:
-  #  Type: String
-  #  Default: "cluster"
 
 Resources:
 
@@ -68,15 +48,6 @@ Resources:
         FromPort: 80
         ToPort: 80
         CidrIp: "0.0.0.0/0"
-
-  #EcsServiceSecurityGroup:
-  #  Type: AWS::EC2::SecurityGroup
-  #  Properties:
-  #    VpcId: !Ref 'VpcId'
-  #    GroupDescription: "ECS Security Group. Only allow inbound access from the Load Balancer"
-  #    SecurityGroupIngress:
-  #    - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
-  #      IpProtocol: -1
 
 # ------------------------------------------------------------#
 #  Internet ALB
