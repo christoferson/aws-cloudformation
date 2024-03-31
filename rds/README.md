@@ -53,3 +53,12 @@ sudo yum install mysql
 
 mysql -h xxxx.us-east-1.rds.amazonaws.com -P 3306 -u admin -p
 
+
+
+### TODO
+
+RDS 
+
+RDS Multi-AZ
+
+RDS Cluster Mode
