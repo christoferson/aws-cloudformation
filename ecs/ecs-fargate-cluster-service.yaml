@@ -99,7 +99,7 @@ Parameters:
   ClusterServicePath:
     Description: "Server Path"
     Type: String
-    Default: "/"
+    Default: "/*"
 
   TaskName:
     Type: String
