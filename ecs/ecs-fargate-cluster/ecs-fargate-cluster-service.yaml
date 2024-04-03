@@ -1,0 +1,344 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate Cluster Service and Task
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Name Prefix"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - VpcSubnetListCluster
+      - Label:
+          default: "Cluster Configuration"
+        Parameters:
+          - ClusterArn
+          - LoadBalancerListenerArn
+          - LoadBalancerSecurityGroupId
+      - Label:
+          default: "Service Configuration"
+        Parameters:
+          - ClusterServiceName
+          - ClusterServicePath
+      - Label:
+          default: "Task Configuration"
+        Parameters:
+          - TaskName
+          - TaskCpu
+          - TaskMemory
+          - TaskDesiredCount
+      - Label:
+          default: "Container Configuration"
+        Parameters:
+          - ContainerName
+          - ContainerPort
+          - ContainerImageName
+
+
+    ParameterLabels:
+      TaskName:
+        default: "TaskName"
+      TaskCpu:
+        default: "TaskCpu"
+      TaskMemory:
+        default: "TaskMemory"
+      ContainerName:
+        default: "ContainerName"
+      ContainerPort:
+        default: "ContainerPort"
+      ContainerImageName:
+        default: "ContainerImageName"
+      ClusterServiceName:
+        default: "ClusterServiceName"
+      TaskDesiredCount:
+        default: "TaskDesiredCount"
+
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: ecsfargate
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Description : "VPC ID"
+    Type: AWS::EC2::VPC::Id
+
+  LoadBalancerListenerArn:
+    Description : "LoadBalancerListenerArn"
+    Type: String
+
+  LoadBalancerSecurityGroupId:
+    Description : "LoadBalancerSecurityGroupId"
+    Type: AWS::EC2::SecurityGroup::Id
+
+  ClusterArn:
+    Description : "short name or full Amazon Resource Name (ARN) of the cluster that you run your service on"
+    Type: String
+
+  VpcSubnetListCluster:
+    Description: Private VpcSubnets for Cluster
+    Type: List<AWS::EC2::Subnet::Id>
+
+  ClusterServiceName:
+    Type: String
+    Default: "service"
+
+  ClusterServicePath:
+    Description: "Server Path"
+    Type: String
+    Default: "/*"
+
+  TaskName:
+    Type: String
+    Default: "task"
+
+  TaskCpu:
+    AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
+    Type: String
+    Default: 256
+
+  TaskMemory:
+    AllowedValues: [ 256, 512, 1024, 2048, 4096  ]
+    Type: String
+    Default: 512
+
+  TaskDesiredCount:
+    Type: Number
+    Default: 1
+
+  ContainerName:
+    Type: String
+    Default: "container"
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+
+  ContainerImageName:
+    Type: String
+    Default: "httpd:latest"
+
+Resources:
+
+  ClusterServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'VpcId'
+      GroupDescription: "ECS Security Group. Only allow inbound access from the Load Balancer"
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroupId
+        IpProtocol: -1
+
+# ------------------------------------------------------------#
+#  Target Group
+# ------------------------------------------------------------#
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      VpcId: !Ref VpcId
+      #Name: !Sub "${ProjectName}-${TargetGroupName}"
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthyThresholdCount: 3
+
+  ListenerRule:
+    Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
+    Properties:
+      Priority: "1"
+      ListenerArn: !Ref LoadBalancerListenerArn
+      Conditions:
+        - Field: "path-pattern"
+          Values:
+            - !Ref ClusterServicePath
+      Actions:
+        #- Type: "authenticate-cognito"
+        #  Order: 1
+        #  AuthenticateCognitoConfig:
+        #      OnUnauthenticatedRequest: "authenticate" # allow | authenticate | deny
+        #      #Scope: "openid"
+        #      #SessionCookieName: "AWSELBAuthSessionCookie"
+        #      #SessionTimeout: 604800 #(7 days)
+        #      UserPoolArn: !Ref CognitoUserPoolArn
+        #      UserPoolClientId: !Ref CognitoUserPoolClientId
+        #      UserPoolDomain: !Ref CognitoUserPoolDomainName
+        #- Type: "authenticate-oidc"
+        #  Order: 1
+        #  AuthenticateOidcConfig:
+        #    Issuer: "" #OpenID provider."
+        #    AuthorizationEndpoint: ""
+        #    TokenEndpoint: ""
+        #    UserInfoEndpoint: ""
+        #    ClientId: ""
+        #    ClientSecret: ""
+        #    OnUnauthenticatedRequest: "authenticate"
+        #    Scope: "openid"
+        #    SessionCookieName: "AWSELBAuthSessionCookie"
+        #    SessionTimeout: "604800" #7 Days
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup
+          Order: 2
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroup
+                Weight: 1
+            TargetGroupStickinessConfig:
+              Enabled: false
+
+# ------------------------------------------------------------#
+#  ECS Task Execution Role
+# ------------------------------------------------------------#
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "${ProjectName}-TaskExecutionRolePolicy"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags: 
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-ecs-task-execution-role"
+
+# ------------------------------------------------------------#
+#  ECS Task Role
+# ------------------------------------------------------------#
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #RoleName: !Sub "${ProjectName}-TaskRole"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: access-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - 'ssm:GetParameters'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 'secretsmanager:GetSecretValue' 
+                Effect: Allow
+                Resource: '*' #arn:aws:secretsmanager:<region>:<aws_account_id>:secret:<secret_name>
+              - Action:
+                  - 'kms:Decrypt'
+                Effect: Allow
+                Resource: '*' #arn:aws:kms:<region>:<aws_account_id>:key/<key_id>
+      Tags: 
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-ecs-task-role"
+
+  TaskLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      #LogGroupName: !Sub "/ecs/logs/${ProjectName}-ecs-task"
+      LogGroupName: !Sub "/ecs/logs/${Application}/${Environment}/task"
+      RetentionInDays: 1
+
+# ------------------------------------------------------------#
+#  ECS TaskDefinition
+# ------------------------------------------------------------#
+  TaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      Cpu: !Ref TaskCpu
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !Ref TaskRole
+      Family: !Sub "${Application}-${Environment}-${TaskName}"
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc #none, bridge, awsvpc, and host default is bridge
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Sub "${Application}-${Environment}-${ContainerName}"
+          Image: !Ref ContainerImageName
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref TaskLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: !Ref Application
+          MemoryReservation: 128
+          PortMappings:
+            - Protocol: tcp
+              #HostPort: !Ref ContainerPort
+              ContainerPort: !Ref ContainerPort
+          #HealthCheck
+          #Secrets
+      #PlacementConstraints
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-ecs-task"
+
+# ------------------------------------------------------------#
+#  ECS Service
+# ------------------------------------------------------------#
+  ClusterService:
+    Type: AWS::ECS::Service
+    #DependsOn: ALBListener
+    Properties:
+      Cluster: !Ref ClusterArn
+      DesiredCount: !Ref TaskDesiredCount
+      LaunchType: FARGATE
+      LoadBalancers:
+        -
+          TargetGroupArn: !Ref TargetGroup
+          ContainerPort: !Ref ContainerPort
+          ContainerName: !Sub "${Application}-${Environment}-${ContainerName}"
+      NetworkConfiguration:
+       AwsvpcConfiguration:
+           AssignPublicIp: ENABLED
+           SecurityGroups:
+             - !Ref ClusterServiceSecurityGroup
+           Subnets: !Ref VpcSubnetListCluster
+           #  - !Ref ECSSubnetId1
+           #  - !Ref ECSSubnetId2
+      ServiceName: !Sub "${Application}-${Environment}-${ClusterServiceName}"
+      TaskDefinition: !Ref TaskDefinition
+      HealthCheckGracePeriodSeconds: 60
+      #PropagateTags: SERVICE | TASK_DEFINITION
+      #SchedulingStrategy: DAEMON | REPLICA
+      DeploymentController:
+         Type: ECS #CODE_DEPLOY | ECS | EXTERNAL
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${Application}-${Environment}-ecs-service"
+
+Outputs:
+
+  TaskDefinitionArn:
+    Value: !GetAtt TaskDefinition.TaskDefinitionArn
