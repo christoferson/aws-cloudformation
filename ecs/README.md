@@ -36,6 +36,18 @@ Cluster Service & Task
 
 [ecs-fargate-cluster-service](ecs-fargate-cluster-service.yaml)
 
+
+
+------------------------------------
+
+### ECS - Fargate Cluster (Basic)
+
+Provision a Cluster and Service. HTTP Only, No Custom Domain
+
+[ecs-fargate-cluster](ecs-fargate-cluster/01-ecs-fargate-cluster.yaml)
+
+[ecs-fargate-cluster-service](ecs-fargate-cluster/02-ecs-fargate-cluster-service.yaml)
+
 -------------------------------------
 
 ## EC2
