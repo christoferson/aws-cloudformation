@@ -5,32 +5,12 @@ Metadata:
   "AWS::CloudFormation::Interface":
     ParameterGroups:
       - Label: 
-          default: "Dns Configuration"
-        Parameters: 
-          - HostedZoneName
-          - LoadBalancerSubDomainName
-
-      - Label: 
           default: "Load Balancer Configuration"
         Parameters: 
           - VpcId
           - VpcSubnetListLoadBalancer
 
-    ParameterLabels: 
-      LoadBalancerSubDomainName:
-        default: "SubDomain to point to the LoadBalancer"
-
 Parameters:
-
-  HostedZoneName:
-    Description: "Domain Name. Must include trailing dot (e.g. example.com.)"
-    Type: String
-    Default: "example.com."
-
-  LoadBalancerSubDomainName:
-    Description: "Sub Domain Name of the Applicaiton Load Balancer"
-    Type: String
-    Default: "r53lb2"
 
   VpcId:
     Description: "VPC ID"
@@ -47,7 +27,6 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      #RoleName: "basic-lambda-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -61,19 +40,13 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
-  LambdaFunction:
+  LambdaFunction1:
     Type: AWS::Lambda::Function
     Properties:
-      #FunctionName : "basic-lambda"
-      Description: "Basic Lambda"
-      Runtime: nodejs18.x
+      Description: "Lambda1"
+      Runtime: nodejs20.x
       Role: !GetAtt LambdaExecutionRole.Arn
       Handler: index.handler
-      Environment:
-        Variables:
-          databaseName: lambdadb
-          databaseUser: admin
-      Timeout: 10 #The default is 3 seconds. The maximum allowed value is 900 seconds.
       Code:
         ZipFile: |
           exports.handler = async (event) => {
@@ -89,26 +62,74 @@ Resources:
                   "multiValueHeaders": {
                       "Content-Type": ["text/html; charset=utf-8"]
                   },
-                  body: `<html><body><p>Greetings: ${now}</p></body></html>`,
+                  body: `<html><body><p>Greetings Lambda 1: ${now}</p></body></html>`,
               };
               return response;
           };
       TracingConfig:
         Mode: "Active"
 
-  LambdaPermission:
+  LambdaPermission1:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionName: !GetAtt LambdaFunction1.Arn
       Action: lambda:InvokeFunction
       Principal: "elasticloadbalancing.amazonaws.com"
       SourceArn: !Sub "arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
 
-  LambdaLogGroup:
+  LambdaLogGroup1:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
-      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction1}"
+      RetentionInDays: 1
+
+  # 
+
+  LambdaFunction2:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Lambda1"
+      Runtime: nodejs20.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log(event);
+              let now = new Date();
+              const response = {
+                  statusCode: 200,
+                  statusDescription: "200 OK",
+                  isBase64Encoded: false,
+                  headers: {
+                      "Content-Type": "text/html; charset=utf-8" 
+                  },
+                  "multiValueHeaders": {
+                      "Content-Type": ["text/html; charset=utf-8"]
+                  },
+                  body: `<html><body><p>Greetings Lambda 2: ${now}</p></body></html>`,
+              };
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+
+  LambdaPermission2:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction2.Arn
+      Action: lambda:InvokeFunction
+      Principal: "elasticloadbalancing.amazonaws.com"
+      SourceArn: !Sub "arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:*"
+
+  LambdaLogGroup2:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction2}"
       RetentionInDays: 1
 
   # Load Balancer definition
@@ -130,32 +151,9 @@ Resources:
       Scheme: internet-facing 
       Subnets: !Ref VpcSubnetListLoadBalancer
       SecurityGroups: [!Ref LoadBalancerSecurityGroup]
-      #LoadBalancerAttributes:
-      #  - Key: "deletion_protection.enabled"
-      #    Value: "false"
       Tags:
         - Key: Name
-          Value: !Sub "route53-elb-http"
-
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    #DependsOn: LambdaPermission
-    Properties:
-      #HealthCheckIntervalSeconds: 15
-      #HealthCheckPath: "/"
-      #HealthCheckTimeoutSeconds: 10
-      #UnhealthyThresholdCount: 2
-      #Matcher:
-      #  HttpCode: "200"
-      #HealthyThresholdCount: 2
-      #HealthCheckEnabled: false
-      TargetType: lambda
-      Targets:
-        - Id: !GetAtt LambdaFunction.Arn
-          AvailabilityZone: "all"
-      TargetGroupAttributes: 
-        - Key: lambda.multi_value_headers.enabled
-          Value: true
+          Value: "route53-elb-http"
 
   HttpListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -169,33 +167,30 @@ Resources:
             StatusCode: 404
             MessageBody: <html>Not Found.</html>
             ContentType: text/html
-      #DefaultActions:
-      #  - TargetGroupArn: !Ref TargetGroup
-      #    Type: forward
 
 # DNS
 
-  Route53RecordSetGroup:
-    Type: AWS::Route53::RecordSetGroup
-    Properties:
-      HostedZoneName: !Sub "${HostedZoneName}"
-      Comment: "Alias targeted to Application LoadBalancer"
-      RecordSets:
-      - Name: !Sub "${LoadBalancerSubDomainName}.${HostedZoneName}"
-        Type: A
-        AliasTarget:
-          HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
-          DNSName: !GetAtt LoadBalancer.DNSName
+  # Route53RecordSetGroup:
+  #   Type: AWS::Route53::RecordSetGroup
+  #   Properties:
+  #     HostedZoneName: !Sub "${HostedZoneName}"
+  #     Comment: "Alias targeted to Application LoadBalancer"
+  #     RecordSets:
+  #     - Name: !Sub "${LoadBalancerSubDomainName}.${HostedZoneName}"
+  #       Type: A
+  #       AliasTarget:
+  #         HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+  #         DNSName: !GetAtt LoadBalancer.DNSName
 
 # Backend Paths - Points to Lambda
 
   TargetGroup1:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: LambdaPermission
+    DependsOn: LambdaPermission1
     Properties:
       TargetType: lambda
       Targets:
-        - Id: !GetAtt LambdaFunction.Arn
+        - Id: !GetAtt LambdaFunction1.Arn
           AvailabilityZone: "all"
       TargetGroupAttributes: 
         - Key: lambda.multi_value_headers.enabled
@@ -207,7 +202,7 @@ Resources:
       Priority: "1"
       ListenerArn: !Ref HttpListener
       Conditions:
-        - Field: "path-pattern"
+        - Field: "path-pattern" #host-header
           Values:
             - "/v1/lambda1"
       Actions:
@@ -221,10 +216,46 @@ Resources:
             TargetGroupStickinessConfig:
               Enabled: false
 
+
+  TargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: LambdaPermission2
+    Properties:
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction2.Arn
+          AvailabilityZone: "all"
+      TargetGroupAttributes: 
+        - Key: lambda.multi_value_headers.enabled
+          Value: true
+
+  ListenerRule2:
+    Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
+    Properties:
+      Priority: "2"
+      ListenerArn: !Ref HttpListener
+      Conditions:
+        - Field: "path-pattern" #host-header
+          Values:
+            - "/v1/lambda2"
+      Actions:
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup2
+          Order: 1
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TargetGroup2
+                Weight: 1
+            TargetGroupStickinessConfig:
+              Enabled: false
+
 Outputs:
 
-  LambdaFunctionArn:
-    Value: !GetAtt LambdaFunction.Arn
+  LambdaFunction1Arn:
+    Value: !GetAtt LambdaFunction1.Arn
+
+  LambdaFunction2Arn:
+    Value: !GetAtt LambdaFunction2.Arn
 
   LambdaExecutionRoleArn:
     Value: !GetAtt LambdaExecutionRole.Arn
@@ -232,8 +263,8 @@ Outputs:
   LoadBalancerDomainName:
     Value: !GetAtt LoadBalancer.DNSName
 
-  LoadBalancerUrlHttp:
+  LoadBalancerUrlHttp1:
     Value: !Sub "http://${LoadBalancer.DNSName}/v1/lambda1"
 
-  Route53UrlHttp:
-    Value: !Sub "http://${LoadBalancerSubDomainName}.${HostedZoneName}/v1/lambda1"
+  LoadBalancerUrlHttp2:
+    Value: !Sub "http://${LoadBalancer.DNSName}/v1/lambda2"
