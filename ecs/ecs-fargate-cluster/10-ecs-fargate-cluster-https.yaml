@@ -164,9 +164,3 @@ Outputs:
 
   LoadBalancerListenerArn:
     Value: !GetAtt LoadBalancerListener.ListenerArn
-
-  DomainUrlHttp:
-    Value: !Sub "http://${DnsSubDomainNameLoadBalancer}.${DnsHostedZoneName}/"
-
-  DomainUrlHttps:
-    Value: !Sub "https://${DnsSubDomainNameLoadBalancer}.${DnsHostedZoneName}/"
