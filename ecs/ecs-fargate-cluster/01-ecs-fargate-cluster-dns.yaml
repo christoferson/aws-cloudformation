@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate with Application Load Balancer (Cluster Only) - DNS Record
+
+Metadata:
+
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label: 
+          default: "DNS Configuration"
+        Parameters: 
+          - DnsDomainName
+          - DnsSubDomainName
+      - Label:
+          default: "LoadBalancer Configuration"
+        Parameters:
+          - LoadBalancerDomainName
+          - LoadBalancerCanonicalHostedZoneID
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: ecsfargate
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  DnsDomainName:
+    Description: "Domain Name must not include trailing dot (e.g. example.com)"
+    Type: String
+    Default: "example.com"
+
+  DnsSubDomainName:
+    Description: "Sub Domain Name of the Application Load Balancer"
+    Type: String
+    Default: "r53ecslb2"
+
+  LoadBalancerCanonicalHostedZoneID:
+    Description: "LoadBalancerCanonicalHostedZoneID"
+    Type: String
+    Default: "Z32O12XQLNXXXX"
+
+  LoadBalancerDomainName:
+    Description: "LoadBalancerDomainName"
+    Type: String
+    Default: "foo.us-east-1.elb.amazonaws.com"
+    
+Resources:
+
+  Route53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Sub "${DnsDomainName}."
+      Comment: "Alias targeted to Application LoadBalancer"
+      RecordSets:
+      - Name: !Sub "${DnsSubDomainName}.${DnsDomainName}."
+        Type: A
+        AliasTarget:
+          HostedZoneId: !Ref LoadBalancerCanonicalHostedZoneID
+          DNSName: !Ref LoadBalancerDomainName
+
+Outputs:
+
+  DomainUrlHttp:
+    Value: !Sub "http://${DnsSubDomainName}.${DnsDomainName}/"
