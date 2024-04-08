@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: TLS Certificate - Issue Cluster LoadBalancer HTTPS Certificate using Domain Validation
+
+Parameters:
+
+  DnsDomainValidationHostedZoneId:
+    Description: "Identifier of the hosted zone"
+    Type: String
+    Default: "Z0YYY732MXXXH4KEQ999"
+    
+  DnsDomainName:
+    Description: "must NOT include a trailing dot (for example, www.example.com.)"
+    Type: String
+    Default: "xxx.example.com"
+
+Resources:
+
+  CertificateManagerCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "${DnsDomainName}"
+      DomainValidationOptions:
+        - DomainName: !Sub "${DnsDomainName}"
+          HostedZoneId: !Ref DnsDomainValidationHostedZoneId
+      SubjectAlternativeNames:
+        - !Sub "*.${DnsDomainName}"
+      ValidationMethod: DNS
+
+Outputs:
+
+  CertificateManagerCertificateArn:
+    Value: !Ref CertificateManagerCertificate
+
