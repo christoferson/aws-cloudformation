@@ -1,1 +1,14 @@
 .project
+.settings
+
+__pycache__
+notes.txt
+backup
+temp
+links.txt
+refs
+todo.txt
+ref-codes
+
+99-project-01-backup
+ref
