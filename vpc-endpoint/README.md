@@ -111,11 +111,24 @@ aws ecr describe-repositories --region eu-west-1
 
 [vpc-endpoint-interface](vpc-endpoint-interface.yaml)
 
+--- 
+
 ### Vpc Endpoint Interface Endpoint - Instance Connect
 
+Provision Special Endpoint to enable Instance Connect.
 
+- Connect to instances in private subnet using Instance Connect.
+- Allows you to connect to an instance, without requiring the instance to have a public IPv4 address.
 
-[vpc-endpoint-instanceconnectendpoint](vpc-endpoint-instanceconnectendpoint.yaml)
+- A client token is a unique string that you specify when you make an API request. If you retry an API request with the same client token and the same request parameters after it has completed successfully, the result of the original request is returned. If you retry a request with the same client token, but change one or more of the request parameters, the ConflictException error is returned.
+
+-- If you do not specify your own client token, the AWS SDKs automatically generates a client token for the request to ensure that it is idempotent.
+
+-- Security Grounp [link](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/eice-security-groups.html)
+[link](https://repost.aws/knowledge-center/connect-http-https-ec2)
+
+[vpc-endpoint-instanceconnectendpoint](vpc-endpoint-instanceconnectendpoint.yaml) | 
+[cfn](https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-instanceconnectendpoint.html) | [quota](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/eice-quotas.html)
 
 ---
 
