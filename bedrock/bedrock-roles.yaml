@@ -163,12 +163,12 @@ Resources:
               - "bedrock:InvokeModel"
             Effect: Allow
             Resource:
-              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v1"
-              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/cohere.embed-english-v3"
-              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/cohere.embed-multilingual-v3"
-              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-v2"
-              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-v2:1"
-              - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-instant-v1"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v1"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/cohere.embed-english-v3"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/cohere.embed-multilingual-v3"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-v2"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-v2:1"
+              - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-instant-v1"
           - Action: # (Optional) Permissions to access your vector database in Amazon OpenSearch Service
               - "aoss:APIAccessAll"
             Effect: Allow
