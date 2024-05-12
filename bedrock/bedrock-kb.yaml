@@ -1,45 +1,52 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Knowledge base with Amazon Opensearch Serverless vector database.
+Description: Knowledge base with Amazon Opensearch Serverless vector database
 
 Parameters:
 
+  Application:
+    Type: String
+    Default: app
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
   KnowledgeBaseName:
     Type: String
-    Description: The name of the knowledge base.
-    Default: ''
+    Description: Name of the Knowledge Base
+    Default: knowledge-base-demo-foo-titan-default
 
   KnowledgeBaseDescription:
     Type: String
     Description: The description of the knowledge base.
-    Default: ''
+    Default: Foo Titan Default Chunk
 
   KnowledgeBaseRoleArn:
     Type: String
     Description: KnowledgeBase role ARN
-    Default: arn:aws:iam::123456789012:role/cfn-local-test-role
+    Default: arn:aws:iam::0000000000:role/AmazonBedrockExecutionRoleForKnowledgeBase
 
   VectorDatabaseCollectionArn:
     Type: String
     Description: KnowledgeBase role ARN
-    Default: arn:aws:aoss:us-west-2:123456789012:collection/abcdefghij1234567890
+    Default: arn:aws:aoss:us-east-1:0000000000:collection/xxx
 
   VectorDatabaseIndexName:
     Type: String
     Description: KnowledgeBase role ARN
-    Default: arn:aws:aoss:us-west-2:123456789012:collection/abcdefghij1234567890
-
-  VectorDatabaseIndexFieldMetadataName:
-    Type: String
-    Description: KnowledgeBase role ARN
-    Default: arn:aws:aoss:us-west-2:123456789012:collection/abcdefghij1234567890
+    Default: foo-idx-titan-default
 
   DataSourceName:
     Type: String
     Description: The name of the data source.
+    Default: knowledge-base-demo-foo-titan-default-ds
 
   DataSourceDescription:
     Type: String
     Description: The description of the data source.
+    Default: Foo Main DataSource
 
 Resources:
 
@@ -53,13 +60,14 @@ Resources:
         Type: VECTOR
         VectorKnowledgeBaseConfiguration:
           EmbeddingModelArn: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v1
+          #cohere.embed-multilingual-v3
       StorageConfiguration:
         Type: OPENSEARCH_SERVERLESS
         OpensearchServerlessConfiguration:
           CollectionArn: !Ref VectorDatabaseCollectionArn
           VectorIndexName: !Ref VectorDatabaseIndexName
           FieldMapping:
-            VectorField: !Ref VectorDatabaseIndexFieldMetadataName
+            VectorField: embeddings
             TextField: text
             MetadataField: metadata
 
@@ -69,9 +77,16 @@ Resources:
       KnowledgeBaseId: !Ref KnowledgeBase
       Name: !Ref DataSourceName
       Description: !Ref DataSourceDescription
+      DataDeletionPolicy: RETAIN
       DataSourceConfiguration:
         Type: S3
         S3Configuration:
-          BucketArn: arn:aws:s3:::kb-test-aws
+          BucketArn: arn:aws:s3:::foo-demo-dev-berock-kb-foo
           #InclusionPrefixes:
           #  - aws-overview.pdf
+          #VectorIngestionConfiguration:
+          #  ChunkingConfiguration: 
+          #    ChunkingStrategy: FIXED_SIZE | NONE
+          #    FixedSizeChunkingConfiguration: 
+          #      MaxTokens:
+          #      OverlapPercentage:
