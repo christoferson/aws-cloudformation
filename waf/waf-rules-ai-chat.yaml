@@ -81,11 +81,6 @@ Resources:
             MetricName: AWS-AWSManagedRulesBotControlRuleSet
 
         - Name: RateLimit-Global
-          #Priority: 40
-          #Statement:
-          #  RateBasedStatement:
-          #    Limit: 1000
-          #    AggregateKeyType: IP
           Priority: 40
           Statement:
             RateBasedStatement:
@@ -100,6 +95,13 @@ Resources:
             CloudWatchMetricsEnabled: true
             SampledRequestsEnabled: true
             MetricName: RateLimit-Global
+      Tags: 
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-waf-web-acl"
 
   WebACLAssociation:
     Type: AWS::WAFv2::WebACLAssociation
@@ -115,42 +117,49 @@ Resources:
         - !GetAtt WAFLogBucket.Arn
 
   WAFLogBucket:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: !Sub "${AWS::AccountId}-${Environment}-${Application}-waf-logs"
-        VersioningConfiguration:
-          Status: Disabled
-        BucketEncryption:
-          ServerSideEncryptionConfiguration:
-            - ServerSideEncryptionByDefault:
-                SSEAlgorithm: AES256
-              BucketKeyEnabled: true
-        LifecycleConfiguration:
-          Rules:
-            - Id: TransitionAndExpireWAFLogs
-              Status: Enabled
-              Transitions:
-                - StorageClass: STANDARD_IA
-                  TransitionInDays: 7
-              ExpirationInDays: 90
+    Type: AWS::S3::Bucket
+    Properties:
+      #BucketName: !Sub "${AWS::AccountId}-${Environment}-${Application}-waf-logs"
+      VersioningConfiguration:
+        Status: Disabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionAndExpireWAFLogs
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 7
+            ExpirationInDays: 90
+      Tags: 
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-s3-waf-logs"
 
-    WAFLogBucketPolicy:
-      Type: AWS::S3::BucketPolicy
-      Properties:
-        Bucket: !Ref WAFLogBucket
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Sid: AllowSSLRequestsOnly
-              Effect: Deny
-              Principal: '*'
-              Action: s3:*
-              Resource:
-                - !GetAtt WAFLogBucket.Arn
-                - !Sub "${WAFLogBucket.Arn}/*"
-              Condition:
-                Bool:
-                  aws:SecureTransport: false
+  WAFLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WAFLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSSLRequestsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt WAFLogBucket.Arn
+              - !Sub "${WAFLogBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
 
 Outputs:
   WebAclArn:
