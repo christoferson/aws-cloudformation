@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "WAF for Generative AI Chatbot"
+
+Parameters:
+  Application:
+    Type: String
+    Description: "Application Name"
+    Default: ai-chatbot
+
+  Environment:
+    Type: String
+    Description: "Environment"
+    Default: develop
+
+  Scope:
+    Type: String
+    Description: "Select the scope of WAF (REGIONAL or CLOUDFRONT)"
+    AllowedValues:
+      - "REGIONAL"
+      - "CLOUDFRONT"
+    Default: REGIONAL
+
+  WebAclAssociationResourceArn:
+    Type: String
+    Description: Enter RegionalResource (ALB, API Gateway, AppSync) ARN or CloudFront ARN to associate with WEBACL.
+    Default: "arn:aws:elasticloadbalancing:ap-northeast-1:XXXXXXXXXXXX:loadbalancer/app/XXXXXXXXXXXX"
+
+Resources:
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties: 
+      Name: !Sub "${Environment}-${Application}-web-acl"
+      Description: "WAF for AI Chatbot"
+      Scope: !Ref Scope
+      DefaultAction: 
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+        MetricName: !Sub ${Environment}-${Application}-web-acl
+      Rules:
+        - Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 10
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules:
+                - Name: NoUserAgent_HEADER
+          OverrideAction:
+            None: {}
+          VisibilityConfig: 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesCommonRuleSet
+
+        - Name: AWS-AWSManagedRulesAmazonIpReputationList
+          Priority: 20
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+          OverrideAction:
+            None: {}
+          VisibilityConfig: 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesAmazonIpReputationList
+
+        - Name: AWS-AWSManagedRulesBotControlRuleSet
+          Priority: 30
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesBotControlRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig: 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesBotControlRuleSet
+
+        - Name: RateLimit-Global
+          #Priority: 40
+          #Statement:
+          #  RateBasedStatement:
+          #    Limit: 1000
+          #    AggregateKeyType: IP
+          Priority: 40
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: FORWARDED_IP
+              ForwardedIPConfig:
+                HeaderName: X-Forwarded-For
+                FallbackBehavior: MATCH
+          Action:
+            Block: {}
+          VisibilityConfig: 
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: RateLimit-Global
+
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref WebAclAssociationResourceArn
+      WebACLArn: !GetAtt WebAcl.Arn
+
+  WebACLLogging:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      ResourceArn: !GetAtt WebAcl.Arn
+      LogDestinationConfigs: 
+        - !GetAtt WAFLogBucket.Arn
+
+  WAFLogBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: !Sub "${AWS::AccountId}-${Environment}-${Application}-waf-logs"
+        VersioningConfiguration:
+          Status: Disabled
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+              BucketKeyEnabled: true
+        LifecycleConfiguration:
+          Rules:
+            - Id: TransitionAndExpireWAFLogs
+              Status: Enabled
+              Transitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: 7
+              ExpirationInDays: 90
+
+    WAFLogBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref WAFLogBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: AllowSSLRequestsOnly
+              Effect: Deny
+              Principal: '*'
+              Action: s3:*
+              Resource:
+                - !GetAtt WAFLogBucket.Arn
+                - !Sub "${WAFLogBucket.Arn}/*"
+              Condition:
+                Bool:
+                  aws:SecureTransport: false
+
+Outputs:
+  WebAclArn:
+    Description: "ARN of the Web ACL"
+    Value: !GetAtt WebAcl.Arn
+  WebAclId:
+    Description: "ID of the Web ACL"
+    Value: !Ref WebAcl
+  WAFLogBucketName:
+    Description: "Name of the S3 bucket for WAF logs"
+    Value: !Ref WAFLogBucket
