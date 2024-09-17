@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Glue - Service
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment
+    Default: dev
+
+  BucketNameSource:
+    Type: String
+    Description: Source Bucket Name
+    Default: source-bucket
+
+  BucketNameDestination:
+    Type: String
+    Description: Destination Bucket Name
+    Default: destination-bucket
+
+Resources:
+  GlueServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub 'GlueServiceRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole'
+      Policies:
+        - PolicyName: GlueServiceRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetBucket*'
+                  - 's3:GetObject*'
+                  - 's3:List*'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${BucketNameSource}'
+                  - !Sub 'arn:aws:s3:::${BucketNameSource}/*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetBucket*'
+                  - 's3:GetObject*'
+                  - 's3:List*'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${BucketNameDestination}'
+                  - !Sub 'arn:aws:s3:::${BucketNameDestination}/*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:/aws-glue/*'
+
+Outputs:
+  GlueServiceRoleArn:
+    Description: 'ARN of the Glue Service Role'
+    Value: !GetAtt GlueServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GlueServiceRoleArn'
