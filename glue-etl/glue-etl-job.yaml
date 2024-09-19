@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Glue ETL job to concatenate and move S3 files'
+
+Parameters:
+  SourceBucketName:
+    Type: String
+    Description: Name of the source S3 bucket
+  DestinationBucketName:
+    Type: String
+    Description: Name of the destination S3 bucket
+  SourcePrefix:
+    Type: String
+    Description: Prefix for source files in the source bucket
+    Default: 'input/'
+  DestinationPrefix:
+    Type: String
+    Description: Prefix for the output file in the destination bucket
+    Default: 'output/'
+
+Resources:
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${SourceBucketName}
+                  - !Sub arn:aws:s3:::${SourceBucketName}/*
+                  - !Sub arn:aws:s3:::${DestinationBucketName}
+                  - !Sub arn:aws:s3:::${DestinationBucketName}/*
+                  - !GetAtt GlueJobScript.Arn
+                  - !Sub "${GlueJobScript.Arn}/*"
+
+  GlueJobScript:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+    DeletionPolicy: Delete
+
+  GlueJob:
+    Type: AWS::Glue::Job
+    DependsOn: GlueJobScriptCustomResource
+    Properties:
+      Name: ConcatenateAndMoveS3Files
+      Role: !GetAtt GlueJobRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${GlueJobScript}/glue_job_script.py"
+        PythonVersion: '3'
+      DefaultArguments:
+        '--job-language': 'python'
+        '--source_bucket': !Ref SourceBucketName
+        '--source_prefix': !Ref SourcePrefix
+        '--destination_bucket': !Ref DestinationBucketName
+        '--destination_prefix': !Ref DestinationPrefix
+      GlueVersion: '3.0'
+      MaxRetries: 0
+      Timeout: 2880
+      NumberOfWorkers: 2
+      WorkerType: G.1X
+
+  GlueJobScriptFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          s3 = boto3.client('s3')
+
+          def empty_bucket(bucket):
+              paginator = s3.get_paginator('list_object_versions')
+              for page in paginator.paginate(Bucket=bucket):
+                  objects = []
+                  if 'Versions' in page:
+                      for version in page['Versions']:
+                          objects.append({'Key': version['Key'], 'VersionId': version['VersionId']})
+                  if 'DeleteMarkers' in page:
+                      for marker in page['DeleteMarkers']:
+                          objects.append({'Key': marker['Key'], 'VersionId': marker['VersionId']})
+                  if objects:
+                      s3.delete_objects(Bucket=bucket, Delete={'Objects': objects})
+
+          def handler(event, context):
+              try:
+                  bucket = event['ResourceProperties']['Bucket']
+                  key = event['ResourceProperties']['Key']
+                  content = event['ResourceProperties']['Content']
+
+                  if event['RequestType'] in ['Create', 'Update']:
+                      s3.put_object(Bucket=bucket, Key=key, Body=content)
+                  elif event['RequestType'] == 'Delete':
+                      # Delete the specific file
+                      s3.delete_object(Bucket=bucket, Key=key)
+                      # Then empty the rest of the bucket
+                      empty_bucket(bucket)
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Runtime: python3.8
+      Timeout: 300
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                Resource: 
+                  - !GetAtt GlueJobScript.Arn
+                  - !Sub "${GlueJobScript.Arn}/*"
+                  
+  GlueJobScriptCustomResource:
+    Type: Custom::S3Object
+    Properties:
+      ServiceToken: !GetAtt GlueJobScriptFunction.Arn
+      Bucket: !Ref GlueJobScript
+      Key: glue_job_script.py
+      Content: |
+        import sys
+        from awsglue.transforms import *
+        from awsglue.utils import getResolvedOptions
+        from pyspark.context import SparkContext
+        from awsglue.context import GlueContext
+        from awsglue.job import Job
+
+        args = getResolvedOptions(sys.argv, ['JOB_NAME', 'source_bucket', 'source_prefix', 'destination_bucket', 'destination_prefix'])
+
+        sc = SparkContext()
+        glueContext = GlueContext(sc)
+        spark = glueContext.spark_session
+        job = Job(glueContext)
+        job.init(args['JOB_NAME'], args)
+
+        source_path = f"s3://{args['source_bucket']}/{args['source_prefix']}"
+        destination_path = f"s3://{args['destination_bucket']}/{args['destination_prefix']}concatenated_file"
+
+        df = spark.read.option("mergeSchema", "true").option("header", "true").csv(source_path)
+        df.coalesce(1).write.mode("overwrite").csv(destination_path)
+
+        job.commit()
+
+Outputs:
+  GlueJobName:
+    Description: Name of the created Glue Job
+    Value: !Ref GlueJob
+  GlueJobRoleArn:
+    Description: ARN of the IAM Role created for the Glue Job
+    Value: !GetAtt GlueJobRole.Arn
+  GlueJobScriptBucketName:
+    Description: Name of the S3 bucket created for the Glue job script
+    Value: !Ref GlueJobScript
