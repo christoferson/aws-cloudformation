@@ -89,8 +89,10 @@ Resources:
         '--enable-continuous-log-filter': 'true'
         '--enable-metrics': 'true'
         '--enable-spark-ui': 'true'
+        '--enable-job-insights': 'true'
+        '--enable-observability-metrics': 'true'
         '--spark-event-logs-path': !Sub "s3://${GlueJobScript}/spark-logs/"
-      GlueVersion: '3.0'
+      GlueVersion: '4.0'
       MaxRetries: 0
       Timeout: 2880
       NumberOfWorkers: 2
