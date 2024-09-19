@@ -45,10 +45,10 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub arn:aws:s3:::${SourceBucketName}
-                  - !Sub arn:aws:s3:::${SourceBucketName}/*
-                  - !Sub arn:aws:s3:::${DestinationBucketName}
-                  - !Sub arn:aws:s3:::${DestinationBucketName}/*
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/*
+                  - !Sub arn:${AWS::Partition}:s3:::${DestinationBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::${DestinationBucketName}/*
                   - !GetAtt GlueJobScript.Arn
                   - !Sub "${GlueJobScript.Arn}/*"
         - PolicyName: CloudWatchLogsAccess
@@ -60,7 +60,24 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
+                  - logs:GetLogEvents
                 Resource: arn:aws:logs:*:*:*
+        - PolicyName: CloudWatchMetricsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+        - PolicyName: AutoScalingAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:*
+                Resource: '*'
 
   GlueJobScript:
     Type: AWS::S3::Bucket
@@ -74,6 +91,7 @@ Resources:
     DependsOn: GlueJobScriptCustomResource
     Properties:
       Name: ConcatenateAndMoveS3Files
+      Description: "ETL job to concatenate files from source S3 bucket and move them to destination S3 bucket"
       Role: !GetAtt GlueJobRole.Arn
       Command:
         Name: glueetl
@@ -91,12 +109,19 @@ Resources:
         '--enable-spark-ui': 'true'
         '--enable-job-insights': 'true'
         '--enable-observability-metrics': 'true'
+        '--enable-auto-scaling': 'true'
         '--spark-event-logs-path': !Sub "s3://${GlueJobScript}/spark-logs/"
       GlueVersion: '4.0'
       MaxRetries: 0
       Timeout: 2880
-      NumberOfWorkers: 2
+      NumberOfWorkers: 5  # This represents the maximum number of workers
       WorkerType: G.1X
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      ExecutionClass: STANDARD #FLEX #Reduce costs by running this job on spare capacity. Ideal for non-urgent workloads that don't require fast jobs start times or consistent execution times.
+      #QueuedTimeout: 60  # Job run will timeout after 60 minutes in the queue
+      Tags:
+        Name: !Sub "${AWS::StackName}-GlueJob"
 
   GlueJobScriptFunction:
     Type: AWS::Lambda::Function
