@@ -387,6 +387,29 @@ Default Key Policy which permits everyone in the account.
 
 [kms-symmetric](kms-symmetric.yaml)
 
+
+### KMS - Symmetric - Import
+
+Download wrapping public key and import token
+To import key material, first select the wrapping key spec and wrapping algorithm you will use to encrypt the key material, then download the wrapping public key and import token for this AWS KMS key. [link](https://docs.aws.amazon.com/kms/latest/developerguide/importing-keys-get-public-key-and-token.html)
+
+Select wrapping key spec
+The key spec of the wrapping public key determines the length of the keys in the RSA key pair that protects your key material during its transport to AWS KMS.
+- RSA_4096 - recommended
+- RSA_3072
+- RSA_2048
+
+Select wrapping algorithm
+Choose the encryption algorithm that you'll use to protect ("wrap") your key material in transit to AWS KMS.
+
+Encrypted key material and import token
+Use your wrapping public key to encrypt your key material. Then, upload the wrapped key material and the import token that you downloaded. Learn more 
+
+Wrapped key material - Upload
+Import token - Upload
+
+[link](https://docs.aws.amazon.com/kms/latest/developerguide/importing-keys-conceptual.html)
+
 ### Resources
 
 - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_KMS.html

@@ -23,13 +23,13 @@ Resources:
   KmsKey:
     Type: AWS::KMS::Key
     Properties:
-      Description: Symmetric Encryption Key
+      Description: "Symmetric Encryption Key"
       Enabled: true
       EnableKeyRotation: false
       KeySpec: SYMMETRIC_DEFAULT
       KeyUsage: ENCRYPT_DECRYPT
       MultiRegion: false
-      PendingWindowInDays: 7
+      PendingWindowInDays: 7 # between 7 and 30 days.
       KeyPolicy:
         Version: 2012-10-17
         Id: key-default
