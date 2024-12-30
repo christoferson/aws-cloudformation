@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: KMS Symmetric Key
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  KeyAliasName:
+    Type: String
+    Default: "kms-symmetric-key"
+    Description: Key Alias Name
+    
+Resources:
+
+  KmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "Symmetric Encryption Key"
+      Enabled: true
+      EnableKeyRotation: false
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      MultiRegion: false
+      PendingWindowInDays: 7 # between 7 and 30 days.
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: key-default
+        Statement:
+          - Sid: account
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+      Tags:
+      - Key: Name
+        Value: "kms-symmetric-key"
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+        
+  KmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${KeyAliasName}"
+      TargetKeyId: !Ref KmsKey
+
+Outputs:
+
+  KmsKeyArn:
+    Value: !GetAtt KmsKey.Arn
