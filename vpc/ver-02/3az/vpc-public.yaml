@@ -65,6 +65,12 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc"
 
+  VPCIpv6CidrBlock:
+      Type: AWS::EC2::VPCCidrBlock
+      Properties:
+        VpcId: !Ref VPC
+        AmazonProvidedIpv6CidrBlock: true
+
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
@@ -98,8 +104,17 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
+  PublicRouteIpv6:
+      Type: AWS::EC2::Route
+      DependsOn: [VPCGatewayAttachment, VPCIpv6CidrBlock]
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        DestinationIpv6CidrBlock: "::/0"
+        GatewayId: !Ref InternetGateway
+        
   PublicSubnet01:
     Type: AWS::EC2::Subnet
+    DependsOn: VPCIpv6CidrBlock
     Metadata:
       Comment: Public Subnet 01
     Properties:
@@ -112,12 +127,21 @@ Resources:
             Ref: AWS::Region
       CidrBlock:
         Ref: PublicSubnet01Block
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select: 
+          - 0
+          - Fn::Cidr: 
+              - !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
+              - 256 
+              - 64
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
 
   PublicSubnet02:
     Type: AWS::EC2::Subnet
+    DependsOn: VPCIpv6CidrBlock
     Metadata:
       Comment: Public Subnet 02
     Properties:
@@ -130,12 +154,21 @@ Resources:
             Ref: AWS::Region
       CidrBlock:
         Ref: PublicSubnet02Block
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select: 
+          - 1
+          - Fn::Cidr: 
+              - !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
+              - 256 
+              - 64
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
 
   PublicSubnet03:
     Type: AWS::EC2::Subnet
+    DependsOn: VPCIpv6CidrBlock
     Metadata:
       Comment: Public Subnet 03
     Properties:
@@ -148,6 +181,14 @@ Resources:
             Ref: AWS::Region
       CidrBlock:
         Ref: PublicSubnet03Block
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select: 
+          - 2
+          - Fn::Cidr: 
+              - !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
+              - 256 
+              - 64
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-3"
@@ -196,3 +237,20 @@ Outputs:
   PublicSubnet03Id:
     Description: Public Subnet 3 ID
     Value: !Ref PublicSubnet03
+
+##
+  VpcIpv6CidrBlock:
+    Description: The IPv6 CIDR block associated with the VPC
+    Value: !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ] # Example value: 2600:1f16:844:9c00::/56  (not /64)
+
+  PublicSubnet01Ipv6CidrBlock:
+    Description: Public Subnet 1 IPv6 CIDR
+    Value: !Select [ 0, !GetAtt PublicSubnet01.Ipv6CidrBlocks ] # Example value: 2600:1f16:844:9c00::/64
+
+  PublicSubnet02Ipv6CidrBlock:
+    Description: Public Subnet 2 IPv6 CIDR
+    Value: !Select [ 0, !GetAtt PublicSubnet02.Ipv6CidrBlocks ] # Example value: 2600:1f16:844:9c01::/64
+
+  PublicSubnet03Ipv6CidrBlock:
+    Description: Public Subnet 3 IPv6 CIDR
+    Value: !Select [ 0, !GetAtt PublicSubnet03.Ipv6CidrBlocks ] # Example value: 2600:1f16:844:9c02::/64
