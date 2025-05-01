@@ -53,7 +53,7 @@ Parameters:
   VpcEndpointServiceName:
     Type: String
     Description: "Vpc Endpoint Service Name"
-    Default: "com.amazonaws.vpce.region.vpce-svc-ddddd"
+    Default: "com.amazonaws.vpce.eu-west-1.vpce-svc-0aa7b65fa5c4ff03f"
 
   InstanceVpcPrivateSubnet:
     Description: EC2 subnet
