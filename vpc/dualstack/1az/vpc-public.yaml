@@ -1,0 +1,203 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Dual-Stack (IPv4 + IPv6) VPC with Public Subnets only and spans 1 Availability Zone'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcBlock
+          - PublicSubnet01Block
+
+Parameters:
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
+
+  PublicSubnet01Block:
+    Type: String
+    Default: 10.0.128.0/24
+    Description: CidrBlock for public subnet 01 within the VPC
+
+Resources:
+  #############################################################
+  # VPC CONFIGURATION
+  #############################################################
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: "default"
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc"
+      - Key: Network
+        Value: "Dual-Stack"
+
+  # Add IPv6 CIDR block to the VPC
+  # This follows AWS best practices for adding IPv6 support to a VPC
+  VpcIpv6CidrBlock:
+    Type: "AWS::EC2::VPCCidrBlock"
+    Properties:
+      VpcId: !Ref VPC
+      # Request an Amazon-provided IPv6 CIDR block with a /56 prefix length
+      # You cannot specify the range of IPv6 addresses or the size of the CIDR block
+      AmazonProvidedIpv6CidrBlock: true
+
+  #############################################################
+  # INTERNET CONNECTIVITY
+  #############################################################
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-igw"
+
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  #############################################################
+  # ROUTING CONFIGURATION
+  #############################################################
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Description
+        Value: Public Subnet Route Table
+      - Key: Network
+        Value: Public
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
+
+  # IPv4 default route - sends all IPv4 traffic to the Internet Gateway
+  PublicRouteIPv4:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # IPv6 default route - sends all IPv6 traffic to the Internet Gateway
+  # This is what makes the subnet "public" for IPv6 traffic
+  PublicRouteIPv6:
+    Type: "AWS::EC2::Route"
+    DependsOn: [VPCGatewayAttachment, VpcIpv6CidrBlock]
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationIpv6CidrBlock: ::/0
+      GatewayId: !Ref InternetGateway
+
+  #############################################################
+  # PUBLIC SUBNET CONFIGURATION
+  #############################################################
+  # Public IPv6 Subnet:
+  # - Has a route to the Internet Gateway for both inbound and outbound traffic
+  # - Instances can receive incoming connections from the internet
+  # - Similar to IPv4 public subnets conceptually
+  PublicSubnet01:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Metadata:
+      Comment: Public Subnet 01 (Dual-Stack)
+    Properties:
+      VpcId: !Ref VPC
+      # Auto-assign public IPv4 addresses to instances launched in this subnet
+      MapPublicIpOnLaunch: true
+      # Auto-assign IPv6 addresses to instances launched in this subnet
+      AssignIpv6AddressOnCreation: true
+      # Allocate a /64 IPv6 CIDR block from the VPC's /56 block
+      # The "0" in Fn::Select means we're taking the first /64 subnet
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 0
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PublicSubnet01Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
+      - Key: Network
+        Value: "Public"
+      - Key: Type
+        Value: "Dual-Stack"
+
+  PublicSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet01
+      RouteTableId: !Ref PublicRouteTable
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref "VPC"
+
+  VpcIpv4Cidr:
+    Description: IPv4 CIDR Block assigned to the VPC
+    Value: !GetAtt VPC.CidrBlock
+
+  VpcIpv6Cidr:
+    Description: IPv6 CIDR Block assigned to the VPC
+    Value: !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+
+  VpcDefaultNetworkAcl:
+    Description: The ID of the default network ACL for the VPC
+    Value: !GetAtt VPC.DefaultNetworkAcl
+
+  VpcDefaultSecurityGroup:
+    Description: The ID of the default security group for the VPC
+    Value: !GetAtt VPC.DefaultSecurityGroup
+
+  PublicSubnet01Id:
+    Description: Public Subnet 1 ID
+    Value: !Ref PublicSubnet01
+
+  PublicSubnet01Ipv4Cidr:
+    Description: IPv4 CIDR of Public Subnet 1
+    Value: !GetAtt PublicSubnet01.CidrBlock
+
+  PublicSubnet01Ipv6Cidr:
+    Description: IPv6 CIDR of Public Subnet 1
+    Value: !GetAtt PublicSubnet01.Ipv6CidrBlock
+
+  Ipv6CidrBlockAssociation:
+    Description: The association ID for the IPv6 CIDR block
+    Value: !Ref VpcIpv6CidrBlock
