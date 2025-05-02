@@ -1,0 +1,253 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2 Instance with IPv6 Support, Apache, and SSM Access'
+
+Parameters:
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC ID where the instance will be launched (must be dual-stack with IPv6 enabled)
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: The subnet ID where the instance will be launched (must have IPv6 enabled)
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t3.micro
+      - t3.small
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: The latest Amazon Linux 2 AMI from the Parameter Store
+
+Resources:
+  #############################################################
+  # IAM ROLE FOR SSM ACCESS
+  #############################################################
+  SSMInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: /
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ssm-role"
+
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref SSMInstanceRole
+
+  #############################################################
+  # SECURITY GROUP CONFIGURATION
+  #############################################################
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for web server with IPv6 support
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow HTTP from anywhere (IPv4)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP access from IPv4
+        # Allow HTTP from anywhere (IPv6)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+          Description: Allow HTTP access from IPv6
+        # Allow HTTPS from anywhere (IPv4)
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS access from IPv4
+        # Allow HTTPS from anywhere (IPv6)
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+          Description: Allow HTTPS access from IPv6
+        # Allow ICMP from anywhere (IPv4)
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow ICMP from IPv4
+        # Allow ICMPv6 from anywhere (IPv6)
+        - IpProtocol: 58  # ICMPv6
+          FromPort: -1
+          ToPort: -1
+          CidrIpv6: ::/0
+          Description: Allow ICMPv6 from IPv6
+      SecurityGroupEgress:
+        # Allow all outbound traffic (IPv4)
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound IPv4 traffic
+        # Allow all outbound traffic (IPv6)
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIpv6: ::/0
+          Description: Allow all outbound IPv6 traffic
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-web-sg"
+
+  #############################################################
+  # LAUNCH TEMPLATE CONFIGURATION
+  #############################################################
+  WebServerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${Application}-${Environment}-web-lt"
+      VersionDescription: Initial version
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: !Ref SSMInstanceProfile
+        # Remove the SecurityGroupIds from here - this is causing the conflict
+        # SecurityGroupIds:
+        #   - !Ref WebServerSecurityGroup
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            SubnetId: !Ref SubnetId
+            Groups:
+              - !Ref WebServerSecurityGroup
+            Ipv6AddressCount: 1  # Assign one IPv6 address
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+
+            # Update system packages
+            yum update -y
+
+            # Install Apache
+            yum install -y httpd
+
+            # Start and enable Apache
+            systemctl start httpd
+            systemctl enable httpd
+
+            # Create a simple static page
+            cat > /var/www/html/index.html << EOF
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>IPv6 Test Page</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        margin: 40px;
+                        text-align: center;
+                    }
+                    .container {
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        border: 1px solid #ddd;
+                        border-radius: 5px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Hello from IPv6!</h1>
+                    <p>This page is being served from an EC2 instance with IPv6 connectivity.</p>
+                    <p>Stack: ${AWS::StackName}</p>
+                    <p>Region: ${AWS::Region}</p>
+                </div>
+            </body>
+            </html>
+            EOF
+
+            # Set permissions
+            chmod 644 /var/www/html/index.html
+
+            # Install SSM agent (already installed on Amazon Linux 2 but ensure it's running)
+            systemctl enable amazon-ssm-agent
+            systemctl start amazon-ssm-agent
+
+            # Signal completion
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WebServerInstance --region ${AWS::Region}
+            
+  #############################################################
+  # EC2 INSTANCE
+  #############################################################
+  WebServerInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebServerLaunchTemplate
+        Version: !GetAtt WebServerLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-web-server"
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref WebServerInstance
+
+  IPv4Address:
+    Description: Public IPv4 Address
+    Value: !GetAtt WebServerInstance.PublicIp
+
+  # # Fix for the IPv6 address output
+  # IPv6Address:
+  #   Description: IPv6 Address
+  #   Value: 
+  #     Fn::GetAtt:
+  #       - WebServerInstance
+  #       - NetworkInterfaces.0.Ipv6Addresses.0
+
+  WebsiteURLIPv4:
+    Description: Website URL (IPv4)
+    Value: !Sub "http://${WebServerInstance.PublicIp}/"
+
+  # # Fix for the IPv6 URL output
+  # WebsiteURLIPv6:
+  #   Description: Website URL (IPv6)
+  #   Value:
+  #     Fn::Sub:
+  #       - "http://[${IPv6Address}]/"
+  #       - IPv6Address: !GetAtt WebServerInstance.NetworkInterfaces.0.Ipv6Addresses.0
+  
