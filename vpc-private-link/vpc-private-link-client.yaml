@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Client configuration for PrivateLink service consumption with test EC2 instance'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - SubnetIds
+      - Label:
+          default: "Service Configuration"
+        Parameters:
+          - ServiceName
+      - Label:
+          default: "Instance Configuration"
+        Parameters:
+          - LatestAmiId
+    ParameterLabels:
+      Application:
+        default: "Application Name"
+      Environment:
+        default: "Environment Name"
+      VpcId:
+        default: "Client VPC ID"
+      SubnetId:
+        default: "Subnet ID for EC2 instance"
+      ServiceName:
+        default: "PrivateLink Service Name"
+      LatestAmiId:
+        default: "Amazon Linux 2 AMI ID"
+
+Parameters:
+  Application:
+    Type: String
+    Default: myapp-client
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: |
+      Select any VPC with DNS hostnames and DNS resolution enabled.
+      The VPC must have internet connectivity (direct or via NAT) for SSM to work.
+
+  SubnetIds:  # Changed from SubnetId to SubnetIds
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: |
+      Select subnets for the VPC Endpoint.
+      - Can be public or private subnets
+      - Multiple subnets recommended for high availability
+      - Must have available IP addresses
+      For the test EC2 instance, the first subnet in the list will be used.
+
+  ServiceName:
+    Type: String
+    Description: VPC Endpoint Service Name (from the service template)
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: The latest Amazon Linux 2 AMI from the Parameter Store
+
+
+Resources:
+
+  #############################################################
+  # SECURITY GROUPS
+  #############################################################
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC Endpoint
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-endpoint-sg
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for test EC2 instance
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0  # For SSM access
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-ec2-sg
+
+  # Separate security group rules
+  EndpointSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref EC2SecurityGroup
+
+  EC2SecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref EC2SecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId: !Ref EndpointSecurityGroup
+
+  #############################################################
+  # VPC ENDPOINT
+  #############################################################
+  ServiceVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Ref ServiceName
+      VpcEndpointType: Interface
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+      PrivateDnsEnabled: false
+
+  #############################################################
+  # TEST EC2 INSTANCE
+  #############################################################
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: VPCEndpointAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcEndpoints
+                Resource: '*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  TestInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t2.micro
+      SubnetId: !Select [0, !Ref SubnetIds]  # Uses first subnet
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-test-instance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y jq curl
+
+          # Create a test script
+          cat <<EOF > /home/ec2-user/test-service.sh
+          #!/bin/bash
+
+          # Get the endpoint DNS name from the first DNS entry
+          ENDPOINT_DNS=$(aws ec2 describe-vpc-endpoints \
+            --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+            --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
+            --output text)
+
+          echo "Testing PrivateLink service via endpoint: \$ENDPOINT_DNS"
+
+          # Test the sum endpoint
+          curl -X POST \
+            http://\$ENDPOINT_DNS/sum \
+            -H 'Content-Type: application/json' \
+            -d '{"num1": 5, "num2": 3}'
+
+          echo
+          EOF
+
+          chmod +x /home/ec2-user/test-service.sh
+
+Outputs:
+
+  VPCEndpointId:
+    Description: VPC Endpoint ID
+    Value: !Ref ServiceVPCEndpoint
+
+  # Remove the direct DNS reference and use a command instead
+  EndpointDnsCommand:
+    Description: Command to get the Endpoint DNS Name
+    Value: !Sub |
+      aws ec2 describe-vpc-endpoints \
+        --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+        --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
+        --output text
+
+  TestInstanceId:
+    Description: Test EC2 Instance ID
+    Value: !Ref TestInstance
+
+  TestInstancePrivateIP:
+    Description: Test EC2 Instance Private IP
+    Value: !GetAtt TestInstance.PrivateIp
+
+  TestScript:
+    Description: Command to test the service
+    Value: !Sub |
+      1. Connect to the EC2 instance using Session Manager
+      2. Run: /home/ec2-user/test-service.sh
+
