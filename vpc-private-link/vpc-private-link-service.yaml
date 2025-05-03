@@ -102,62 +102,68 @@ Resources:
       Roles:
         - !Ref ServiceRole
 
-  # Launch Configuration
-  LaunchConfiguration:
-    Type: AWS::AutoScaling::LaunchConfiguration
+  # Launch Template (replacing Launch Configuration)
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      ImageId: !Ref LatestAmiId
-      InstanceType: t2.micro
-      SecurityGroups:
-        - !Ref ServiceSecurityGroup
-      IamInstanceProfile: !Ref ServiceInstanceProfile
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum update -y
-          yum install -y python3 pip
-          pip3 install flask
+      LaunchTemplateName: !Sub "${Application}-${Environment}-launch-template"
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: t2.micro
+        IamInstanceProfile:
+          Name: !Ref ServiceInstanceProfile
+        SecurityGroupIds:
+          - !Ref ServiceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y python3 pip
+            pip3 install flask
 
-          cat <<EOF > /home/ec2-user/app.py
-          from flask import Flask, request, jsonify
-          app = Flask(__name__)
+            cat <<EOF > /home/ec2-user/app.py
+            from flask import Flask, request, jsonify
+            app = Flask(__name__)
 
-          @app.route('/sum', methods=['POST'])
-          def sum_numbers():
-              data = request.get_json()
-              num1 = data.get('num1', 0)
-              num2 = data.get('num2', 0)
-              return jsonify({'result': num1 + num2})
+            @app.route('/sum', methods=['POST'])
+            def sum_numbers():
+                data = request.get_json()
+                num1 = data.get('num1', 0)
+                num2 = data.get('num2', 0)
+                return jsonify({'result': num1 + num2})
 
-          if __name__ == '__main__':
-              app.run(host='0.0.0.0', port=80)
-          EOF
+            if __name__ == '__main__':
+                app.run(host='0.0.0.0', port=80)
+            EOF
 
-          cat <<EOF > /etc/systemd/system/webservice.service
-          [Unit]
-          Description=Simple Web Service
-          After=network.target
+            cat <<EOF > /etc/systemd/system/webservice.service
+            [Unit]
+            Description=Simple Web Service
+            After=network.target
 
-          [Service]
-          User=root
-          WorkingDirectory=/home/ec2-user
-          ExecStart=/usr/local/bin/flask run --host=0.0.0.0 --port=80
-          Restart=always
-          Environment=FLASK_APP=/home/ec2-user/app.py
+            [Service]
+            User=root
+            WorkingDirectory=/home/ec2-user
+            ExecStart=/usr/local/bin/flask run --host=0.0.0.0 --port=80
+            Restart=always
+            Environment=FLASK_APP=/home/ec2-user/app.py
 
-          [Install]
-          WantedBy=multi-user.target
-          EOF
+            [Install]
+            WantedBy=multi-user.target
+            EOF
 
-          systemctl enable webservice
-          systemctl start webservice
+            systemctl enable webservice
+            systemctl start webservice
 
-  # Auto Scaling Group
+  # Update Auto Scaling Group to use Launch Template
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier: !Ref SubnetIds
-      LaunchConfigurationName: !Ref LaunchConfiguration
+      # Replace LaunchConfigurationName with LaunchTemplate
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
       MinSize: 1
       MaxSize: 2
       DesiredCapacity: 1
@@ -224,8 +230,11 @@ Outputs:
 
   VPCEndpointServiceId:
     Description: VPC Endpoint Service ID
-    Value: !Ref VPCEndpointService
+    Value: !GetAtt VPCEndpointService.ServiceId
 
+  # The service name can be constructed using the ServiceId
   VPCEndpointServiceName:
     Description: VPC Endpoint Service Name
-    Value: !GetAtt VPCEndpointService.ServiceName
+    Value: !Sub 
+      - "com.amazonaws.vpce.${AWS::Region}.${ServiceId}"
+      - ServiceId: !GetAtt VPCEndpointService.ServiceId
