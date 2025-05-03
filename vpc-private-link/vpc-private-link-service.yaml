@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for AWS PrivateLink service with a sample backend'
+
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - SubnetIds
+      - Label:
+          default: "Instance Configuration"
+        Parameters:
+          - LatestAmiId
+    ParameterLabels:
+      Application:
+        default: "Application Name"
+      Environment:
+        default: "Environment Name (dev/staging/prod)"
+      VpcId:
+        default: "VPC ID for PrivateLink Service"
+      SubnetIds:
+        default: "Subnet IDs for NLB and EC2 instances"
+      LatestAmiId:
+        default: "Amazon Linux 2 AMI ID"
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where the resources will be created
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of subnet IDs for the NLB and EC2 instance
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: The latest Amazon Linux 2 AMI from the Parameter Store
+
+Resources:
+
+  # Security Group for EC2 instance
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the backend service
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref NLBSecurityGroup
+
+  # Security Group for NLB
+  NLBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the NLB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  # EC2 Instance Role
+  ServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  ServiceInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ServiceRole
+
+  # Launch Configuration
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref ServiceSecurityGroup
+      IamInstanceProfile: !Ref ServiceInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y python3 pip
+          pip3 install flask
+
+          cat <<EOF > /home/ec2-user/app.py
+          from flask import Flask, request, jsonify
+          app = Flask(__name__)
+
+          @app.route('/sum', methods=['POST'])
+          def sum_numbers():
+              data = request.get_json()
+              num1 = data.get('num1', 0)
+              num2 = data.get('num2', 0)
+              return jsonify({'result': num1 + num2})
+
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=80)
+          EOF
+
+          cat <<EOF > /etc/systemd/system/webservice.service
+          [Unit]
+          Description=Simple Web Service
+          After=network.target
+
+          [Service]
+          User=root
+          WorkingDirectory=/home/ec2-user
+          ExecStart=/usr/local/bin/flask run --host=0.0.0.0 --port=80
+          Restart=always
+          Environment=FLASK_APP=/home/ec2-user/app.py
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          systemctl enable webservice
+          systemctl start webservice
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref NLBTargetGroup
+      Tags:
+        - Key: Name
+          Value: PrivateLink-Service
+          PropagateAtLaunch: true
+
+  # Network Load Balancer
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets: !Ref SubnetIds
+      Tags:
+        - Key: Name
+          Value: PrivateLink-NLB
+
+  # NLB Target Group
+  NLBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: PrivateLink-TargetGroup
+
+  # NLB Listener
+  NLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref NLBTargetGroup
+
+  # VPC Endpoint Service (PrivateLink)
+  VPCEndpointService:
+    Type: AWS::EC2::VPCEndpointService
+    Properties:
+      NetworkLoadBalancerArns: 
+        - !Ref NetworkLoadBalancer
+      AcceptanceRequired: true
+      Tags:
+        - Key: Name
+          Value: PrivateLink-EndpointService
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Auto Scaling Group Name
+    Value: !Ref AutoScalingGroup
+
+  NetworkLoadBalancerArn:
+    Description: Network Load Balancer ARN
+    Value: !Ref NetworkLoadBalancer
+
+  VPCEndpointServiceId:
+    Description: VPC Endpoint Service ID
+    Value: !Ref VPCEndpointService
+
+  VPCEndpointServiceName:
+    Description: VPC Endpoint Service Name
+    Value: !GetAtt VPCEndpointService.ServiceName
