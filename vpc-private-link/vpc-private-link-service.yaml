@@ -56,19 +56,12 @@ Parameters:
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
     Description: The latest Amazon Linux 2 AMI from the Parameter Store
 
-Resources:
+  NLBSubnetCidr:
+    Type: String
+    Description: CIDR block of the subnet where NLB is deployed
+    Default: 10.0.0.0/24
 
-  # Security Group for EC2 instance
-  ServiceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for the backend service
-      VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          SourceSecurityGroupId: !Ref NLBSecurityGroup
+Resources:
 
   # Security Group for NLB
   NLBSecurityGroup:
@@ -81,6 +74,54 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-nlb-sg
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Security Group for EC2 instance
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Backend Service
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: []
+      # SecurityGroupIngress:
+      #   - IpProtocol: tcp
+      #     FromPort: 80
+      #     ToPort: 80
+      #     SourceSecurityGroupId: !Ref NLBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-service-sg
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+          
+  # Allow traffic from NLB security group
+  ServiceSecurityGroupIngressFromNLB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ServiceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref NLBSecurityGroup
+
+  # Allow traffic from NLB subnet
+  ServiceSecurityGroupIngressFromSubnet:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ServiceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: !Ref NLBSubnetCidr #"10.0.0.0/24" #!Ref NLBSubnetCidr
+
 
   # EC2 Instance Role
   ServiceRole:
@@ -125,8 +166,15 @@ Resources:
             from flask import Flask, request, jsonify
             app = Flask(__name__)
 
-            @app.route('/sum', methods=['POST'])
+            @app.route('/health', methods=['GET'])
+            def health_check():
+                return jsonify({'status': 'healthy'}), 200
+
+            @app.route('/sum', methods=['GET', 'POST'])
             def sum_numbers():
+                if request.method == 'GET':
+                    return jsonify({'status': 'healthy'}), 200
+
                 data = request.get_json()
                 num1 = data.get('num1', 0)
                 num2 = data.get('num2', 0)
@@ -193,9 +241,16 @@ Resources:
       Protocol: TCP
       VpcId: !Ref VpcId
       TargetType: instance
+      HealthCheckProtocol: TCP    # NLB only supports TCP health checks
+      HealthCheckPort: 80
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
       Tags:
         - Key: Name
           Value: PrivateLink-TargetGroup
+
+
 
   # NLB Listener
   NLBListener:
