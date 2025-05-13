@@ -10,6 +10,21 @@ Parameters:
     AllowedPattern: ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$
     Description: Cognito Domain Name. xxx.auth.us-west-2.amazoncognito.com
 
+  CognitoClientCallbackUrlList:
+    Type: CommaDelimitedList
+    Description: Callback
+    Default: "https://route-LoadB-1JLLQ9W335CHB-1783233386.eu-west-1.elb.amazonaws.com/oauth2/idpresponse,https://r53lb2.redcartbox.com/oauth2/idpresponse,https://r53lb2.redcartbox.com"
+
+  CognitoClientRedirectUrl:
+    Type: String
+    Description: Redirect URL
+    Default: "https://r53lb2.redcartbox.com" #http://localhost:3000"
+
+  CognitoClientLogoutUrlList:
+    Type: CommaDelimitedList
+    Description: Callback
+    Default: "https://r53lb2.redcartbox.com/logout" #http://localhost:3000"
+
 Resources:
 
   UserPool:
@@ -70,8 +85,8 @@ Resources:
     Properties:
       UserPoolId: !Ref UserPool
       AllowedOAuthFlowsUserPoolClient: true
-      CallbackURLs:
-        - http://localhost:3000
+      CallbackURLs: !Ref CognitoClientCallbackUrlList
+      #  - http://localhost:3000
       AllowedOAuthFlows:
         - code
         - implicit
@@ -82,15 +97,42 @@ Resources:
         - profile
       SupportedIdentityProviders:
         - COGNITO
-      DefaultRedirectURI: "http://localhost:3000"
+      DefaultRedirectURI: !Ref CognitoClientRedirectUrl
       ExplicitAuthFlows:
         - 'ALLOW_REFRESH_TOKEN_AUTH'
-      LogoutURLs:
-        - 'http://localhost:3000'
+      LogoutURLs: !Ref CognitoClientLogoutUrlList
+      #  - 'http://localhost:3000'
       PreventUserExistenceErrors: ENABLED
       WriteAttributes:
         - 'email'
 
+  UserPoolClientWithSecret:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs: !Ref CognitoClientCallbackUrlList
+      #  - http://localhost:3000
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - phone
+        - email
+        - openid
+        - profile
+      SupportedIdentityProviders:
+        - COGNITO
+      DefaultRedirectURI: !Ref CognitoClientRedirectUrl
+      ExplicitAuthFlows:
+        - 'ALLOW_REFRESH_TOKEN_AUTH'
+      LogoutURLs: !Ref CognitoClientLogoutUrlList
+      #  - 'http://localhost:3000'
+      PreventUserExistenceErrors: ENABLED
+      WriteAttributes:
+        - 'email'
+        
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
@@ -107,6 +149,6 @@ Outputs:
     Value: !Ref UserPoolClient
     Description: The app client
 
-  HostedUIURL:
+  HostedAuthUrl:
     Value: !Sub https://${CognitoDomainName}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&scope=email+openid+phone+profile&redirect_uri=http://localhost:3000
     Description: The hosted UI URL
