@@ -12,7 +12,7 @@ Parameters:
 
   ContainerRepositoryType:
     Type: String
-    Default: "ECR" #ECR_PUBLIC
+    Default: "ECR"
 
 Resources:
 
@@ -69,6 +69,18 @@ Resources:
             Resource: '*'
           - Action:
               - 'bedrock:*'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'ssm:GetParameters'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'secretsmanager:GetSecretValue'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'kms:Decrypt*'
             Effect: Allow
             Resource: '*'
 
