@@ -36,25 +36,50 @@ Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
           default: "Repository Configuration"
         Parameters:
-          - RepositoryNames
-          - MonitoredBranches
+          - RepositoryNameList
+          - RepositoryBranchList
       - Label:
           default: "Lambda Configuration"
         Parameters:
           - LambdaRuntime
     ParameterLabels:
-      RepositoryNames:
+      Application:
+        default: "Application Name"
+      Environment:
+        default: "Environment Name"
+      RepositoryNameList:
         default: "CodeCommit Repository Names to Monitor"
-      MonitoredBranches:
+      RepositoryBranchList:
         default: "Git Branches to Monitor for Changes"
       LambdaRuntime:
         default: "Lambda Function Runtime Version"
 
 Parameters:
+  # Application Configuration Parameters
+  Application:
+    Type: String
+    Default: "demo"
+    Description: |
+      Application name used for resource naming and tagging.
+      This will be used as a prefix for all resource names.
+
+  Environment:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "staging", "prod"]
+    Description: |
+      Environment name used for resource naming and tagging.
+      This will be combined with the application name for resource identification.
+
   # Repository Configuration Parameters
-  RepositoryNames:
+  RepositoryNameList:
     Type: CommaDelimitedList
     Default: "demo-code-repository,demo-server-blank"
     Description: |
@@ -62,7 +87,7 @@ Parameters:
       Events from these repositories will trigger the EventBridge rules.
       Example: "repo1,repo2,repo3"
 
-  MonitoredBranches:
+  RepositoryBranchList:
     Type: CommaDelimitedList
     Default: "main,staging,develop"
     Description: |
@@ -88,7 +113,7 @@ Resources:
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${AWS::StackName}-codecommit-eventbridge-lambda-role"
+      RoleName: !Sub "${Application}-${Environment}-codecommit-eventbridge-lambda-role"
       Description: |
         IAM role that grants the Lambda function permission to:
         - Write logs to CloudWatch Logs (via AWSLambdaBasicExecutionRole)
@@ -120,8 +145,10 @@ Resources:
                 Resource: 
                   - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:*"
       Tags:
-        - Key: Purpose
-          Value: EventBridge-CodeCommit-Tutorial
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
         - Key: Component
           Value: Lambda-Execution-Role
 
@@ -134,9 +161,9 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-codecommit-event-processor"
+      FunctionName: !Sub "${Application}-${Environment}-codecommit-event-processor"
       Description: |
-        Tutorial Lambda function that processes CodeCommit events from EventBridge.
+        Lambda function that processes CodeCommit events from EventBridge.
         This function demonstrates how to receive and parse different types of 
         CodeCommit events with input transformation applied.
       Runtime: !Ref LambdaRuntime
@@ -147,13 +174,14 @@ Resources:
       Environment:
         Variables:
           # These environment variables are available to the Lambda function
-          STACK_NAME: !Ref AWS::StackName
+          APPLICATION: !Ref Application
+          ENVIRONMENT: !Ref Environment
           AWS_REGION: !Ref AWS::Region
           LOG_LEVEL: "INFO"
       Code:
-        # Inline code for tutorial purposes - in production, use deployment packages
+        # Inline code for production use - demonstrates event processing patterns
         ZipFile: |
-          // CodeCommit Event Processor - Tutorial Function
+          // CodeCommit Event Processor - Production Function
           // This function demonstrates how to process different types of CodeCommit events
 
           exports.handler = async (event) => {
@@ -289,8 +317,10 @@ Resources:
               }
           };
       Tags:
-        - Key: Purpose
-          Value: EventBridge-CodeCommit-Tutorial
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
         - Key: Component
           Value: Event-Processor-Function
 
@@ -301,10 +331,10 @@ Resources:
   # branch creation/updates, tag operations, and branch/tag deletions
   # Event Pattern: Matches CodeCommit Repository State Change events for specific
   # repositories and branches, filtering for reference operations (create/update/delete)
-  EventBridgeRuleRepositoryStateChange: 
+  EventBridgeRuleCodeCommitRepositoryStateChange: 
     Type: AWS::Events::Rule
     Properties: 
-      Name: !Sub "${AWS::StackName}-repository-state-changes"
+      Name: !Sub "${Application}-${Environment}-repository-state-changes"
       Description: |
         Captures CodeCommit repository state change events including:
         - Push events (referenceUpdated) when commits are pushed to branches
@@ -324,14 +354,14 @@ Resources:
           referenceType:
             - branch                         # Only branch events
             - tag                           # Only tag events
-          referenceName: !Ref MonitoredBranches  # Only specified branches
+          referenceName: !Ref RepositoryBranchList  # Only specified branches
         resources: !Split                     # Convert comma-delimited list to array of ARNs
           - ","
           - !Sub 
             - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
             - inner: !Join
               - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
-              - !Ref RepositoryNames
+              - !Ref RepositoryNameList
       State: "ENABLED"                       # Rule is active and will trigger events
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
@@ -368,10 +398,10 @@ Resources:
   # updates, status changes, and merge operations
   # Event Pattern: Matches CodeCommit Pull Request State Change events for
   # all pull request lifecycle operations across specified repositories
-  EventBridgeRulePullRequestEvents: 
+  EventBridgeRuleCodeCommitPullRequestEvents: 
     Type: AWS::Events::Rule
     Properties: 
-      Name: !Sub "${AWS::StackName}-pull-request-events"
+      Name: !Sub "${Application}-${Environment}-pull-request-events"
       Description: |
         Captures CodeCommit pull request lifecycle events including:
         - Pull request creation (pullRequestCreated)
@@ -395,7 +425,7 @@ Resources:
             - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
             - inner: !Join
               - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
-              - !Ref RepositoryNames
+              - !Ref RepositoryNameList
       State: "ENABLED"
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
@@ -444,10 +474,10 @@ Resources:
   # new comments and replies to existing comments
   # Event Pattern: Matches CodeCommit comment events across different detail-types
   # for comprehensive comment tracking on both PRs and individual commits
-  EventBridgeRuleCommentEvents:
+  EventBridgeRuleCodeCommitCommentEvents:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub "${AWS::StackName}-comment-events"
+      Name: !Sub "${Application}-${Environment}-comment-events"
       Description: |
         Captures CodeCommit comment events including:
         - Comments on pull requests (commentOnPullRequestCreated)
@@ -470,7 +500,7 @@ Resources:
             - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
             - inner: !Join
               - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
-              - !Ref RepositoryNames
+              - !Ref RepositoryNameList
       State: "ENABLED"
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
@@ -514,33 +544,33 @@ Resources:
 
   # Permission for Repository State Change events to invoke Lambda
   # This allows the EventBridge rule to call the Lambda function when repository events occur
-  InvokeLambdaPermissionRepositoryStateChange:
+  InvokeLambdaPermissionCodeCommitRepositoryStateChange:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn    # Target Lambda function
       Action: "lambda:InvokeFunction"              # Permission to invoke the function
       Principal: "events.amazonaws.com"            # EventBridge service principal
-      SourceArn: !GetAtt EventBridgeRuleRepositoryStateChange.Arn  # Specific rule that can invoke
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitRepositoryStateChange.Arn  # Specific rule that can invoke
 
   # Permission for Pull Request events to invoke Lambda
   # This allows the pull request EventBridge rule to call the Lambda function
-  InvokeLambdaPermissionPullRequestEvents:
+  InvokeLambdaPermissionCodeCommitPullRequestEvents:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt EventBridgeRulePullRequestEvents.Arn
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitPullRequestEvents.Arn
 
   # Permission for Comment events to invoke Lambda
   # This allows the comment EventBridge rule to call the Lambda function
-  InvokeLambdaPermissionCommentEvents:
+  InvokeLambdaPermissionCodeCommitCommentEvents:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt EventBridgeRuleCommentEvents.Arn
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitCommentEvents.Arn
 
   # ============================================================================
   # CLOUDWATCH LOG GROUP - Lambda Function Logs
@@ -553,8 +583,10 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"  # Standard Lambda log group naming
       RetentionInDays: 14                                 # Keep logs for 2 weeks (cost optimization)
       Tags:
-        - Key: Purpose
-          Value: EventBridge-CodeCommit-Tutorial
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
         - Key: Component
           Value: Lambda-Logs
 
@@ -567,52 +599,52 @@ Outputs:
     Description: "ARN of the Lambda function that processes CodeCommit events"
     Value: !GetAtt LambdaFunction.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-LambdaFunctionArn"
+      Name: !Sub "${Application}-${Environment}-LambdaFunctionArn"
 
   LambdaFunctionName:
     Description: "Name of the Lambda function for CloudWatch monitoring"
     Value: !Ref LambdaFunction
     Export:
-      Name: !Sub "${AWS::StackName}-LambdaFunctionName"
+      Name: !Sub "${Application}-${Environment}-LambdaFunctionName"
 
   # IAM Role Information
   FunctionExecutionRoleArn:
     Description: "ARN of the IAM role used by the Lambda function"
     Value: !GetAtt FunctionExecutionRole.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-ExecutionRoleArn"
+      Name: !Sub "${Application}-${Environment}-ExecutionRoleArn"
 
   # EventBridge Rules Information
   RepositoryStateChangeRuleArn:
     Description: "ARN of EventBridge rule for repository state changes (push, branch/tag events)"
-    Value: !GetAtt EventBridgeRuleRepositoryStateChange.Arn
+    Value: !GetAtt EventBridgeRuleCodeCommitRepositoryStateChange.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-RepositoryStateChangeRuleArn"
+      Name: !Sub "${Application}-${Environment}-RepositoryStateChangeRuleArn"
 
   PullRequestEventsRuleArn:
     Description: "ARN of EventBridge rule for pull request lifecycle events"
-    Value: !GetAtt EventBridgeRulePullRequestEvents.Arn
+    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestEvents.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-PullRequestEventsRuleArn"
+      Name: !Sub "${Application}-${Environment}-PullRequestEventsRuleArn"
 
   CommentEventsRuleArn:
     Description: "ARN of EventBridge rule for comment events on PRs and commits"
-    Value: !GetAtt EventBridgeRuleCommentEvents.Arn
+    Value: !GetAtt EventBridgeRuleCodeCommitCommentEvents.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-CommentEventsRuleArn"
+      Name: !Sub "${Application}-${Environment}-CommentEventsRuleArn"
 
   # Configuration Summary
-  MonitoredRepositories:
+  MonitoredRepositoryList:
     Description: "List of CodeCommit repositories being monitored for events"
-    Value: !Join [", ", !Ref RepositoryNames]
+    Value: !Join [", ", !Ref RepositoryNameList]
 
-  MonitoredBranches:
+  MonitoredBranchList:
     Description: "List of branches being monitored for push events"
-    Value: !Join [", ", !Ref MonitoredBranches]
+    Value: !Join [", ", !Ref RepositoryBranchList]
 
   # CloudWatch Logs Information
   CloudWatchLogGroup:
     Description: "CloudWatch Log Group where Lambda function logs are stored"
     Value: !Ref LambdaLogGroup
     Export:
-      Name: !Sub "${AWS::StackName}-LogGroup"
+      Name: !Sub "${Application}-${Environment}-LogGroup"
