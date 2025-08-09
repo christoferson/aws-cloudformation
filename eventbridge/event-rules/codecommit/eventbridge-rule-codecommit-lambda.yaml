@@ -1,61 +1,222 @@
-
 AWSTemplateFormatVersion: "2010-09-09"
-Description: EventBridge Rule (CodeCommit) - Transform Output - Send to Lambda
+Description: |
+  EventBridge Rules for CodeCommit Events with Lambda Processing
+
+  This template creates:
+  - Lambda function to process CodeCommit events
+  - EventBridge rules for repository state changes and pull request events
+  - IAM roles and permissions for secure event processing
+  - Input transformers to structure event data
 
 Metadata:
+  StackVersion: 2
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Repository Configuration"
+        Parameters:
+          - RepositoryNames
+          - MonitoredBranches
+      - Label:
+          default: "Lambda Configuration"
+        Parameters:
+          - LambdaRuntime
+          - DatabaseName
+          - DatabaseUser
+          - NotificationEmail
+      - Label:
+          default: "EventBridge Configuration"
+        Parameters:
+          - EnablePushEvents
+          - EnablePullRequestEvents
+          - EnableBranchEvents
+          - EnableTagEvents
+    ParameterLabels:
+      RepositoryNames:
+        default: "CodeCommit Repository Names"
+      MonitoredBranches:
+        default: "Branches to Monitor"
+      LambdaRuntime:
+        default: "Lambda Runtime Version"
 
-  StackVersion: 1
+Parameters:
+  RepositoryNames:
+    Type: CommaDelimitedList
+    Default: "demo-code-repository,demo-server-blank"
+    Description: "List of CodeCommit repository names to monitor"
+
+  MonitoredBranches:
+    Type: CommaDelimitedList
+    Default: "main,staging,develop"
+    Description: "List of branch names to monitor for changes"
+
+  LambdaRuntime:
+    Type: String
+    Default: "nodejs18.x"
+    AllowedValues:
+      - "nodejs18.x"
+      - "nodejs16.x"
+      - "python3.9"
+      - "python3.10"
+      - "python3.11"
+    Description: "Lambda function runtime version"
+
+  DatabaseName:
+    Type: String
+    Default: "lambdadb"
+    Description: "Database name for Lambda function configuration"
+
+  DatabaseUser:
+    Type: String
+    Default: "admin"
+    Description: "Database user for Lambda function configuration"
+
+  NotificationEmail:
+    Type: String
+    Default: ""
+    Description: "Email address for notifications (optional)"
+
+  EnablePushEvents:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable monitoring of push events"
+
+  EnablePullRequestEvents:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable monitoring of pull request events"
+
+  EnableBranchEvents:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable monitoring of branch creation/deletion events"
+
+  EnableTagEvents:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Enable monitoring of tag events"
+
+Conditions:
+  CreatePushRule: !Equals [!Ref EnablePushEvents, "true"]
+  CreatePullRequestRule: !Equals [!Ref EnablePullRequestEvents, "true"]
+  CreateBranchRule: !Equals [!Ref EnableBranchEvents, "true"]
+  CreateTagRule: !Equals [!Ref EnableTagEvents, "true"]
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
 
 Resources:
-
+  # IAM Role for Lambda Function Execution
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "eventbridge-rule-codecommit-lambda-role"
+      RoleName: !Sub "${AWS::StackName}-lambda-execution-role"
+      Description: "IAM role for EventBridge CodeCommit Lambda function execution"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service:
-              - lambda.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CodeCommitReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codecommit:GetRepository
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetPullRequest
+                  - codecommit:ListRepositories
+                Resource: 
+                  - !Sub "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:*"
+      Tags:
+        - Key: Purpose
+          Value: EventBridge-CodeCommit-Integration
+        - Key: ManagedBy
+          Value: CloudFormation
 
+  # Lambda Function for Processing CodeCommit Events
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName : "eventbridge-rule-codecommit-lambda-function"
-      Description: "EventBridge CodeCommit Lambda Notification Handler"
-      Runtime: nodejs16.x
+      FunctionName: !Sub "${AWS::StackName}-codecommit-processor"
+      Description: "Processes CodeCommit events from EventBridge with input transformation"
+      Runtime: !Ref LambdaRuntime
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
+      Timeout: 30
+      ReservedConcurrencyLimit: 10
       Environment:
         Variables:
-          databaseName: lambdadb
-          databaseUser: admin
+          DATABASE_NAME: !Ref DatabaseName
+          DATABASE_USER: !Ref DatabaseUser
+          NOTIFICATION_EMAIL: !Ref NotificationEmail
+          STACK_NAME: !Ref AWS::StackName
       Code:
         ZipFile: |
           exports.handler = async (event) => {
-              console.log(event);
-              if (event.type == 'error') { throw new Error('Authentication Failed'); }
-              console.log('Type: ' + event['detail-type']);
-              console.log('Time: ' + event.time);
-              const response = {
-                  statusCode: 200,
-                  body: JSON.stringify('Hi from the ' + event.routeKey + ' route!'),
-              };
-              return response;
-          };
+              console.log('Received CodeCommit event:', JSON.stringify(event, null, 2));
 
+              try {
+                  // Handle different event types
+                  if (event.CallerUserArn) {
+                      console.log('Repository Event Details:');
+                      console.log('- Repository:', event.RepositoryName);
+                      console.log('- Branch:', event.ReferenceName);
+                      console.log('- User:', event.CallerUserArn);
+                      console.log('- Commit ID:', event.CommitId);
+                  }
+
+                  if (event.PullRequestId) {
+                      console.log('Pull Request Event Details:');
+                      console.log('- PR ID:', event.PullRequestId);
+                      console.log('- Title:', event.Title);
+                      console.log('- Author:', event.Author);
+                      console.log('- Target Branch:', event.DestinationReference);
+                  }
+
+                  // Add your business logic here
+                  // Examples:
+                  // - Send notifications
+                  // - Trigger CI/CD pipelines
+                  // - Update databases
+                  // - Call other AWS services
+
+                  return {
+                      statusCode: 200,
+                      body: JSON.stringify({
+                          message: 'CodeCommit event processed successfully',
+                          timestamp: new Date().toISOString(),
+                          eventType: event.EventType || 'unknown'
+                      })
+                  };
+
+              } catch (error) {
+                  console.error('Error processing event:', error);
+                  throw error;
+              }
+          };
+      Tags:
+        - Key: Purpose
+          Value: EventBridge-CodeCommit-Integration
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # EventBridge Rule: Repository State Changes (Push Events)
   EventBridgeRuleCodeCommitPushed: 
     Type: AWS::Events::Rule
+    Condition: CreatePushRule
     Properties: 
-      Name: eventbridge-rule-codecommit-on-push-lambda
-      Description: "CodeCommit Trigger"
-      #EventBusName: default
+      Name: !Sub "${AWS::StackName}-codecommit-push-events"
+      Description: "Triggers on CodeCommit push events to monitored branches"
       EventPattern:
         source:
           - aws.codecommit
@@ -67,37 +228,45 @@ Resources:
             - referenceUpdated
           referenceType:
             - branch
-          referenceName:
-            - main
-            - staging
-        resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-server-blank"
+          referenceName: !Ref MonitoredBranches
+        resources: !Split
+          - ","
+          - !Sub 
+            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
+            - inner: !Join
+              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
+              - !Ref RepositoryNames
       State: "ENABLED"
-      Targets: #up to five (5) targets
-        - 
-          Arn: !GetAtt LambdaFunction.Arn
-          Id: "TargetFunction"
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "CodeCommitPushTarget"
           InputTransformer: 
             InputPathsMap:
-              "CallerUserArn" : "$.detail.callerUserArn"
-              "ReferenceName" : "$.detail.referenceName"
-              "RepositoryName" : "$.detail.repositoryName"
-              "CommitId" : "$.detail.commitId"
+              CallerUserArn: "$.detail.callerUserArn"
+              ReferenceName: "$.detail.referenceName"
+              RepositoryName: "$.detail.repositoryName"
+              CommitId: "$.detail.commitId"
+              EventName: "$.detail.event"
+              ReferenceType: "$.detail.referenceType"
             InputTemplate: |
               {
-                "CallerUserArn" : "\"<CallerUserArn>\"",
-                "ReferenceName" : "\"<ReferenceName>\"",
-                "RepositoryName": "\"<RepositoryName>\"",
-                "CommitId": "\"<CommitId>\""
+                "EventType": "RepositoryStateChange",
+                "CallerUserArn": "<CallerUserArn>",
+                "ReferenceName": "<ReferenceName>",
+                "RepositoryName": "<RepositoryName>",
+                "CommitId": "<CommitId>",
+                "EventName": "<EventName>",
+                "ReferenceType": "<ReferenceType>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
               }
 
-  EventBridgeRuleCodeCommitPullRequestMerged: 
+  # EventBridge Rule: Pull Request Events
+  EventBridgeRuleCodeCommitPullRequest: 
     Type: AWS::Events::Rule
+    Condition: CreatePullRequestRule
     Properties: 
-      Name: eventbridge-rule-codecommit-pr-merged
-      Description: "CodeCommit Notification Trigger on Pull Request Merged"
-      #EventBusName: default
+      Name: !Sub "${AWS::StackName}-codecommit-pullrequest-events"
+      Description: "Triggers on CodeCommit pull request state changes"
       EventPattern:
         source:
           - aws.codecommit
@@ -105,65 +274,178 @@ Resources:
           - "CodeCommit Pull Request State Change"
         detail:
           event:
+            - pullRequestCreated
+            - pullRequestSourceBranchUpdated
+            - pullRequestStatusChanged
             - pullRequestMergeStatusUpdated
-          destinationReference:
-            - refs/heads/main
-          isMerged: 
-            - "True"
-          pullRequestStatus:
-            - "Closed"
-        resources:
-          - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:demo-code-repository"
+        resources: !Split
+          - ","
+          - !Sub 
+            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
+            - inner: !Join
+              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
+              - !Ref RepositoryNames
       State: "ENABLED"
       Targets:
-        - 
-          Arn: !GetAtt LambdaFunction.Arn
-          Id: "TargetFunction"
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "CodeCommitPullRequestTarget"
           InputTransformer:
             InputPathsMap:
-              "Author" : "$.detail.author"
-              "CallerUserArn" : "$.detail.callerUserArn"
-              "Title" : "$.detail.title"
-              "Description" : "$.detail.description"
-              "RepositoryName" : "$.detail.repositoryNames[0]"
-              "DestinationReference" : "$.detail.destinationReference"
-              "NotificationBody" : "$.detail.notificationBody"
-              "PullRequestId" : "$.detail.pullRequestId"
+              Author: "$.detail.author"
+              CallerUserArn: "$.detail.callerUserArn"
+              Title: "$.detail.title"
+              Description: "$.detail.description"
+              RepositoryName: "$.detail.repositoryNames[0]"
+              DestinationReference: "$.detail.destinationReference"
+              SourceReference: "$.detail.sourceReference"
+              PullRequestId: "$.detail.pullRequestId"
+              PullRequestStatus: "$.detail.pullRequestStatus"
+              EventName: "$.detail.event"
+              IsMerged: "$.detail.isMerged"
             InputTemplate: |
               {
-                "Author" : "\"<Author>\"",
-                "CallerUserArn" : "\"<CallerUserArn>\"",
-                "Title" : "\"<Title>\"",
-                "Description" : "\"<Description>\"",
-                "DestinationReference" : "\"<DestinationReference>\"",
-                "PullRequestId" : "\"<PullRequestId>\"",
-                "NotificationBody" : "\"<NotificationBody>\"",
-                "RepositoryName" : "\"<RepositoryName>\""
+                "EventType": "PullRequestStateChange",
+                "Author": "<Author>",
+                "CallerUserArn": "<CallerUserArn>",
+                "Title": "<Title>",
+                "Description": "<Description>",
+                "DestinationReference": "<DestinationReference>",
+                "SourceReference": "<SourceReference>",
+                "PullRequestId": "<PullRequestId>",
+                "PullRequestStatus": "<PullRequestStatus>",
+                "EventName": "<EventName>",
+                "IsMerged": "<IsMerged>",
+                "RepositoryName": "<RepositoryName>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
               }
 
+  # EventBridge Rule: Branch and Tag Events
+  EventBridgeRuleCodeCommitBranchTag:
+    Type: AWS::Events::Rule
+    Condition: CreateBranchRule
+    Properties:
+      Name: !Sub "${AWS::StackName}-codecommit-branch-tag-events"
+      Description: "Triggers on CodeCommit branch and tag creation/deletion"
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - "CodeCommit Repository State Change"
+        detail:
+          event:
+            - referenceCreated
+            - referenceDeleted
+          referenceType:
+            - branch
+            - tag
+        resources: !Split
+          - ","
+          - !Sub 
+            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
+            - inner: !Join
+              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
+              - !Ref RepositoryNames
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "CodeCommitBranchTagTarget"
+          InputTransformer:
+            InputPathsMap:
+              CallerUserArn: "$.detail.callerUserArn"
+              ReferenceName: "$.detail.referenceName"
+              RepositoryName: "$.detail.repositoryName"
+              ReferenceType: "$.detail.referenceType"
+              EventName: "$.detail.event"
+            InputTemplate: |
+              {
+                "EventType": "BranchTagChange",
+                "CallerUserArn": "<CallerUserArn>",
+                "ReferenceName": "<ReferenceName>",
+                "RepositoryName": "<RepositoryName>",
+                "ReferenceType": "<ReferenceType>",
+                "EventName": "<EventName>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
+              }
 
+  # Lambda Permissions for EventBridge Rules
   InvokeLambdaPermissionCodeCommitPushed:
     Type: AWS::Lambda::Permission
+    Condition: CreatePushRule
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
       SourceArn: !GetAtt EventBridgeRuleCodeCommitPushed.Arn
 
-  InvokeLambdaPermissionCodeCommitPullRequestMerged:
+  InvokeLambdaPermissionCodeCommitPullRequest:
     Type: AWS::Lambda::Permission
+    Condition: CreatePullRequestRule
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt EventBridgeRuleCodeCommitPullRequestMerged.Arn
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitPullRequest.Arn
+
+  InvokeLambdaPermissionCodeCommitBranchTag:
+    Type: AWS::Lambda::Permission
+    Condition: CreateBranchRule
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitBranchTag.Arn
+
+  # CloudWatch Log Group for Lambda Function
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 14
 
 Outputs:
   LambdaFunctionArn:
+    Description: "ARN of the Lambda function processing CodeCommit events"
     Value: !GetAtt LambdaFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaFunctionArn"
+
+  LambdaFunctionName:
+    Description: "Name of the Lambda function"
+    Value: !Ref LambdaFunction
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaFunctionName"
+
   FunctionExecutionRoleArn:
+    Description: "ARN of the Lambda execution role"
     Value: !GetAtt FunctionExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ExecutionRoleArn"
+
   EventBridgeRuleCodeCommitPushedArn:
+    Condition: CreatePushRule
+    Description: "ARN of the EventBridge rule for push events"
     Value: !GetAtt EventBridgeRuleCodeCommitPushed.Arn
-  EventBridgeRuleCodeCommitPullRequestMergedArn:
-    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestMerged.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-PushRuleArn"
+
+  EventBridgeRuleCodeCommitPullRequestArn:
+    Condition: CreatePullRequestRule
+    Description: "ARN of the EventBridge rule for pull request events"
+    Value: !GetAtt EventBridgeRuleCodeCommitPullRequest.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-PullRequestRuleArn"
+
+  EventBridgeRuleCodeCommitBranchTagArn:
+    Condition: CreateBranchRule
+    Description: "ARN of the EventBridge rule for branch/tag events"
+    Value: !GetAtt EventBridgeRuleCodeCommitBranchTag.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BranchTagRuleArn"
+
+  MonitoredRepositories:
+    Description: "List of monitored CodeCommit repositories"
+    Value: !Join [", ", !Ref RepositoryNames]
+
+  MonitoredBranches:
+    Description: "List of monitored branches"
+    Value: !Join [", ", !Ref MonitoredBranches]
