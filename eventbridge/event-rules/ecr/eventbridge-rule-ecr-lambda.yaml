@@ -1,0 +1,650 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  EventBridge Rules for CodeCommit Events
+
+  INSTRUCTIONS:
+  1. Deploy this stack to create EventBridge rules for CodeCommit events
+  2. Make changes to your CodeCommit repositories (push, create PRs, add comments)
+  3. Check CloudWatch Logs for the Lambda function to see captured events
+  4. Modify the Lambda function code to add your custom event processing logic
+  5. Use the Input Transformer examples to understand event data structure
+
+  CODECOMMIT EVENTS CAPTURED BY THIS TEMPLATE:
+
+  Repository State Changes:
+  - referenceCreated: New branch or tag created
+  - referenceUpdated: Commits pushed to existing branch
+  - referenceDeleted: Branch or tag deleted
+
+  Pull Request Events:
+  - pullRequestCreated: New pull request created
+  - pullRequestSourceBranchUpdated: Source branch of PR updated with new commits
+  - pullRequestStatusChanged: PR status changed (Open/Closed)
+  - pullRequestMergeStatusUpdated: PR merge status updated (merged/unmerged)
+
+  Comment Events:
+  - commentOnPullRequestCreated: New comment added to pull request
+  - commentOnCommitCreated: New comment added to commit
+  - replyToCommentCreated: Reply added to existing comment
+
+  The Lambda function serves as a skeleton event processor that logs all received events
+  for learning and debugging purposes. EventBridge rules use Input Transformers to
+  restructure event data before sending to Lambda.
+
+Metadata:
+  StackVersion: 2
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Repository Configuration"
+        Parameters:
+          - RepositoryNameList
+          - RepositoryBranchList
+      - Label:
+          default: "Lambda Configuration"
+        Parameters:
+          - LambdaRuntime
+    ParameterLabels:
+      Application:
+        default: "Application Name"
+      Environment:
+        default: "Environment Name"
+      RepositoryNameList:
+        default: "CodeCommit Repository Names to Monitor"
+      RepositoryBranchList:
+        default: "Git Branches to Monitor for Changes"
+      LambdaRuntime:
+        default: "Lambda Function Runtime Version"
+
+Parameters:
+  # Application Configuration Parameters
+  Application:
+    Type: String
+    Default: "demo"
+    Description: |
+      Application name used for resource naming and tagging.
+      This will be used as a prefix for all resource names.
+
+  Environment:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "staging", "prod"]
+    Description: |
+      Environment name used for resource naming and tagging.
+      This will be combined with the application name for resource identification.
+
+  # Repository Configuration Parameters
+  RepositoryNameList:
+    Type: CommaDelimitedList
+    Default: "demo-code-repository,demo-server-blank"
+    Description: |
+      Comma-separated list of CodeCommit repository names to monitor.
+      Events from these repositories will trigger the EventBridge rules.
+      Example: "repo1,repo2,repo3"
+
+  RepositoryBranchList:
+    Type: CommaDelimitedList
+    Default: "main,staging,develop"
+    Description: |
+      Comma-separated list of branch names to monitor for push events.
+      Only changes to these branches will trigger repository state change events.
+      Common branches: main, master, develop, staging, production
+
+  # Lambda Configuration Parameters
+  LambdaRuntime:
+    Type: String
+    Default: "nodejs18.x"
+    AllowedValues: ["nodejs18.x", "nodejs16.x", "python3.9", "python3.10", "python3.11"]
+    Description: |
+      Runtime environment for the Lambda function.
+      The function code is provided inline and works with both Node.js and Python runtimes.
+
+Resources:
+  # ============================================================================
+  # IAM ROLE - Lambda Execution Role
+  # ============================================================================
+  # This role allows the Lambda function to execute and access AWS services
+  # Required permissions: CloudWatch Logs write access and CodeCommit read access
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Application}-${Environment}-codecommit-eventbridge-lambda-role"
+      Description: |
+        IAM role that grants the Lambda function permission to:
+        - Write logs to CloudWatch Logs (via AWSLambdaBasicExecutionRole)
+        - Read CodeCommit repository information for enhanced event processing
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com  # Only Lambda service can assume this role
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        # AWS managed policy that provides basic Lambda execution permissions
+        # Includes: logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        # Custom policy for CodeCommit read access (optional - for enhanced event processing)
+        - PolicyName: CodeCommitReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codecommit:GetRepository      # Get repository metadata
+                  - codecommit:GetBranch         # Get branch information
+                  - codecommit:GetCommit         # Get commit details
+                  - codecommit:GetPullRequest    # Get pull request details
+                  - codecommit:ListRepositories  # List available repositories
+                Resource: 
+                  - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:*"
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Lambda-Execution-Role
+
+  # ============================================================================
+  # LAMBDA FUNCTION - Event Processor
+  # ============================================================================
+  # This Lambda function receives and processes CodeCommit events from EventBridge
+  # It serves as a skeleton/template for building actual event processing logic
+  # The function demonstrates how to parse different event types with input transformation
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Application}-${Environment}-codecommit-event-processor"
+      Description: |
+        Lambda function that processes CodeCommit events from EventBridge.
+        This function demonstrates how to receive and parse different types of 
+        CodeCommit events with input transformation applied.
+      Runtime: !Ref LambdaRuntime
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Timeout: 30                    # Maximum execution time in seconds
+      ReservedConcurrencyLimit: 10   # Limit concurrent executions to prevent overwhelming
+      Environment:
+        Variables:
+          # These environment variables are available to the Lambda function
+          APPLICATION: !Ref Application
+          ENVIRONMENT: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+          LOG_LEVEL: "INFO"
+      Code:
+        # Inline code for production use - demonstrates event processing patterns
+        ZipFile: |
+          // CodeCommit Event Processor - Production Function
+          // This function demonstrates how to process different types of CodeCommit events
+
+          exports.handler = async (event) => {
+              console.log('='.repeat(80));
+              console.log('CODECOMMIT EVENT RECEIVED');
+              console.log('='.repeat(80));
+
+              // Log the complete event for learning purposes
+              console.log('Complete Event Object:');
+              console.log(JSON.stringify(event, null, 2));
+
+              try {
+                  // Determine event type and process accordingly
+                  const eventType = event.EventType || 'Unknown';
+                  console.log(`\nEvent Type: ${eventType}`);
+
+                  // Process Repository State Change Events (Push, Branch/Tag operations)
+                  if (eventType === 'RepositoryStateChange') {
+                      console.log('\n--- REPOSITORY STATE CHANGE EVENT ---');
+                      console.log(`Repository: ${event.RepositoryName}`);
+                      console.log(`Reference: ${event.ReferenceName} (${event.ReferenceType})`);
+                      console.log(`Event: ${event.EventName}`);
+                      console.log(`User: ${event.CallerUserArn}`);
+                      console.log(`Commit ID: ${event.CommitId || 'N/A'}`);
+                      console.log(`Old Commit ID: ${event.OldCommitId || 'N/A'}`);
+                      console.log(`Timestamp: ${event.Timestamp}`);
+
+                      // Example: Handle different repository events
+                      switch(event.EventName) {
+                          case 'referenceCreated':
+                              console.log(`✅ New ${event.ReferenceType} created: ${event.ReferenceName}`);
+                              break;
+                          case 'referenceUpdated':
+                              console.log(`🔄 ${event.ReferenceType} updated: ${event.ReferenceName}`);
+                              break;
+                          case 'referenceDeleted':
+                              console.log(`❌ ${event.ReferenceType} deleted: ${event.ReferenceName}`);
+                              break;
+                      }
+                  }
+
+                  // Process Pull Request Events
+                  else if (eventType === 'PullRequestStateChange') {
+                      console.log('\n--- PULL REQUEST EVENT ---');
+                      console.log(`Repository: ${event.RepositoryName}`);
+                      console.log(`Pull Request ID: ${event.PullRequestId}`);
+                      console.log(`Title: ${event.Title}`);
+                      console.log(`Author: ${event.Author}`);
+                      console.log(`Event: ${event.EventName}`);
+                      console.log(`Status: ${event.PullRequestStatus}`);
+                      console.log(`Source: ${event.SourceReference}`);
+                      console.log(`Target: ${event.DestinationReference}`);
+                      console.log(`Is Merged: ${event.IsMerged}`);
+                      console.log(`Created: ${event.CreationDate}`);
+                      console.log(`Last Modified: ${event.LastModifiedDate}`);
+                      console.log(`User: ${event.CallerUserArn}`);
+                      console.log(`Timestamp: ${event.Timestamp}`);
+
+                      // Example: Handle different pull request events
+                      switch(event.EventName) {
+                          case 'pullRequestCreated':
+                              console.log('🆕 New pull request created');
+                              break;
+                          case 'pullRequestSourceBranchUpdated':
+                              console.log('🔄 Pull request source branch updated');
+                              break;
+                          case 'pullRequestStatusChanged':
+                              console.log(`📋 Pull request status changed to: ${event.PullRequestStatus}`);
+                              break;
+                          case 'pullRequestMergeStatusUpdated':
+                              console.log(`🔀 Pull request merge status updated. Merged: ${event.IsMerged}`);
+                              break;
+                      }
+                  }
+
+                  // Process Comment Events
+                  else if (eventType === 'CommentEvent') {
+                      console.log('\n--- COMMENT EVENT ---');
+                      console.log(`Repository: ${event.RepositoryName}`);
+                      console.log(`Event: ${event.EventName}`);
+                      console.log(`Comment ID: ${event.CommentId}`);
+                      console.log(`Author: ${event.Author}`);
+                      console.log(`Content: ${event.Content}`);
+                      console.log(`Created: ${event.CreationDate}`);
+                      console.log(`User: ${event.CallerUserArn}`);
+                      console.log(`Timestamp: ${event.Timestamp}`);
+
+                      if (event.PullRequestId) {
+                          console.log(`Pull Request ID: ${event.PullRequestId}`);
+                      }
+                      if (event.CommitId) {
+                          console.log(`Commit ID: ${event.CommitId}`);
+                      }
+                      if (event.InReplyTo) {
+                          console.log(`In Reply To Comment: ${event.InReplyTo}`);
+                      }
+
+                      // Example: Handle different comment events
+                      switch(event.EventName) {
+                          case 'commentOnPullRequestCreated':
+                              console.log('💬 New comment on pull request');
+                              break;
+                          case 'commentOnCommitCreated':
+                              console.log('💬 New comment on commit');
+                              break;
+                          case 'replyToCommentCreated':
+                              console.log('↩️ Reply to existing comment');
+                              break;
+                      }
+                  }
+
+                  console.log('\n' + '='.repeat(80));
+                  console.log('EVENT PROCESSING COMPLETED SUCCESSFULLY');
+                  console.log('='.repeat(80));
+
+                  // Return success response
+                  return {
+                      statusCode: 200,
+                      body: JSON.stringify({
+                          message: 'CodeCommit event processed successfully',
+                          eventType: eventType,
+                          repository: event.RepositoryName,
+                          timestamp: new Date().toISOString()
+                      })
+                  };
+
+              } catch (error) {
+                  console.error('❌ Error processing CodeCommit event:', error);
+                  console.error('Error details:', error.stack);
+
+                  // Re-throw error to trigger Lambda failure (useful for debugging)
+                  throw error;
+              }
+          };
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Event-Processor-Function
+
+  # ============================================================================
+  # EVENTBRIDGE RULE 1 - Repository State Changes
+  # ============================================================================
+  # This rule captures repository state change events including push events,
+  # branch creation/updates, tag operations, and branch/tag deletions
+  # Event Pattern: Matches CodeCommit Repository State Change events for specific
+  # repositories and branches, filtering for reference operations (create/update/delete)
+  EventBridgeRuleCodeCommitRepositoryStateChange: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Sub "${Application}-${Environment}-repository-state-changes"
+      Description: |
+        Captures CodeCommit repository state change events including:
+        - Push events (referenceUpdated) when commits are pushed to branches
+        - Branch creation (referenceCreated) when new branches are created
+        - Tag creation (referenceCreated) when new tags are created
+        - Branch/tag deletion (referenceDeleted) when branches or tags are removed
+      EventPattern:
+        source:
+          - aws.codecommit                    # Only events from CodeCommit service
+        detail-type:
+          - "CodeCommit Repository State Change"  # Specific event type for repository changes
+        detail:
+          event:
+            - referenceCreated               # New branch or tag created
+            - referenceUpdated               # Existing branch updated (push)
+            - referenceDeleted               # Branch or tag deleted
+          referenceType:
+            - branch                         # Only branch events
+            - tag                           # Only tag events
+          referenceName: !Ref RepositoryBranchList  # Only specified branches
+        resources: !Split                     # Convert comma-delimited list to array of ARNs
+          - ","
+          - !Sub 
+            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
+            - inner: !Join
+              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
+              - !Ref RepositoryNameList
+      State: "ENABLED"                       # Rule is active and will trigger events
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "RepositoryStateChangeTarget"
+          # Input Transformer restructures the event data before sending to Lambda
+          # This extracts specific fields and creates a clean, structured payload
+          InputTransformer: 
+            InputPathsMap:
+              # Extract specific fields from the original CodeCommit event
+              CallerUserArn: "$.detail.callerUserArn"        # Who made the change
+              ReferenceName: "$.detail.referenceName"        # Branch/tag name (e.g., "main")
+              RepositoryName: "$.detail.repositoryName"      # Repository name
+              CommitId: "$.detail.commitId"                  # New commit SHA (for pushes)
+              EventName: "$.detail.event"                    # Type of change (referenceCreated/Updated/Deleted)
+              ReferenceType: "$.detail.referenceType"        # "branch" or "tag"
+              OldCommitId: "$.detail.oldCommitId"            # Previous commit SHA (for updates)
+            InputTemplate: |
+              {
+                "EventType": "RepositoryStateChange",
+                "CallerUserArn": "<CallerUserArn>",
+                "ReferenceName": "<ReferenceName>",
+                "RepositoryName": "<RepositoryName>",
+                "CommitId": "<CommitId>",
+                "OldCommitId": "<OldCommitId>",
+                "EventName": "<EventName>",
+                "ReferenceType": "<ReferenceType>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
+              }
+
+  # ============================================================================
+  # EVENTBRIDGE RULE 2 - Pull Request Events
+  # ============================================================================
+  # This rule captures all pull request lifecycle events including creation,
+  # updates, status changes, and merge operations
+  # Event Pattern: Matches CodeCommit Pull Request State Change events for
+  # all pull request lifecycle operations across specified repositories
+  EventBridgeRuleCodeCommitPullRequestEvents: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Sub "${Application}-${Environment}-pull-request-events"
+      Description: |
+        Captures CodeCommit pull request lifecycle events including:
+        - Pull request creation (pullRequestCreated)
+        - Source branch updates (pullRequestSourceBranchUpdated)
+        - Status changes (pullRequestStatusChanged) - Open/Closed
+        - Merge status updates (pullRequestMergeStatusUpdated)
+      EventPattern:
+        source:
+          - aws.codecommit                           # Only CodeCommit service events
+        detail-type:
+          - "CodeCommit Pull Request State Change"    # Pull request specific events
+        detail:
+          event:
+            - pullRequestCreated                      # New PR created
+            - pullRequestSourceBranchUpdated          # Source branch updated with new commits
+            - pullRequestStatusChanged                # PR opened/closed
+            - pullRequestMergeStatusUpdated           # PR merged/unmerged
+        resources: !Split                             # Target specific repositories
+          - ","
+          - !Sub 
+            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
+            - inner: !Join
+              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
+              - !Ref RepositoryNameList
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "PullRequestEventsTarget"
+          # Input Transformer extracts pull request specific information
+          # and creates a structured payload with all relevant PR details
+          InputTransformer:
+            InputPathsMap:
+              # Extract pull request specific fields from the event
+              Author: "$.detail.author"                       # PR author username
+              CallerUserArn: "$.detail.callerUserArn"        # User who triggered this event
+              Title: "$.detail.title"                         # PR title
+              Description: "$.detail.description"             # PR description text
+              RepositoryName: "$.detail.repositoryNames[0]"   # Repository name (first in array)
+              DestinationReference: "$.detail.destinationReference"  # Target branch (e.g., "refs/heads/main")
+              SourceReference: "$.detail.sourceReference"     # Source branch (e.g., "refs/heads/feature-branch")
+              PullRequestId: "$.detail.pullRequestId"         # Unique PR identifier
+              PullRequestStatus: "$.detail.pullRequestStatus" # "Open" or "Closed"
+              EventName: "$.detail.event"                     # Specific event type
+              IsMerged: "$.detail.isMerged"                   # "True" or "False" string
+              CreationDate: "$.detail.creationDate"           # When PR was originally created
+              LastModifiedDate: "$.detail.lastModifiedDate"   # Last update timestamp
+            InputTemplate: |
+              {
+                "EventType": "PullRequestStateChange",
+                "Author": "<Author>",
+                "CallerUserArn": "<CallerUserArn>",
+                "Title": "<Title>",
+                "Description": "<Description>",
+                "DestinationReference": "<DestinationReference>",
+                "SourceReference": "<SourceReference>",
+                "PullRequestId": "<PullRequestId>",
+                "PullRequestStatus": "<PullRequestStatus>",
+                "EventName": "<EventName>",
+                "IsMerged": "<IsMerged>",
+                "CreationDate": "<CreationDate>",
+                "LastModifiedDate": "<LastModifiedDate>",
+                "RepositoryName": "<RepositoryName>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
+              }
+
+  # ============================================================================
+  # EVENTBRIDGE RULE 3 - Comment Events
+  # ============================================================================
+  # This rule captures comment events on pull requests and commits including
+  # new comments and replies to existing comments
+  # Event Pattern: Matches CodeCommit comment events across different detail-types
+  # for comprehensive comment tracking on both PRs and individual commits
+  EventBridgeRuleCodeCommitCommentEvents:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${Application}-${Environment}-comment-events"
+      Description: |
+        Captures CodeCommit comment events including:
+        - Comments on pull requests (commentOnPullRequestCreated)
+        - Comments on commits (commentOnCommitCreated)
+        - Replies to comments (replyToCommentCreated)
+      EventPattern:
+        source:
+          - aws.codecommit                           # Only CodeCommit service events
+        detail-type:
+          - "CodeCommit Comment on Pull Request"     # Comments specifically on PRs
+          - "CodeCommit Comment on Commit"           # Comments specifically on commits
+        detail:
+          event:
+            - commentOnPullRequestCreated            # New comment added to PR
+            - commentOnCommitCreated                 # New comment added to commit
+            - replyToCommentCreated                  # Reply to existing comment (PR or commit)
+        resources: !Split                            # Target specific repositories
+          - ","
+          - !Sub 
+            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
+            - inner: !Join
+              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
+              - !Ref RepositoryNameList
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "CommentEventsTarget"
+          # Input Transformer extracts comment-specific information
+          # and handles both PR comments and commit comments uniformly
+          InputTransformer:
+            InputPathsMap:
+              # Extract comment specific fields from the event
+              Author: "$.detail.author"                       # Comment author username
+              CallerUserArn: "$.detail.callerUserArn"        # User who made the comment
+              CommentId: "$.detail.commentId"                 # Unique comment identifier
+              Content: "$.detail.content"                     # Comment text content
+              RepositoryName: "$.detail.repositoryName"       # Repository name
+              EventName: "$.detail.event"                     # Specific event type
+              PullRequestId: "$.detail.pullRequestId"         # PR ID (if comment on PR, null for commit comments)
+              CommitId: "$.detail.commitId"                   # Commit ID (if comment on commit, may be null for PR comments)
+              InReplyTo: "$.detail.inReplyTo"                 # Parent comment ID (if this is a reply, null for top-level comments)
+              CreationDate: "$.detail.creationDate"           # When comment was created
+            InputTemplate: |
+              {
+                "EventType": "CommentEvent",
+                "Author": "<Author>",
+                "CallerUserArn": "<CallerUserArn>",
+                "CommentId": "<CommentId>",
+                "Content": "<Content>",
+                "RepositoryName": "<RepositoryName>",
+                "EventName": "<EventName>",
+                "PullRequestId": "<PullRequestId>",
+                "CommitId": "<CommitId>",
+                "InReplyTo": "<InReplyTo>",
+                "CreationDate": "<CreationDate>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
+              }
+
+  # ============================================================================
+  # LAMBDA PERMISSIONS - Allow EventBridge to Invoke Lambda
+  # ============================================================================
+  # These permissions are required for EventBridge rules to successfully invoke
+  # the Lambda function. Each rule needs its own permission resource.
+
+  # Permission for Repository State Change events to invoke Lambda
+  # This allows the EventBridge rule to call the Lambda function when repository events occur
+  InvokeLambdaPermissionCodeCommitRepositoryStateChange:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn    # Target Lambda function
+      Action: "lambda:InvokeFunction"              # Permission to invoke the function
+      Principal: "events.amazonaws.com"            # EventBridge service principal
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitRepositoryStateChange.Arn  # Specific rule that can invoke
+
+  # Permission for Pull Request events to invoke Lambda
+  # This allows the pull request EventBridge rule to call the Lambda function
+  InvokeLambdaPermissionCodeCommitPullRequestEvents:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitPullRequestEvents.Arn
+
+  # Permission for Comment events to invoke Lambda
+  # This allows the comment EventBridge rule to call the Lambda function
+  InvokeLambdaPermissionCodeCommitCommentEvents:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRuleCodeCommitCommentEvents.Arn
+
+  # ============================================================================
+  # CLOUDWATCH LOG GROUP - Lambda Function Logs
+  # ============================================================================
+  # Explicit log group creation provides better control over log retention and permissions
+  # Without this, Lambda creates the log group automatically with default settings
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"  # Standard Lambda log group naming
+      RetentionInDays: 14                                 # Keep logs for 2 weeks (cost optimization)
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Lambda-Logs
+
+# ============================================================================
+# OUTPUTS - Information about created resources
+# ============================================================================
+Outputs:
+  # Lambda Function Information
+  LambdaFunctionArn:
+    Description: "ARN of the Lambda function that processes CodeCommit events"
+    Value: !GetAtt LambdaFunction.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-LambdaFunctionArn"
+
+  LambdaFunctionName:
+    Description: "Name of the Lambda function for CloudWatch monitoring"
+    Value: !Ref LambdaFunction
+    Export:
+      Name: !Sub "${Application}-${Environment}-LambdaFunctionName"
+
+  # IAM Role Information
+  FunctionExecutionRoleArn:
+    Description: "ARN of the IAM role used by the Lambda function"
+    Value: !GetAtt FunctionExecutionRole.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-ExecutionRoleArn"
+
+  # EventBridge Rules Information
+  RepositoryStateChangeRuleArn:
+    Description: "ARN of EventBridge rule for repository state changes (push, branch/tag events)"
+    Value: !GetAtt EventBridgeRuleCodeCommitRepositoryStateChange.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-RepositoryStateChangeRuleArn"
+
+  PullRequestEventsRuleArn:
+    Description: "ARN of EventBridge rule for pull request lifecycle events"
+    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestEvents.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-PullRequestEventsRuleArn"
+
+  CommentEventsRuleArn:
+    Description: "ARN of EventBridge rule for comment events on PRs and commits"
+    Value: !GetAtt EventBridgeRuleCodeCommitCommentEvents.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-CommentEventsRuleArn"
+
+  # Configuration Summary
+  MonitoredRepositoryList:
+    Description: "List of CodeCommit repositories being monitored for events"
+    Value: !Join [", ", !Ref RepositoryNameList]
+
+  MonitoredBranchList:
+    Description: "List of branches being monitored for push events"
+    Value: !Join [", ", !Ref RepositoryBranchList]
+
+  # CloudWatch Logs Information
+  CloudWatchLogGroup:
+    Description: "CloudWatch Log Group where Lambda function logs are stored"
+    Value: !Ref LambdaLogGroup
+    Export:
+      Name: !Sub "${Application}-${Environment}-LogGroup"
