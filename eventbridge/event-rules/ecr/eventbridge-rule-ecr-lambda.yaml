@@ -1,31 +1,24 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: |
-  EventBridge Rules for CodeCommit Events
+  EventBridge Rules for ECR Events
 
   INSTRUCTIONS:
-  1. Deploy this stack to create EventBridge rules for CodeCommit events
-  2. Make changes to your CodeCommit repositories (push, create PRs, add comments)
+  1. Deploy this stack to create EventBridge rules for ECR events
+  2. Push images to your ECR repositories, scan images, or perform lifecycle actions
   3. Check CloudWatch Logs for the Lambda function to see captured events
   4. Modify the Lambda function code to add your custom event processing logic
   5. Use the Input Transformer examples to understand event data structure
 
-  CODECOMMIT EVENTS CAPTURED BY THIS TEMPLATE:
+  ECR EVENTS CAPTURED BY THIS TEMPLATE:
 
-  Repository State Changes:
-  - referenceCreated: New branch or tag created
-  - referenceUpdated: Commits pushed to existing branch
-  - referenceDeleted: Branch or tag deleted
+  Image Actions:
+  - PUSH: New image pushed to repository
+  - DELETE: Image deleted from repository
 
-  Pull Request Events:
-  - pullRequestCreated: New pull request created
-  - pullRequestSourceBranchUpdated: Source branch of PR updated with new commits
-  - pullRequestStatusChanged: PR status changed (Open/Closed)
-  - pullRequestMergeStatusUpdated: PR merge status updated (merged/unmerged)
-
-  Comment Events:
-  - commentOnPullRequestCreated: New comment added to pull request
-  - commentOnCommitCreated: New comment added to commit
-  - replyToCommentCreated: Reply added to existing comment
+  Image Scan Events:
+  - SCAN_ON_PUSH: Image scan completed after push
+  - BASIC_SCAN_COMPLETE: Basic vulnerability scan completed
+  - ENHANCED_SCAN_COMPLETE: Enhanced vulnerability scan completed
 
   The Lambda function serves as a skeleton event processor that logs all received events
   for learning and debugging purposes. EventBridge rules use Input Transformers to
@@ -44,7 +37,7 @@ Metadata:
           default: "Repository Configuration"
         Parameters:
           - RepositoryNameList
-          - RepositoryBranchList
+          - ImageTagList
       - Label:
           default: "Lambda Configuration"
         Parameters:
@@ -55,9 +48,9 @@ Metadata:
       Environment:
         default: "Environment Name"
       RepositoryNameList:
-        default: "CodeCommit Repository Names to Monitor"
-      RepositoryBranchList:
-        default: "Git Branches to Monitor for Changes"
+        default: "ECR Repository Names to Monitor"
+      ImageTagList:
+        default: "Image Tags to Monitor for Changes"
       LambdaRuntime:
         default: "Lambda Function Runtime Version"
 
@@ -81,19 +74,19 @@ Parameters:
   # Repository Configuration Parameters
   RepositoryNameList:
     Type: CommaDelimitedList
-    Default: "demo-code-repository,demo-server-blank"
+    Default: "demo-app-repository,demo-server-blank"
     Description: |
-      Comma-separated list of CodeCommit repository names to monitor.
+      Comma-separated list of ECR repository names to monitor.
       Events from these repositories will trigger the EventBridge rules.
       Example: "repo1,repo2,repo3"
 
-  RepositoryBranchList:
+  ImageTagList:
     Type: CommaDelimitedList
-    Default: "main,staging,develop"
+    Default: "latest,main,staging,develop"
     Description: |
-      Comma-separated list of branch names to monitor for push events.
-      Only changes to these branches will trigger repository state change events.
-      Common branches: main, master, develop, staging, production
+      Comma-separated list of image tags to monitor for push events.
+      Only changes to images with these tags will trigger repository events.
+      Common tags: latest, main, develop, staging, production
 
   # Lambda Configuration Parameters
   LambdaRuntime:
@@ -109,15 +102,15 @@ Resources:
   # IAM ROLE - Lambda Execution Role
   # ============================================================================
   # This role allows the Lambda function to execute and access AWS services
-  # Required permissions: CloudWatch Logs write access and CodeCommit read access
+  # Required permissions: CloudWatch Logs write access and ECR read access
   FunctionExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${Application}-${Environment}-codecommit-eventbridge-lambda-role"
+      RoleName: !Sub "${Application}-${Environment}-ecr-eventbridge-lambda-role"
       Description: |
         IAM role that grants the Lambda function permission to:
         - Write logs to CloudWatch Logs (via AWSLambdaBasicExecutionRole)
-        - Read CodeCommit repository information for enhanced event processing
+        - Read ECR repository information for enhanced event processing
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -130,20 +123,21 @@ Resources:
         # Includes: logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        # Custom policy for CodeCommit read access (optional - for enhanced event processing)
-        - PolicyName: CodeCommitReadAccess
+        # Custom policy for ECR read access (optional - for enhanced event processing)
+        - PolicyName: EcrReadAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                  - codecommit:GetRepository      # Get repository metadata
-                  - codecommit:GetBranch         # Get branch information
-                  - codecommit:GetCommit         # Get commit details
-                  - codecommit:GetPullRequest    # Get pull request details
-                  - codecommit:ListRepositories  # List available repositories
+                  - ecr:GetRepository              # Get repository metadata
+                  - ecr:DescribeRepositories       # Describe repository details
+                  - ecr:DescribeImages             # Get image details
+                  - ecr:GetRepositoryPolicy        # Get repository policies
+                  - ecr:DescribeImageScanFindings  # Get scan results
+                  - ecr:ListImages                 # List repository images
                 Resource: 
-                  - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:*"
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*"
       Tags:
         - Key: Application
           Value: !Ref Application
@@ -155,17 +149,17 @@ Resources:
   # ============================================================================
   # LAMBDA FUNCTION - Event Processor
   # ============================================================================
-  # This Lambda function receives and processes CodeCommit events from EventBridge
+  # This Lambda function receives and processes ECR events from EventBridge
   # It serves as a skeleton/template for building actual event processing logic
   # The function demonstrates how to parse different event types with input transformation
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${Application}-${Environment}-codecommit-event-processor"
+      FunctionName: !Sub "${Application}-${Environment}-ecr-event-processor"
       Description: |
-        Lambda function that processes CodeCommit events from EventBridge.
+        Lambda function that processes ECR events from EventBridge.
         This function demonstrates how to receive and parse different types of 
-        CodeCommit events with input transformation applied.
+        ECR events with input transformation applied.
       Runtime: !Ref LambdaRuntime
       Role: !GetAtt FunctionExecutionRole.Arn
       Handler: index.handler
@@ -181,12 +175,12 @@ Resources:
       Code:
         # Inline code for production use - demonstrates event processing patterns
         ZipFile: |
-          // CodeCommit Event Processor - Production Function
-          // This function demonstrates how to process different types of CodeCommit events
+          // ECR Event Processor - Production Function
+          // This function demonstrates how to process different types of ECR events
 
           exports.handler = async (event) => {
               console.log('='.repeat(80));
-              console.log('CODECOMMIT EVENT RECEIVED');
+              console.log('ECR EVENT RECEIVED');
               console.log('='.repeat(80));
 
               // Log the complete event for learning purposes
@@ -198,97 +192,52 @@ Resources:
                   const eventType = event.EventType || 'Unknown';
                   console.log(`\nEvent Type: ${eventType}`);
 
-                  // Process Repository State Change Events (Push, Branch/Tag operations)
-                  if (eventType === 'RepositoryStateChange') {
-                      console.log('\n--- REPOSITORY STATE CHANGE EVENT ---');
+                  // Process Image Action Events (Push, Delete operations)
+                  if (eventType === 'ImageAction') {
+                      console.log('\n--- IMAGE ACTION EVENT ---');
                       console.log(`Repository: ${event.RepositoryName}`);
-                      console.log(`Reference: ${event.ReferenceName} (${event.ReferenceType})`);
-                      console.log(`Event: ${event.EventName}`);
-                      console.log(`User: ${event.CallerUserArn}`);
-                      console.log(`Commit ID: ${event.CommitId || 'N/A'}`);
-                      console.log(`Old Commit ID: ${event.OldCommitId || 'N/A'}`);
+                      console.log(`Image URI: ${event.ImageUri}`);
+                      console.log(`Image Tag: ${event.ImageTag}`);
+                      console.log(`Image Digest: ${event.ImageDigest}`);
+                      console.log(`Action: ${event.ActionType}`);
+                      console.log(`Result: ${event.Result}`);
+                      console.log(`Registry ID: ${event.RegistryId}`);
                       console.log(`Timestamp: ${event.Timestamp}`);
 
-                      // Example: Handle different repository events
-                      switch(event.EventName) {
-                          case 'referenceCreated':
-                              console.log(`✅ New ${event.ReferenceType} created: ${event.ReferenceName}`);
+                      // Example: Handle different image actions
+                      switch(event.ActionType) {
+                          case 'PUSH':
+                              console.log(`✅ Image pushed: ${event.ImageTag}`);
                               break;
-                          case 'referenceUpdated':
-                              console.log(`🔄 ${event.ReferenceType} updated: ${event.ReferenceName}`);
-                              break;
-                          case 'referenceDeleted':
-                              console.log(`❌ ${event.ReferenceType} deleted: ${event.ReferenceName}`);
+                          case 'DELETE':
+                              console.log(`❌ Image deleted: ${event.ImageTag}`);
                               break;
                       }
                   }
 
-                  // Process Pull Request Events
-                  else if (eventType === 'PullRequestStateChange') {
-                      console.log('\n--- PULL REQUEST EVENT ---');
+                  // Process Image Scan Events
+                  else if (eventType === 'ImageScanComplete') {
+                      console.log('\n--- IMAGE SCAN EVENT ---');
                       console.log(`Repository: ${event.RepositoryName}`);
-                      console.log(`Pull Request ID: ${event.PullRequestId}`);
-                      console.log(`Title: ${event.Title}`);
-                      console.log(`Author: ${event.Author}`);
-                      console.log(`Event: ${event.EventName}`);
-                      console.log(`Status: ${event.PullRequestStatus}`);
-                      console.log(`Source: ${event.SourceReference}`);
-                      console.log(`Target: ${event.DestinationReference}`);
-                      console.log(`Is Merged: ${event.IsMerged}`);
-                      console.log(`Created: ${event.CreationDate}`);
-                      console.log(`Last Modified: ${event.LastModifiedDate}`);
-                      console.log(`User: ${event.CallerUserArn}`);
+                      console.log(`Image URI: ${event.ImageUri}`);
+                      console.log(`Image Tag: ${event.ImageTag}`);
+                      console.log(`Image Digest: ${event.ImageDigest}`);
+                      console.log(`Scan Status: ${event.ScanStatus}`);
+                      console.log(`Scan Type: ${event.ScanType}`);
+                      console.log(`Registry ID: ${event.RegistryId}`);
+                      console.log(`Findings Count: ${event.FindingCounts || 'N/A'}`);
                       console.log(`Timestamp: ${event.Timestamp}`);
 
-                      // Example: Handle different pull request events
-                      switch(event.EventName) {
-                          case 'pullRequestCreated':
-                              console.log('🆕 New pull request created');
+                      // Example: Handle different scan results
+                      switch(event.ScanStatus) {
+                          case 'COMPLETE':
+                              console.log('✅ Image scan completed successfully');
                               break;
-                          case 'pullRequestSourceBranchUpdated':
-                              console.log('🔄 Pull request source branch updated');
+                          case 'FAILED':
+                              console.log('❌ Image scan failed');
                               break;
-                          case 'pullRequestStatusChanged':
-                              console.log(`📋 Pull request status changed to: ${event.PullRequestStatus}`);
-                              break;
-                          case 'pullRequestMergeStatusUpdated':
-                              console.log(`🔀 Pull request merge status updated. Merged: ${event.IsMerged}`);
-                              break;
-                      }
-                  }
-
-                  // Process Comment Events
-                  else if (eventType === 'CommentEvent') {
-                      console.log('\n--- COMMENT EVENT ---');
-                      console.log(`Repository: ${event.RepositoryName}`);
-                      console.log(`Event: ${event.EventName}`);
-                      console.log(`Comment ID: ${event.CommentId}`);
-                      console.log(`Author: ${event.Author}`);
-                      console.log(`Content: ${event.Content}`);
-                      console.log(`Created: ${event.CreationDate}`);
-                      console.log(`User: ${event.CallerUserArn}`);
-                      console.log(`Timestamp: ${event.Timestamp}`);
-
-                      if (event.PullRequestId) {
-                          console.log(`Pull Request ID: ${event.PullRequestId}`);
-                      }
-                      if (event.CommitId) {
-                          console.log(`Commit ID: ${event.CommitId}`);
-                      }
-                      if (event.InReplyTo) {
-                          console.log(`In Reply To Comment: ${event.InReplyTo}`);
-                      }
-
-                      // Example: Handle different comment events
-                      switch(event.EventName) {
-                          case 'commentOnPullRequestCreated':
-                              console.log('💬 New comment on pull request');
-                              break;
-                          case 'commentOnCommitCreated':
-                              console.log('💬 New comment on commit');
-                              break;
-                          case 'replyToCommentCreated':
-                              console.log('↩️ Reply to existing comment');
+                          case 'IN_PROGRESS':
+                              console.log('🔄 Image scan in progress');
                               break;
                       }
                   }
@@ -301,7 +250,7 @@ Resources:
                   return {
                       statusCode: 200,
                       body: JSON.stringify({
-                          message: 'CodeCommit event processed successfully',
+                          message: 'ECR event processed successfully',
                           eventType: eventType,
                           repository: event.RepositoryName,
                           timestamp: new Date().toISOString()
@@ -309,7 +258,7 @@ Resources:
                   };
 
               } catch (error) {
-                  console.error('❌ Error processing CodeCommit event:', error);
+                  console.error('❌ Error processing ECR event:', error);
                   console.error('Error details:', error.stack);
 
                   // Re-throw error to trigger Lambda failure (useful for debugging)
@@ -325,214 +274,112 @@ Resources:
           Value: Event-Processor-Function
 
   # ============================================================================
-  # EVENTBRIDGE RULE 1 - Repository State Changes
+  # EVENTBRIDGE RULE 1 - Image Actions (Push/Delete)
   # ============================================================================
-  # This rule captures repository state change events including push events,
-  # branch creation/updates, tag operations, and branch/tag deletions
-  # Event Pattern: Matches CodeCommit Repository State Change events for specific
-  # repositories and branches, filtering for reference operations (create/update/delete)
-  EventBridgeRuleCodeCommitRepositoryStateChange: 
+  # This rule captures ECR image action events including push and delete operations
+  # Event Pattern: Matches ECR Image Action events for specific repositories and tags
+  EventBridgeRuleEcrImageActions: 
     Type: AWS::Events::Rule
     Properties: 
-      Name: !Sub "${Application}-${Environment}-repository-state-changes"
+      Name: !Sub "${Application}-${Environment}-image-actions"
       Description: |
-        Captures CodeCommit repository state change events including:
-        - Push events (referenceUpdated) when commits are pushed to branches
-        - Branch creation (referenceCreated) when new branches are created
-        - Tag creation (referenceCreated) when new tags are created
-        - Branch/tag deletion (referenceDeleted) when branches or tags are removed
+        Captures ECR image action events including:
+        - Push events (PUSH) when images are pushed to repositories
+        - Delete events (DELETE) when images are deleted from repositories
       EventPattern:
         source:
-          - aws.codecommit                    # Only events from CodeCommit service
+          - aws.ecr                           # Only events from ECR service
         detail-type:
-          - "CodeCommit Repository State Change"  # Specific event type for repository changes
+          - "ECR Image Action"                # Specific event type for image actions
         detail:
-          event:
-            - referenceCreated               # New branch or tag created
-            - referenceUpdated               # Existing branch updated (push)
-            - referenceDeleted               # Branch or tag deleted
-          referenceType:
-            - branch                         # Only branch events
-            - tag                           # Only tag events
-          referenceName: !Ref RepositoryBranchList  # Only specified branches
-        resources: !Split                     # Convert comma-delimited list to array of ARNs
-          - ","
-          - !Sub 
-            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
-            - inner: !Join
-              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
-              - !Ref RepositoryNameList
+          action-type:
+            - PUSH                            # Image push events
+            - DELETE                          # Image delete events
+          result:
+            - SUCCESS                         # Only successful operations
+          repository-name: !Ref RepositoryNameList  # Only specified repositories
+          image-tag: !Ref ImageTagList        # Only specified tags
       State: "ENABLED"                       # Rule is active and will trigger events
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
-          Id: "RepositoryStateChangeTarget"
+          Id: "ImageActionsTarget"
           # Input Transformer restructures the event data before sending to Lambda
           # This extracts specific fields and creates a clean, structured payload
           InputTransformer: 
             InputPathsMap:
-              # Extract specific fields from the original CodeCommit event
-              CallerUserArn: "$.detail.callerUserArn"        # Who made the change
-              ReferenceName: "$.detail.referenceName"        # Branch/tag name (e.g., "main")
-              RepositoryName: "$.detail.repositoryName"      # Repository name
-              CommitId: "$.detail.commitId"                  # New commit SHA (for pushes)
-              EventName: "$.detail.event"                    # Type of change (referenceCreated/Updated/Deleted)
-              ReferenceType: "$.detail.referenceType"        # "branch" or "tag"
-              OldCommitId: "$.detail.oldCommitId"            # Previous commit SHA (for updates)
+              # Extract specific fields from the original ECR event
+              RepositoryName: "$.detail.repository-name"      # Repository name
+              ImageUri: "$.detail.image-uri"                  # Full image URI
+              ImageTag: "$.detail.image-tag"                  # Image tag
+              ImageDigest: "$.detail.image-digest"            # Image SHA digest
+              ActionType: "$.detail.action-type"              # PUSH or DELETE
+              Result: "$.detail.result"                       # SUCCESS or FAILURE
+              RegistryId: "$.detail.registry-id"              # AWS account ID
             InputTemplate: |
               {
-                "EventType": "RepositoryStateChange",
-                "CallerUserArn": "<CallerUserArn>",
-                "ReferenceName": "<ReferenceName>",
+                "EventType": "ImageAction",
                 "RepositoryName": "<RepositoryName>",
-                "CommitId": "<CommitId>",
-                "OldCommitId": "<OldCommitId>",
-                "EventName": "<EventName>",
-                "ReferenceType": "<ReferenceType>",
+                "ImageUri": "<ImageUri>",
+                "ImageTag": "<ImageTag>",
+                "ImageDigest": "<ImageDigest>",
+                "ActionType": "<ActionType>",
+                "Result": "<Result>",
+                "RegistryId": "<RegistryId>",
                 "Timestamp": "<aws.events.event.ingestion-time>"
               }
 
   # ============================================================================
-  # EVENTBRIDGE RULE 2 - Pull Request Events
+  # EVENTBRIDGE RULE 2 - Image Scan Events
   # ============================================================================
-  # This rule captures all pull request lifecycle events including creation,
-  # updates, status changes, and merge operations
-  # Event Pattern: Matches CodeCommit Pull Request State Change events for
-  # all pull request lifecycle operations across specified repositories
-  EventBridgeRuleCodeCommitPullRequestEvents: 
+  # This rule captures ECR image scan completion events including vulnerability scans
+  # Event Pattern: Matches ECR Image Scan events for security scanning results
+  EventBridgeRuleEcrImageScans: 
     Type: AWS::Events::Rule
     Properties: 
-      Name: !Sub "${Application}-${Environment}-pull-request-events"
+      Name: !Sub "${Application}-${Environment}-image-scans"
       Description: |
-        Captures CodeCommit pull request lifecycle events including:
-        - Pull request creation (pullRequestCreated)
-        - Source branch updates (pullRequestSourceBranchUpdated)
-        - Status changes (pullRequestStatusChanged) - Open/Closed
-        - Merge status updates (pullRequestMergeStatusUpdated)
+        Captures ECR image scan events including:
+        - Basic vulnerability scan completion
+        - Enhanced vulnerability scan completion
+        - Scan on push completion
       EventPattern:
         source:
-          - aws.codecommit                           # Only CodeCommit service events
+          - aws.ecr                           # Only ECR service events
         detail-type:
-          - "CodeCommit Pull Request State Change"    # Pull request specific events
+          - "ECR Image Scan"                  # Image scan specific events
         detail:
-          event:
-            - pullRequestCreated                      # New PR created
-            - pullRequestSourceBranchUpdated          # Source branch updated with new commits
-            - pullRequestStatusChanged                # PR opened/closed
-            - pullRequestMergeStatusUpdated           # PR merged/unmerged
-        resources: !Split                             # Target specific repositories
-          - ","
-          - !Sub 
-            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
-            - inner: !Join
-              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
-              - !Ref RepositoryNameList
+          scan-status:
+            - COMPLETE                        # Only completed scans
+            - FAILED                          # Include failed scans for monitoring
+          repository-name: !Ref RepositoryNameList  # Target specific repositories
       State: "ENABLED"
       Targets:
         - Arn: !GetAtt LambdaFunction.Arn
-          Id: "PullRequestEventsTarget"
-          # Input Transformer extracts pull request specific information
-          # and creates a structured payload with all relevant PR details
+          Id: "ImageScansTarget"
+          # Input Transformer extracts scan-specific information
+          # and creates a structured payload with scan results
           InputTransformer:
             InputPathsMap:
-              # Extract pull request specific fields from the event
-              Author: "$.detail.author"                       # PR author username
-              CallerUserArn: "$.detail.callerUserArn"        # User who triggered this event
-              Title: "$.detail.title"                         # PR title
-              Description: "$.detail.description"             # PR description text
-              RepositoryName: "$.detail.repositoryNames[0]"   # Repository name (first in array)
-              DestinationReference: "$.detail.destinationReference"  # Target branch (e.g., "refs/heads/main")
-              SourceReference: "$.detail.sourceReference"     # Source branch (e.g., "refs/heads/feature-branch")
-              PullRequestId: "$.detail.pullRequestId"         # Unique PR identifier
-              PullRequestStatus: "$.detail.pullRequestStatus" # "Open" or "Closed"
-              EventName: "$.detail.event"                     # Specific event type
-              IsMerged: "$.detail.isMerged"                   # "True" or "False" string
-              CreationDate: "$.detail.creationDate"           # When PR was originally created
-              LastModifiedDate: "$.detail.lastModifiedDate"   # Last update timestamp
+              # Extract scan specific fields from the event
+              RepositoryName: "$.detail.repository-name"      # Repository name
+              ImageUri: "$.detail.image-uri"                  # Full image URI
+              ImageTag: "$.detail.image-tags[0]"              # First image tag
+              ImageDigest: "$.detail.image-digest"            # Image SHA digest
+              ScanStatus: "$.detail.scan-status"              # COMPLETE, FAILED, etc.
+              ScanType: "$.detail.scan-type"                  # BASIC, ENHANCED
+              RegistryId: "$.detail.registry-id"              # AWS account ID
+              FindingCounts: "$.detail.finding-counts"        # Vulnerability counts
             InputTemplate: |
               {
-                "EventType": "PullRequestStateChange",
-                "Author": "<Author>",
-                "CallerUserArn": "<CallerUserArn>",
-                "Title": "<Title>",
-                "Description": "<Description>",
-                "DestinationReference": "<DestinationReference>",
-                "SourceReference": "<SourceReference>",
-                "PullRequestId": "<PullRequestId>",
-                "PullRequestStatus": "<PullRequestStatus>",
-                "EventName": "<EventName>",
-                "IsMerged": "<IsMerged>",
-                "CreationDate": "<CreationDate>",
-                "LastModifiedDate": "<LastModifiedDate>",
+                "EventType": "ImageScanComplete",
                 "RepositoryName": "<RepositoryName>",
-                "Timestamp": "<aws.events.event.ingestion-time>"
-              }
-
-  # ============================================================================
-  # EVENTBRIDGE RULE 3 - Comment Events
-  # ============================================================================
-  # This rule captures comment events on pull requests and commits including
-  # new comments and replies to existing comments
-  # Event Pattern: Matches CodeCommit comment events across different detail-types
-  # for comprehensive comment tracking on both PRs and individual commits
-  EventBridgeRuleCodeCommitCommentEvents:
-    Type: AWS::Events::Rule
-    Properties:
-      Name: !Sub "${Application}-${Environment}-comment-events"
-      Description: |
-        Captures CodeCommit comment events including:
-        - Comments on pull requests (commentOnPullRequestCreated)
-        - Comments on commits (commentOnCommitCreated)
-        - Replies to comments (replyToCommentCreated)
-      EventPattern:
-        source:
-          - aws.codecommit                           # Only CodeCommit service events
-        detail-type:
-          - "CodeCommit Comment on Pull Request"     # Comments specifically on PRs
-          - "CodeCommit Comment on Commit"           # Comments specifically on commits
-        detail:
-          event:
-            - commentOnPullRequestCreated            # New comment added to PR
-            - commentOnCommitCreated                 # New comment added to commit
-            - replyToCommentCreated                  # Reply to existing comment (PR or commit)
-        resources: !Split                            # Target specific repositories
-          - ","
-          - !Sub 
-            - "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${inner}"
-            - inner: !Join
-              - !Sub ",arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:"
-              - !Ref RepositoryNameList
-      State: "ENABLED"
-      Targets:
-        - Arn: !GetAtt LambdaFunction.Arn
-          Id: "CommentEventsTarget"
-          # Input Transformer extracts comment-specific information
-          # and handles both PR comments and commit comments uniformly
-          InputTransformer:
-            InputPathsMap:
-              # Extract comment specific fields from the event
-              Author: "$.detail.author"                       # Comment author username
-              CallerUserArn: "$.detail.callerUserArn"        # User who made the comment
-              CommentId: "$.detail.commentId"                 # Unique comment identifier
-              Content: "$.detail.content"                     # Comment text content
-              RepositoryName: "$.detail.repositoryName"       # Repository name
-              EventName: "$.detail.event"                     # Specific event type
-              PullRequestId: "$.detail.pullRequestId"         # PR ID (if comment on PR, null for commit comments)
-              CommitId: "$.detail.commitId"                   # Commit ID (if comment on commit, may be null for PR comments)
-              InReplyTo: "$.detail.inReplyTo"                 # Parent comment ID (if this is a reply, null for top-level comments)
-              CreationDate: "$.detail.creationDate"           # When comment was created
-            InputTemplate: |
-              {
-                "EventType": "CommentEvent",
-                "Author": "<Author>",
-                "CallerUserArn": "<CallerUserArn>",
-                "CommentId": "<CommentId>",
-                "Content": "<Content>",
-                "RepositoryName": "<RepositoryName>",
-                "EventName": "<EventName>",
-                "PullRequestId": "<PullRequestId>",
-                "CommitId": "<CommitId>",
-                "InReplyTo": "<InReplyTo>",
-                "CreationDate": "<CreationDate>",
+                "ImageUri": "<ImageUri>",
+                "ImageTag": "<ImageTag>",
+                "ImageDigest": "<ImageDigest>",
+                "ScanStatus": "<ScanStatus>",
+                "ScanType": "<ScanType>",
+                "RegistryId": "<RegistryId>",
+                "FindingCounts": "<FindingCounts>",
                 "Timestamp": "<aws.events.event.ingestion-time>"
               }
 
@@ -542,35 +389,25 @@ Resources:
   # These permissions are required for EventBridge rules to successfully invoke
   # the Lambda function. Each rule needs its own permission resource.
 
-  # Permission for Repository State Change events to invoke Lambda
-  # This allows the EventBridge rule to call the Lambda function when repository events occur
-  InvokeLambdaPermissionCodeCommitRepositoryStateChange:
+  # Permission for Image Action events to invoke Lambda
+  # This allows the EventBridge rule to call the Lambda function when image events occur
+  InvokeLambdaPermissionEcrImageActions:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn    # Target Lambda function
       Action: "lambda:InvokeFunction"              # Permission to invoke the function
       Principal: "events.amazonaws.com"            # EventBridge service principal
-      SourceArn: !GetAtt EventBridgeRuleCodeCommitRepositoryStateChange.Arn  # Specific rule that can invoke
+      SourceArn: !GetAtt EventBridgeRuleEcrImageActions.Arn  # Specific rule that can invoke
 
-  # Permission for Pull Request events to invoke Lambda
-  # This allows the pull request EventBridge rule to call the Lambda function
-  InvokeLambdaPermissionCodeCommitPullRequestEvents:
+  # Permission for Image Scan events to invoke Lambda
+  # This allows the image scan EventBridge rule to call the Lambda function
+  InvokeLambdaPermissionEcrImageScans:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt EventBridgeRuleCodeCommitPullRequestEvents.Arn
-
-  # Permission for Comment events to invoke Lambda
-  # This allows the comment EventBridge rule to call the Lambda function
-  InvokeLambdaPermissionCodeCommitCommentEvents:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: "lambda:InvokeFunction"
-      Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt EventBridgeRuleCodeCommitCommentEvents.Arn
+      SourceArn: !GetAtt EventBridgeRuleEcrImageScans.Arn
 
   # ============================================================================
   # CLOUDWATCH LOG GROUP - Lambda Function Logs
@@ -596,7 +433,7 @@ Resources:
 Outputs:
   # Lambda Function Information
   LambdaFunctionArn:
-    Description: "ARN of the Lambda function that processes CodeCommit events"
+    Description: "ARN of the Lambda function that processes ECR events"
     Value: !GetAtt LambdaFunction.Arn
     Export:
       Name: !Sub "${Application}-${Environment}-LambdaFunctionArn"
@@ -615,32 +452,26 @@ Outputs:
       Name: !Sub "${Application}-${Environment}-ExecutionRoleArn"
 
   # EventBridge Rules Information
-  RepositoryStateChangeRuleArn:
-    Description: "ARN of EventBridge rule for repository state changes (push, branch/tag events)"
-    Value: !GetAtt EventBridgeRuleCodeCommitRepositoryStateChange.Arn
+  ImageActionsRuleArn:
+    Description: "ARN of EventBridge rule for ECR image actions (push/delete events)"
+    Value: !GetAtt EventBridgeRuleEcrImageActions.Arn
     Export:
-      Name: !Sub "${Application}-${Environment}-RepositoryStateChangeRuleArn"
+      Name: !Sub "${Application}-${Environment}-ImageActionsRuleArn"
 
-  PullRequestEventsRuleArn:
-    Description: "ARN of EventBridge rule for pull request lifecycle events"
-    Value: !GetAtt EventBridgeRuleCodeCommitPullRequestEvents.Arn
+  ImageScansRuleArn:
+    Description: "ARN of EventBridge rule for ECR image scan events"
+    Value: !GetAtt EventBridgeRuleEcrImageScans.Arn
     Export:
-      Name: !Sub "${Application}-${Environment}-PullRequestEventsRuleArn"
-
-  CommentEventsRuleArn:
-    Description: "ARN of EventBridge rule for comment events on PRs and commits"
-    Value: !GetAtt EventBridgeRuleCodeCommitCommentEvents.Arn
-    Export:
-      Name: !Sub "${Application}-${Environment}-CommentEventsRuleArn"
+      Name: !Sub "${Application}-${Environment}-ImageScansRuleArn"
 
   # Configuration Summary
   MonitoredRepositoryList:
-    Description: "List of CodeCommit repositories being monitored for events"
+    Description: "List of ECR repositories being monitored for events"
     Value: !Join [", ", !Ref RepositoryNameList]
 
-  MonitoredBranchList:
-    Description: "List of branches being monitored for push events"
-    Value: !Join [", ", !Ref RepositoryBranchList]
+  MonitoredImageTagList:
+    Description: "List of image tags being monitored for push events"
+    Value: !Join [", ", !Ref ImageTagList]
 
   # CloudWatch Logs Information
   CloudWatchLogGroup:
