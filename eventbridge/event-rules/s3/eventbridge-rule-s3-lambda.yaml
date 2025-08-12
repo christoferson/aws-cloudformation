@@ -1,0 +1,482 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  EventBridge Rules for S3 Events
+
+  INSTRUCTIONS:
+  1. Deploy this stack to create EventBridge rules for S3 events
+  2. Upload objects to your S3 buckets, delete objects, or perform lifecycle actions
+  3. Check CloudWatch Logs for the Lambda function to see captured events
+  4. Modify the Lambda function code to add your custom event processing logic
+  5. Use the Input Transformer examples to understand event data structure
+
+  S3 EVENTS CAPTURED BY THIS TEMPLATE:
+
+  Object Actions:
+  - PUT: New object uploaded to bucket
+  - DELETE: Object deleted from bucket
+  - COPY: Object copied within or between buckets
+
+  Bucket Events:
+  - BUCKET_CREATED: New bucket created
+  - BUCKET_DELETED: Bucket deleted
+  - LIFECYCLE_TRANSITION: Object transitioned to different storage class
+
+  The Lambda function serves as a skeleton event processor that logs all received events
+  for learning and debugging purposes. EventBridge rules use Input Transformers to
+  restructure event data before sending to Lambda.
+
+Metadata:
+  StackVersion: 2
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Bucket Configuration"
+        Parameters:
+          - BucketNameList
+          - ObjectKeyPrefixList
+      - Label:
+          default: "Lambda Configuration"
+        Parameters:
+          - LambdaRuntime
+    ParameterLabels:
+      Application:
+        default: "Application Name"
+      Environment:
+        default: "Environment Name"
+      BucketNameList:
+        default: "S3 Bucket Names to Monitor"
+      ObjectKeyPrefixList:
+        default: "Object Key Prefixes to Monitor for Changes"
+      LambdaRuntime:
+        default: "Lambda Function Runtime Version"
+
+Parameters:
+  # Application Configuration Parameters
+  Application:
+    Type: String
+    Default: "demo"
+    Description: |
+      Application name used for resource naming and tagging.
+      This will be used as a prefix for all resource names.
+
+  Environment:
+    Type: String
+    Default: "dev"
+    AllowedValues: ["dev", "staging", "prod"]
+    Description: |
+      Environment name used for resource naming and tagging.
+      This will be combined with the application name for resource identification.
+
+  # Bucket Configuration Parameters
+  BucketNameList:
+    Type: CommaDelimitedList
+    Default: "demo-app-bucket,demo-server-blank"
+    Description: |
+      Comma-separated list of S3 bucket names to monitor.
+      Events from these buckets will trigger the EventBridge rules.
+      Example: "bucket1,bucket2,bucket3"
+
+  ObjectKeyPrefixList:
+    Type: CommaDelimitedList
+    Default: "uploads/,data/,logs/,assets/"
+    Description: |
+      Comma-separated list of object key prefixes to monitor for object events.
+      Only changes to objects with these prefixes will trigger bucket events.
+      Common prefixes: uploads/, data/, logs/, assets/
+
+  # Lambda Configuration Parameters
+  LambdaRuntime:
+    Type: String
+    Default: "nodejs18.x"
+    AllowedValues: ["nodejs18.x", "nodejs16.x", "python3.9", "python3.10", "python3.11"]
+    Description: |
+      Runtime environment for the Lambda function.
+      The function code is provided inline and works with both Node.js and Python runtimes.
+
+Resources:
+  # ============================================================================
+  # IAM ROLE - Lambda Execution Role
+  # ============================================================================
+  # This role allows the Lambda function to execute and access AWS services
+  # Required permissions: CloudWatch Logs write access and S3 read access
+  FunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Application}-${Environment}-s3-eventbridge-lambda-role"
+      Description: |
+        IAM role that grants the Lambda function permission to:
+        - Write logs to CloudWatch Logs (via AWSLambdaBasicExecutionRole)
+        - Read S3 bucket information for enhanced event processing
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com  # Only Lambda service can assume this role
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        # AWS managed policy that provides basic Lambda execution permissions
+        # Includes: logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        # Custom policy for S3 read access (optional - for enhanced event processing)
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation           # Get bucket region
+                  - s3:GetBucketVersioning         # Get versioning status
+                  - s3:GetBucketPolicy             # Get bucket policies
+                  - s3:GetBucketNotification       # Get notification configuration
+                  - s3:GetObject                   # Get object content
+                  - s3:GetObjectVersion            # Get specific object versions
+                  - s3:ListBucket                  # List bucket contents
+                  - s3:GetBucketTagging            # Get bucket tags
+                Resource: 
+                  - !Sub "arn:aws:s3:::*"
+                  - !Sub "arn:aws:s3:::*/*"
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Lambda-Execution-Role
+
+  # ============================================================================
+  # LAMBDA FUNCTION - Event Processor
+  # ============================================================================
+  # This Lambda function receives and processes S3 events from EventBridge
+  # It serves as a skeleton/template for building actual event processing logic
+  # The function demonstrates how to parse different event types with input transformation
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Application}-${Environment}-s3-event-processor"
+      Description: |
+        Lambda function that processes S3 events from EventBridge.
+        This function demonstrates how to receive and parse different types of 
+        S3 events with input transformation applied.
+      Runtime: !Ref LambdaRuntime
+      Role: !GetAtt FunctionExecutionRole.Arn
+      Handler: index.handler
+      Timeout: 30                    # Maximum execution time in seconds
+      ReservedConcurrencyLimit: 10   # Limit concurrent executions to prevent overwhelming
+      Environment:
+        Variables:
+          # These environment variables are available to the Lambda function
+          APPLICATION: !Ref Application
+          ENVIRONMENT: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+          LOG_LEVEL: "INFO"
+      Code:
+        # Inline code for production use - demonstrates event processing patterns
+        ZipFile: |
+          // S3 Event Processor - Production Function
+          // This function demonstrates how to process different types of S3 events
+
+          exports.handler = async (event) => {
+              console.log('='.repeat(80));
+              console.log('S3 EVENT RECEIVED');
+              console.log('='.repeat(80));
+
+              // Log the complete event for learning purposes
+              console.log('Complete Event Object:');
+              console.log(JSON.stringify(event, null, 2));
+
+              try {
+                  // Determine event type and process accordingly
+                  const eventType = event.EventType || 'Unknown';
+                  console.log(`\nEvent Type: ${eventType}`);
+
+                  // Process Object Action Events (Put, Delete, Copy operations)
+                  if (eventType === 'ObjectAction') {
+                      console.log('\n--- OBJECT ACTION EVENT ---');
+                      console.log(`Bucket: ${event.BucketName}`);
+                      console.log(`Object Key: ${event.ObjectKey}`);
+                      console.log(`Object Size: ${event.ObjectSize}`);
+                      console.log(`Object ETag: ${event.ObjectETag}`);
+                      console.log(`Action: ${event.ActionType}`);
+                      console.log(`Source IP: ${event.SourceIPAddress}`);
+                      console.log(`User Identity: ${event.UserIdentity}`);
+                      console.log(`Timestamp: ${event.Timestamp}`);
+
+                      // Example: Handle different object actions
+                      switch(event.ActionType) {
+                          case 'PUT':
+                              console.log(`✅ Object uploaded: ${event.ObjectKey}`);
+                              break;
+                          case 'DELETE':
+                              console.log(`❌ Object deleted: ${event.ObjectKey}`);
+                              break;
+                          case 'COPY':
+                              console.log(`📋 Object copied: ${event.ObjectKey}`);
+                              break;
+                      }
+                  }
+
+                  // Process Bucket Events
+                  else if (eventType === 'BucketEvent') {
+                      console.log('\n--- BUCKET EVENT ---');
+                      console.log(`Bucket: ${event.BucketName}`);
+                      console.log(`Event Name: ${event.EventName}`);
+                      console.log(`Source IP: ${event.SourceIPAddress}`);
+                      console.log(`User Identity: ${event.UserIdentity}`);
+                      console.log(`Request ID: ${event.RequestId}`);
+                      console.log(`Timestamp: ${event.Timestamp}`);
+
+                      // Example: Handle different bucket events
+                      switch(event.EventName) {
+                          case 'CreateBucket':
+                              console.log('✅ Bucket created successfully');
+                              break;
+                          case 'DeleteBucket':
+                              console.log('❌ Bucket deleted');
+                              break;
+                          case 'LifecycleTransition':
+                              console.log('🔄 Lifecycle transition occurred');
+                              break;
+                      }
+                  }
+
+                  console.log('\n' + '='.repeat(80));
+                  console.log('EVENT PROCESSING COMPLETED SUCCESSFULLY');
+                  console.log('='.repeat(80));
+
+                  // Return success response
+                  return {
+                      statusCode: 200,
+                      body: JSON.stringify({
+                          message: 'S3 event processed successfully',
+                          eventType: eventType,
+                          bucket: event.BucketName,
+                          timestamp: new Date().toISOString()
+                      })
+                  };
+
+              } catch (error) {
+                  console.error('❌ Error processing S3 event:', error);
+                  console.error('Error details:', error.stack);
+
+                  // Re-throw error to trigger Lambda failure (useful for debugging)
+                  throw error;
+              }
+          };
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Event-Processor-Function
+
+  # ============================================================================
+  # EVENTBRIDGE RULE 1 - Object Actions (Put/Delete/Copy)
+  # ============================================================================
+  # This rule captures S3 object action events including put, delete, and copy operations
+  # Event Pattern: Matches S3 Object Action events for specific buckets and prefixes
+  EventBridgeRuleS3ObjectActions: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Sub "${Application}-${Environment}-object-actions"
+      Description: |
+        Captures S3 object action events including:
+        - Put events (PUT) when objects are uploaded to buckets
+        - Delete events (DELETE) when objects are deleted from buckets
+        - Copy events (COPY) when objects are copied within or between buckets
+      EventPattern:
+        source:
+          - aws.s3                            # Only events from S3 service
+        detail-type:
+          - "Object Created"                  # Object creation events
+          - "Object Deleted"                  # Object deletion events
+          - "Object Restore Completed"        # Object restore events
+        detail:
+          bucket:
+            name: !Ref BucketNameList         # Only specified buckets
+          object:
+            key:
+              - prefix: !Select [0, !Ref ObjectKeyPrefixList]  # First prefix
+      State: "ENABLED"                       # Rule is active and will trigger events
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "ObjectActionsTarget"
+          # Input Transformer restructures the event data before sending to Lambda
+          # This extracts specific fields and creates a clean, structured payload
+          InputTransformer: 
+            InputPathsMap:
+              # Extract specific fields from the original S3 event
+              BucketName: "$.detail.bucket.name"              # Bucket name
+              ObjectKey: "$.detail.object.key"                # Object key
+              ObjectSize: "$.detail.object.size"              # Object size in bytes
+              ObjectETag: "$.detail.object.etag"              # Object ETag
+              EventName: "$.detail-type"                      # Event type name
+              SourceIPAddress: "$.detail.source-ip-address"   # Source IP
+              UserIdentity: "$.detail.user-identity.type"     # User identity type
+            InputTemplate: |
+              {
+                "EventType": "ObjectAction",
+                "BucketName": "<BucketName>",
+                "ObjectKey": "<ObjectKey>",
+                "ObjectSize": "<ObjectSize>",
+                "ObjectETag": "<ObjectETag>",
+                "ActionType": "<EventName>",
+                "SourceIPAddress": "<SourceIPAddress>",
+                "UserIdentity": "<UserIdentity>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
+              }
+
+  # ============================================================================
+  # EVENTBRIDGE RULE 2 - Bucket Events
+  # ============================================================================
+  # This rule captures S3 bucket-level events including bucket creation and lifecycle
+  # Event Pattern: Matches S3 Bucket events for bucket management operations
+  EventBridgeRuleS3BucketEvents: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Sub "${Application}-${Environment}-bucket-events"
+      Description: |
+        Captures S3 bucket events including:
+        - Bucket creation and deletion
+        - Bucket policy changes
+        - Lifecycle configuration changes
+      EventPattern:
+        source:
+          - aws.s3                            # Only S3 service events
+        detail-type:
+          - "Bucket Created"                  # Bucket creation events
+          - "Bucket Deleted"                  # Bucket deletion events
+          - "Bucket Policy Changed"           # Policy modification events
+        detail:
+          bucket:
+            name: !Ref BucketNameList         # Target specific buckets
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: "BucketEventsTarget"
+          # Input Transformer extracts bucket-specific information
+          # and creates a structured payload with bucket event details
+          InputTransformer:
+            InputPathsMap:
+              # Extract bucket specific fields from the event
+              BucketName: "$.detail.bucket.name"              # Bucket name
+              EventName: "$.detail-type"                      # Event type
+              SourceIPAddress: "$.detail.source-ip-address"   # Source IP
+              UserIdentity: "$.detail.user-identity.type"     # User identity
+              RequestId: "$.detail.request-id"                # Request ID
+              Region: "$.detail.aws-region"                   # AWS region
+            InputTemplate: |
+              {
+                "EventType": "BucketEvent",
+                "BucketName": "<BucketName>",
+                "EventName": "<EventName>",
+                "SourceIPAddress": "<SourceIPAddress>",
+                "UserIdentity": "<UserIdentity>",
+                "RequestId": "<RequestId>",
+                "Region": "<Region>",
+                "Timestamp": "<aws.events.event.ingestion-time>"
+              }
+
+  # ============================================================================
+  # LAMBDA PERMISSIONS - Allow EventBridge to Invoke Lambda
+  # ============================================================================
+  # These permissions are required for EventBridge rules to successfully invoke
+  # the Lambda function. Each rule needs its own permission resource.
+
+  # Permission for Object Action events to invoke Lambda
+  # This allows the EventBridge rule to call the Lambda function when object events occur
+  InvokeLambdaPermissionS3ObjectActions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn    # Target Lambda function
+      Action: "lambda:InvokeFunction"              # Permission to invoke the function
+      Principal: "events.amazonaws.com"            # EventBridge service principal
+      SourceArn: !GetAtt EventBridgeRuleS3ObjectActions.Arn  # Specific rule that can invoke
+
+  # Permission for Bucket events to invoke Lambda
+  # This allows the bucket EventBridge rule to call the Lambda function
+  InvokeLambdaPermissionS3BucketEvents:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeRuleS3BucketEvents.Arn
+
+  # ============================================================================
+  # CLOUDWATCH LOG GROUP - Lambda Function Logs
+  # ============================================================================
+  # Explicit log group creation provides better control over log retention and permissions
+  # Without this, Lambda creates the log group automatically with default settings
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"  # Standard Lambda log group naming
+      RetentionInDays: 14                                 # Keep logs for 2 weeks (cost optimization)
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Lambda-Logs
+
+# ============================================================================
+# OUTPUTS - Information about created resources
+# ============================================================================
+Outputs:
+  # Lambda Function Information
+  LambdaFunctionArn:
+    Description: "ARN of the Lambda function that processes S3 events"
+    Value: !GetAtt LambdaFunction.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-LambdaFunctionArn"
+
+  LambdaFunctionName:
+    Description: "Name of the Lambda function for CloudWatch monitoring"
+    Value: !Ref LambdaFunction
+    Export:
+      Name: !Sub "${Application}-${Environment}-LambdaFunctionName"
+
+  # IAM Role Information
+  FunctionExecutionRoleArn:
+    Description: "ARN of the IAM role used by the Lambda function"
+    Value: !GetAtt FunctionExecutionRole.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-ExecutionRoleArn"
+
+  # EventBridge Rules Information
+  ObjectActionsRuleArn:
+    Description: "ARN of EventBridge rule for S3 object actions (put/delete/copy events)"
+    Value: !GetAtt EventBridgeRuleS3ObjectActions.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-ObjectActionsRuleArn"
+
+  BucketEventsRuleArn:
+    Description: "ARN of EventBridge rule for S3 bucket events"
+    Value: !GetAtt EventBridgeRuleS3BucketEvents.Arn
+    Export:
+      Name: !Sub "${Application}-${Environment}-BucketEventsRuleArn"
+
+  # Configuration Summary
+  MonitoredBucketList:
+    Description: "List of S3 buckets being monitored for events"
+    Value: !Join [", ", !Ref BucketNameList]
+
+  MonitoredObjectKeyPrefixList:
+    Description: "List of object key prefixes being monitored for object events"
+    Value: !Join [", ", !Ref ObjectKeyPrefixList]
+
+  # CloudWatch Logs Information
+  CloudWatchLogGroup:
+    Description: "CloudWatch Log Group where Lambda function logs are stored"
+    Value: !Ref LambdaLogGroup
+    Export:
+      Name: !Sub "${Application}-${Environment}-LogGroup"
