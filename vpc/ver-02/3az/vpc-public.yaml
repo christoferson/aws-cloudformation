@@ -1,7 +1,20 @@
----
+#==============================================================================
+# AWS CloudFormation Template: Multi-AZ VPC with Public Subnets
+#==============================================================================
+# Purpose: Creates a VPC infrastructure with three public subnets spanning 
+#          across three Availability Zones for high availability
+# Features: 
+#   - IPv4 and IPv6 dual-stack networking
+#   - Internet Gateway for public internet access
+#   - Auto-assignment of public IPs for instances
+#   - Standardized naming convention using application and environment tags
+# Use Cases: Web applications, load balancers, bastion hosts, public-facing services
+#==============================================================================
+
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'VPC with Public Subnets only and spans 3 Availability Zones'
 
+# Metadata section organizes parameters in the CloudFormation console UI
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -19,24 +32,27 @@ Metadata:
           - PublicSubnet01Block
           - PublicSubnet02Block
           - PublicSubnet03Block
-          
-Parameters:
 
+Parameters:
+  # Application identifier for resource naming and tagging
   Application:
     Type: String
     Default: myapp
     Description: Application Name
-    
+
+  # Environment identifier (dev, staging, prod) for resource naming
   Environment:
     Type: String
     Default: dev
     Description: Environment
 
+  # Main VPC CIDR block - provides IP address space for the entire VPC
   VpcBlock:
     Type: String
     Default: 10.0.0.0/16
     Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
 
+  # CIDR blocks for each public subnet - must be subsets of VpcBlock
   PublicSubnet01Block:
     Type: String
     Default: 10.0.128.0/24
@@ -54,23 +70,26 @@ Parameters:
 
 Resources:
 
+  # Main VPC - Virtual Private Cloud that provides isolated network environment
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
       CidrBlock: !Ref VpcBlock
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      InstanceTenancy: "default"
+      EnableDnsSupport: true      # Enables DNS resolution within VPC
+      EnableDnsHostnames: true    # Enables DNS hostnames for instances with public IPs
+      InstanceTenancy: "default"  # Instances run on shared hardware (vs dedicated)
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc"
 
+  # IPv6 CIDR block association - Enables dual-stack (IPv4/IPv6) networking
   VPCIpv6CidrBlock:
       Type: AWS::EC2::VPCCidrBlock
       Properties:
         VpcId: !Ref VPC
-        AmazonProvidedIpv6CidrBlock: true
+        AmazonProvidedIpv6CidrBlock: true  # AWS automatically assigns IPv6 block
 
+  # Internet Gateway - Provides internet access for public subnets
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
@@ -78,12 +97,14 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-igw"
 
+  # Attachment - Connects Internet Gateway to VPC
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
+  # Route Table - Defines routing rules for public subnets
   PublicRouteTable:
     Type: "AWS::EC2::RouteTable"
     Properties:
@@ -96,14 +117,16 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-rt-public"
 
+  # IPv4 Route - Directs all internet traffic (0.0.0.0/0) to Internet Gateway
   PublicRoute:
     Type: "AWS::EC2::Route"
-    DependsOn: VPCGatewayAttachment
+    DependsOn: VPCGatewayAttachment  # Ensures IGW is attached before creating route
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
+  # IPv6 Route - Directs all IPv6 internet traffic (::/0) to Internet Gateway
   PublicRouteIpv6:
       Type: AWS::EC2::Route
       DependsOn: [VPCGatewayAttachment, VPCIpv6CidrBlock]
@@ -111,34 +134,36 @@ Resources:
         RouteTableId: !Ref PublicRouteTable
         DestinationIpv6CidrBlock: "::/0"
         GatewayId: !Ref InternetGateway
-        
+
+  # Public Subnet 1 - First availability zone subnet for high availability
   PublicSubnet01:
     Type: AWS::EC2::Subnet
-    DependsOn: VPCIpv6CidrBlock
+    DependsOn: VPCIpv6CidrBlock  # Wait for IPv6 CIDR before creating subnet
     Metadata:
       Comment: Public Subnet 01
     Properties:
       VpcId: !Ref VPC
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: true  # Auto-assign public IPv4 to instances
       AvailabilityZone:
         Fn::Select:
-        - 0
+        - 0  # Select first AZ in the region
         - Fn::GetAZs:
             Ref: AWS::Region
       CidrBlock:
         Ref: PublicSubnet01Block
-      AssignIpv6AddressOnCreation: true
+      AssignIpv6AddressOnCreation: true  # Auto-assign IPv6 to instances
       Ipv6CidrBlock: 
         Fn::Select: 
-          - 0
+          - 0  # First /64 subnet from VPC's /56 IPv6 block
           - Fn::Cidr: 
               - !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
-              - 256 
-              - 64
+              - 256  # Number of subnets to create
+              - 64   # Subnet prefix length
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
 
+  # Public Subnet 2 - Second availability zone subnet for high availability
   PublicSubnet02:
     Type: AWS::EC2::Subnet
     DependsOn: VPCIpv6CidrBlock
@@ -149,7 +174,7 @@ Resources:
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - 1
+        - 1  # Select second AZ in the region
         - Fn::GetAZs:
             Ref: AWS::Region
       CidrBlock:
@@ -157,7 +182,7 @@ Resources:
       AssignIpv6AddressOnCreation: true
       Ipv6CidrBlock: 
         Fn::Select: 
-          - 1
+          - 1  # Second /64 subnet from VPC's IPv6 block
           - Fn::Cidr: 
               - !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
               - 256 
@@ -166,6 +191,7 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
 
+  # Public Subnet 3 - Third availability zone subnet for high availability
   PublicSubnet03:
     Type: AWS::EC2::Subnet
     DependsOn: VPCIpv6CidrBlock
@@ -176,7 +202,7 @@ Resources:
       MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
-        - 2
+        - 2  # Select third AZ in the region
         - Fn::GetAZs:
             Ref: AWS::Region
       CidrBlock:
@@ -184,7 +210,7 @@ Resources:
       AssignIpv6AddressOnCreation: true
       Ipv6CidrBlock: 
         Fn::Select: 
-          - 2
+          - 2  # Third /64 subnet from VPC's IPv6 block
           - Fn::Cidr: 
               - !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
               - 256 
@@ -193,7 +219,9 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-3"
 
-      
+  # Route Table Associations - Connect each subnet to the public route table
+  # This enables internet access for all three subnets
+
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -212,12 +240,15 @@ Resources:
       SubnetId: !Ref PublicSubnet03
       RouteTableId: !Ref PublicRouteTable
 
+# Outputs - Values that can be referenced by other stacks or used for information
 Outputs:
 
+  # Core VPC information
   VpcId:
     Description: VPC ID
     Value: !Ref "VPC"
 
+  # Default security resources (useful for referencing in other templates)
   VpcDefaultNetworkAcl:
     Description: The ID of the default network ACL for the VPC.
     Value: !GetAtt VPC.DefaultNetworkAcl
@@ -226,6 +257,7 @@ Outputs:
     Description: The ID of the default security group for the VPC. 
     Value: !GetAtt VPC.DefaultSecurityGroup
 
+  # Public subnet IDs (commonly referenced when launching instances)
   PublicSubnet01Id:
     Description: Public Subnet 1 ID
     Value: !Ref PublicSubnet01
@@ -238,7 +270,7 @@ Outputs:
     Description: Public Subnet 3 ID
     Value: !Ref PublicSubnet03
 
-##
+  # IPv6 CIDR blocks for reference and troubleshooting
   VpcIpv6CidrBlock:
     Description: The IPv6 CIDR block associated with the VPC
     Value: !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ] # Example value: 2600:1f16:844:9c00::/56  (not /64)
