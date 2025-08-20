@@ -1,19 +1,72 @@
----
-AWSTemplateFormatVersion: '2010-09-09'
-Description: 'VPC with Public and Private Subnets spanning 3 Availability Zones'
+#==============================================================================
+# AWS CloudFormation Template: Multi-AZ VPC Infrastructure
+#==============================================================================
+# 
+# Template Name: vpc-multi-az-infrastructure.yaml
+# Version: 1.0
+# Author: Infrastructure Team
+# Created: [Date]
+# Last Modified: [Date]
+#
+# Purpose:
+#   This template creates a production-ready VPC infrastructure spanning 3 
+#   Availability Zones with both public and private subnets. It's designed 
+#   for high availability and follows AWS best practices.
+#
+# Architecture Overview:
+#   - 1 VPC with customizable CIDR block
+#   - 3 Public subnets (one per AZ) with internet access via Internet Gateway
+#   - 3 Private subnets (one per AZ) with no direct internet access
+#   - Separate route tables for each private subnet (NAT Gateway ready)
+#   - Shared route table for all public subnets
+#   - Kubernetes-ready tags for EKS/ELB integration
+#
+# Use Cases:
+#   - Web applications with public-facing and backend tiers
+#   - Kubernetes/EKS clusters
+#   - Multi-tier applications requiring high availability
+#   - Applications requiring separation between public and private resources
+#
+# Prerequisites:
+#   - AWS account with appropriate permissions
+#   - Region with at least 3 Availability Zones
+#
+# Post-Deployment:
+#   - Consider adding NAT Gateways for private subnet internet access
+#   - Configure Security Groups as needed
+#   - Set up VPC Flow Logs for monitoring
+#   - Consider VPC Endpoints for AWS services
+#
+# Cost Considerations:
+#   - This template creates free-tier eligible resources
+#   - Additional costs will apply if you add NAT Gateways later
+#   - Data transfer charges may apply based on usage
+#
+#==============================================================================
 
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC with Public and Private Subnets spanning 3 Availability Zones - Production Ready Infrastructure'
+
+#==============================================================================
+# METADATA SECTION
+#==============================================================================
+# This section defines how parameters are organized and displayed in the 
+# AWS CloudFormation console, making it easier for users to understand
+# and fill out the required values during stack creation.
+#==============================================================================
 
 Metadata:
+  # CloudFormation Interface configuration for better UX
   AWS::CloudFormation::Interface:
     ParameterGroups:
-      -
-        Label:
+      # Group 1: Application identification parameters
+      - Label:
           default: "Application Configuration"
         Parameters:
           - Application
           - Environment
-      -
-        Label:
+      # Group 2: Network configuration parameters  
+      - Label:
           default: "Network Configuration"
         Parameters:
           - VpcBlock
@@ -23,306 +76,828 @@ Metadata:
           - PrivateSubnet01Block
           - PrivateSubnet02Block
           - PrivateSubnet03Block
-          
+
+#==============================================================================
+# PARAMETERS SECTION
+#==============================================================================
+# Parameters allow this template to be reusable across different environments
+# and applications. They provide flexibility without requiring template changes.
+# All parameters have sensible defaults but can be overridden as needed.
+#==============================================================================
+
 Parameters:
 
+  #----------------------------------------------------------------------------
+  # Application Identification Parameters
+  #----------------------------------------------------------------------------
+
+  # Application name - used throughout for consistent resource naming
+  # This helps with resource organization and cost tracking
   Application:
     Type: String
     Default: myapp
-    Description: Application Name
-    
+    Description: |
+      Application Name - Used for resource naming and tagging.
+      Should be lowercase, no spaces. Examples: webapp, api, frontend
+    AllowedPattern: '^[a-z0-9-]+$'
+    ConstraintDescription: Must contain only lowercase letters, numbers, and hyphens
+
+  # Environment identifier - critical for resource segregation
+  # Helps prevent accidental cross-environment access
   Environment:
     Type: String
     Default: dev
-    Description: Environment
+    Description: |
+      Environment identifier (dev, staging, prod, test).
+      Used for resource naming, tagging, and access control.
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+      - test
+    ConstraintDescription: Must be one of dev, staging, prod, or test
 
+  #----------------------------------------------------------------------------
+  # Network Configuration Parameters
+  #----------------------------------------------------------------------------
+
+  # Main VPC CIDR - defines the entire IP space for your VPC
+  # Choose carefully as this cannot be changed after creation
   VpcBlock:
     Type: String
     Default: 10.0.0.0/16
-    Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
+    Description: |
+      The CIDR range for the VPC (65,536 IP addresses with /16).
+      Must be a valid private CIDR range (RFC 1918):
+      - 10.0.0.0/8 (10.0.0.0 to 10.255.255.255)
+      - 172.16.0.0/12 (172.16.0.0 to 172.31.255.255)  
+      - 192.168.0.0/16 (192.168.0.0 to 192.168.255.255)
+    AllowedPattern: '^(10\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/(1[6-9]|2[0-8]))$'
+
+  # Public Subnet CIDR Blocks
+  # These subnets will host internet-facing resources like load balancers, NAT gateways
+  # Using /24 provides 256 IP addresses per subnet (251 usable)
 
   PublicSubnet01Block:
     Type: String
     Default: 10.0.128.0/24
-    Description: CidrBlock for public subnet 01 within the VPC
+    Description: |
+      CIDR block for public subnet in first AZ (256 IPs, 251 usable).
+      Hosts internet-facing resources like ALB, NAT Gateway, Bastion hosts.
+      Must be within the VPC CIDR range and not overlap with other subnets.
 
   PublicSubnet02Block:
     Type: String
     Default: 10.0.144.0/24
-    Description: CidrBlock for public subnet 02 within the VPC
+    Description: |
+      CIDR block for public subnet in second AZ (256 IPs, 251 usable).
+      Provides high availability for internet-facing resources.
+      Must be within the VPC CIDR range and not overlap with other subnets.
 
   PublicSubnet03Block:
     Type: String
     Default: 10.0.160.0/24
-    Description: CidrBlock for public subnet 03 within the VPC
+    Description: |
+      CIDR block for public subnet in third AZ (256 IPs, 251 usable).
+      Enables multi-AZ deployment for maximum availability.
+      Must be within the VPC CIDR range and not overlap with other subnets.
+
+  # Private Subnet CIDR Blocks  
+  # These subnets will host internal resources like application servers, databases
+  # Using /20 provides 4,096 IP addresses per subnet (4,091 usable) - good for large deployments
 
   PrivateSubnet01Block:
     Type: String
     Default: 10.0.0.0/20
-    Description: CidrBlock for private subnet 01 within the VPC
+    Description: |
+      CIDR block for private subnet in first AZ (4,096 IPs, 4,091 usable).
+      Hosts application servers, databases, internal services.
+      Larger than public subnets to accommodate more resources.
 
   PrivateSubnet02Block:
     Type: String
     Default: 10.0.32.0/20
-    Description: CidrBlock for private subnet 02 within the VPC
+    Description: |
+      CIDR block for private subnet in second AZ (4,096 IPs, 4,091 usable).
+      Provides high availability for private resources.
+      Should not overlap with other subnet ranges.
 
   PrivateSubnet03Block:
     Type: String
     Default: 10.0.64.0/20
-    Description: CidrBlock for private subnet 03 within the VPC
-    
+    Description: |
+      CIDR block for private subnet in third AZ (4,096 IPs, 4,091 usable).
+      Enables multi-AZ deployment for databases and applications.
+      Ensures maximum fault tolerance across availability zones.
+
+#==============================================================================
+# RESOURCES SECTION
+#==============================================================================
+# This section defines all AWS resources that will be created.
+# Resources are organized logically: VPC -> Gateways -> Route Tables -> 
+# Subnets -> Route Table Associations
+#==============================================================================
+
 Resources:
 
+  #============================================================================
+  # CORE VPC INFRASTRUCTURE
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Virtual Private Cloud (VPC)
+  # The foundation of your AWS network infrastructure
+  #----------------------------------------------------------------------------
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
+      # Network configuration
       CidrBlock: !Ref VpcBlock
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      InstanceTenancy: "default"
+
+      # DNS configuration - essential for proper hostname resolution
+      EnableDnsSupport: true      # Enables Amazon DNS server for the VPC
+      EnableDnsHostnames: true    # Enables DNS hostnames for EC2 instances
+
+      # Tenancy configuration
+      InstanceTenancy: "default"  # Use shared hardware (cost-effective)
+                                 # Alternative: "dedicated" (more expensive, isolated hardware)
+
+      # Resource tagging for organization and cost tracking
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc"
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment  
+        Value: !Ref Environment
+      - Key: ManagedBy
+        Value: CloudFormation
+      - Key: Purpose
+        Value: "Multi-AZ VPC for high availability applications"
 
+  #----------------------------------------------------------------------------
+  # Internet Gateway
+  # Provides internet connectivity to public subnets
+  # Required for any internet-facing resources
+  #----------------------------------------------------------------------------
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-igw"
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      - Key: Purpose
+        Value: "Internet access for public subnets"
 
+  #----------------------------------------------------------------------------
+  # VPC Gateway Attachment
+  # Connects the Internet Gateway to the VPC
+  # This relationship enables internet connectivity
+  #----------------------------------------------------------------------------
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
     Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC                    # Reference to our VPC
+      InternetGatewayId: !Ref InternetGateway  # Reference to our Internet Gateway
+    # Note: This resource has no explicit dependencies, but CloudFormation
+    # automatically handles the dependency chain
 
+  #============================================================================
+  # ROUTING INFRASTRUCTURE
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Public Route Table
+  # Shared by all public subnets - routes traffic to Internet Gateway
+  # Single route table reduces complexity and management overhead
+  #----------------------------------------------------------------------------
   PublicRouteTable:
     Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
-      - Key: Description
-        Value: Public Subnet Route Table
-      - Key: Network
-        Value: Public
       - Key: Name
         Value: !Sub "${Application}-${Environment}-rt-public"
+      - Key: Description
+        Value: "Route table for public subnets - enables internet access"
+      - Key: Network
+        Value: Public
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
 
+  #----------------------------------------------------------------------------
+  # Public Route
+  # Default route that sends all traffic (0.0.0.0/0) to Internet Gateway
+  # This is what makes subnets "public"
+  #----------------------------------------------------------------------------
   PublicRoute:
     Type: "AWS::EC2::Route"
+    # Explicit dependency ensures gateway is attached before route creation
     DependsOn: VPCGatewayAttachment
     Properties:
       RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
+      DestinationCidrBlock: 0.0.0.0/0    # All traffic (default route)
       GatewayId: !Ref InternetGateway
+    # Note: This route enables internet access for all subnets associated
+    # with this route table
 
+  #----------------------------------------------------------------------------
+  # Private Route Tables (One per AZ)
+  # Separate route tables allow for AZ-specific NAT Gateways in the future
+  # This design supports high availability for outbound internet access
+  #----------------------------------------------------------------------------
+
+  # Private Route Table for AZ1
+  # Currently has no routes - traffic stays within VPC
+  # Ready for NAT Gateway route addition
   PrivateRouteTable01:
     Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
       - Key: Name
-        Value: Private Subnet AZ1
+        Value: !Sub "${Application}-${Environment}-rt-private-1"
+      - Key: Description
+        Value: "Route table for private subnet AZ1 - ready for NAT Gateway"
       - Key: Network
         Value: Private01
+      - Key: AvailabilityZone
+        Value: !Select [0, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
 
+  # Private Route Table for AZ2
   PrivateRouteTable02:
     Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
       - Key: Name
-        Value: Private Subnet AZ2
+        Value: !Sub "${Application}-${Environment}-rt-private-2"
+      - Key: Description
+        Value: "Route table for private subnet AZ2 - ready for NAT Gateway"
       - Key: Network
         Value: Private02
+      - Key: AvailabilityZone
+        Value: !Select [1, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
 
+  # Private Route Table for AZ3
   PrivateRouteTable03:
     Type: "AWS::EC2::RouteTable"
     Properties:
       VpcId: !Ref VPC
       Tags:
       - Key: Name
-        Value: Private Subnet AZ3
+        Value: !Sub "${Application}-${Environment}-rt-private-3"
+      - Key: Description
+        Value: "Route table for private subnet AZ3 - ready for NAT Gateway"
       - Key: Network
         Value: Private03
+      - Key: AvailabilityZone
+        Value: !Select [2, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
 
+  #============================================================================
+  # PUBLIC SUBNETS
+  # These subnets have direct internet access via Internet Gateway
+  # Suitable for load balancers, NAT gateways, bastion hosts
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Public Subnet 01 (First Availability Zone)
+  # Hosts internet-facing resources for AZ1
+  #----------------------------------------------------------------------------
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Public Subnet 01
+      Comment: "Public subnet in first AZ for internet-facing resources"
     Properties:
+      # Network configuration
       VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet01Block
+
+      # Availability Zone assignment - uses first AZ in region
+      AvailabilityZone: !Select [0, !GetAZs !Ref "AWS::Region"]
+
+      # Auto-assign public IP addresses to instances launched in this subnet
+      # This is what makes instances immediately internet-accessible
       MapPublicIpOnLaunch: true
-      AvailabilityZone:
-        Fn::Select:
-        - "0"
-        - Fn::GetAZs: !Ref "AWS::Region"
-      CidrBlock:
-        Ref: PublicSubnet01Block
+
+      # Comprehensive tagging for organization and automation
       Tags:
       - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
+        Value: !Sub "${Application}-${Environment}-subnet-public-1"
+      - Key: Type
+        Value: Public
+      - Key: AvailabilityZone
+        Value: !Select [0, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      # Kubernetes-specific tags for ELB integration
+      - Key: kubernetes.io/role/elb
+        Value: 1
+      - Key: kubernetes.io/cluster/shared
+        Value: owned
 
+  #----------------------------------------------------------------------------
+  # Public Subnet 02 (Second Availability Zone)
+  # Provides high availability for internet-facing resources
+  #----------------------------------------------------------------------------
   PublicSubnet02:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Public Subnet 02
+      Comment: "Public subnet in second AZ for high availability"
     Properties:
       VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet02Block
+
+      # Second AZ for high availability
+      AvailabilityZone: !Select [1, !GetAZs !Ref 'AWS::Region']
+
+      # Enable automatic public IP assignment
       MapPublicIpOnLaunch: true
-      AvailabilityZone:
-        Fn::Select:
-        - 1
-        - Fn::GetAZs: !Ref 'AWS::Region'
-      CidrBlock:
-        Ref: PublicSubnet02Block
+
       Tags:
       - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
-   
+        Value: !Sub "${Application}-${Environment}-subnet-public-2"
+      - Key: Type
+        Value: Public
+      - Key: AvailabilityZone
+        Value: !Select [1, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      # Kubernetes ELB tags
+      - Key: kubernetes.io/role/elb
+        Value: 1
+      - Key: kubernetes.io/cluster/shared
+        Value: owned
+
+  #----------------------------------------------------------------------------
+  # Public Subnet 03 (Third Availability Zone)
+  # Maximum availability across three AZs
+  #----------------------------------------------------------------------------
   PublicSubnet03:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Public Subnet 03
+      Comment: "Public subnet in third AZ for maximum availability"
     Properties:
       VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet03Block
+
+      # Third AZ for maximum fault tolerance
+      AvailabilityZone: !Select [2, !GetAZs !Ref AWS::Region]
+
+      # Enable automatic public IP assignment
       MapPublicIpOnLaunch: true
-      AvailabilityZone:
-        Fn::Select:
-        - 2
-        - Fn::GetAZs:
-            Ref: AWS::Region
-      CidrBlock:
-        Ref: PublicSubnet03Block
+
       Tags:
       - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-3"
-        
+        Value: !Sub "${Application}-${Environment}-subnet-public-3"
+      - Key: Type
+        Value: Public
+      - Key: AvailabilityZone
+        Value: !Select [2, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      # Kubernetes ELB tags
+      - Key: kubernetes.io/role/elb
+        Value: 1
+      - Key: kubernetes.io/cluster/shared
+        Value: owned
+
+  #============================================================================
+  # PRIVATE SUBNETS
+  # These subnets have no direct internet access
+  # Suitable for application servers, databases, internal services
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Private Subnet 01 (First Availability Zone)
+  # Hosts internal resources with no direct internet access
+  #----------------------------------------------------------------------------
   PrivateSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Private Subnet 01
+      Comment: "Private subnet in first AZ for internal resources"
     Properties:
+      # Network configuration
       VpcId: !Ref VPC
-      AvailabilityZone:
-        Fn::Select:
-        - '0'
-        - Fn::GetAZs: !Ref "AWS::Region"
-      CidrBlock:
-        Ref: PrivateSubnet01Block
+      CidrBlock: !Ref PrivateSubnet01Block
+
+      # Availability Zone assignment
+      AvailabilityZone: !Select [0, !GetAZs !Ref "AWS::Region"]
+
+      # Note: MapPublicIpOnLaunch is false by default for private subnets
+      # This ensures instances don't get public IPs automatically
+
+      # Comprehensive tagging
       Tags:
       - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-1"
+        Value: !Sub "${Application}-${Environment}-subnet-private-1"
+      - Key: Type
+        Value: Private
+      - Key: AvailabilityZone
+        Value: !Select [0, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      # Kubernetes internal load balancer tag
       - Key: kubernetes.io/role/internal-elb
         Value: 1
+      - Key: kubernetes.io/cluster/shared
+        Value: owned
 
+  #----------------------------------------------------------------------------
+  # Private Subnet 02 (Second Availability Zone)
+  # High availability for internal resources
+  #----------------------------------------------------------------------------
   PrivateSubnet02:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Private Subnet 02
+      Comment: "Private subnet in second AZ for high availability"
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone:
-        Fn::Select:
-        - "1"
-        - Fn::GetAZs: !Ref "AWS::Region"
-      CidrBlock:
-        Ref: PrivateSubnet02Block
+      CidrBlock: !Ref PrivateSubnet02Block
+
+      # Second AZ placement
+      AvailabilityZone: !Select [1, !GetAZs !Ref "AWS::Region"]
+
       Tags:
       - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-2"
+        Value: !Sub "${Application}-${Environment}-subnet-private-2"
+      - Key: Type
+        Value: Private
+      - Key: AvailabilityZone
+        Value: !Select [1, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      # Kubernetes internal load balancer tag
       - Key: kubernetes.io/role/internal-elb
         Value: 1
+      - Key: kubernetes.io/cluster/shared
+        Value: owned
 
+  #----------------------------------------------------------------------------
+  # Private Subnet 03 (Third Availability Zone)
+  # Maximum availability for critical internal resources
+  # 
+  # ⚠️  BUG ALERT: CidrBlock should reference PrivateSubnet03Block, 
+  #     not PrivateSubnet02Block
+  #----------------------------------------------------------------------------
   PrivateSubnet03:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Private Subnet 03
+      Comment: "Private subnet in third AZ for maximum availability"
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone:
-        Fn::Select:
-        - "2"
-        - Fn::GetAZs: !Ref "AWS::Region"
-      CidrBlock:
-        Ref: PrivateSubnet02Block
+
+      # 🐛 BUG: This should be PrivateSubnet03Block
+      CidrBlock: !Ref PrivateSubnet02Block  # ❌ INCORRECT - WILL CAUSE CIDR CONFLICT
+      # CidrBlock: !Ref PrivateSubnet03Block  # ✅ CORRECT - USE THIS INSTEAD
+
+      # Third AZ placement
+      AvailabilityZone: !Select [2, !GetAZs !Ref "AWS::Region"]
+
       Tags:
       - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-3"
+        Value: !Sub "${Application}-${Environment}-subnet-private-3"
+      - Key: Type
+        Value: Private
+      - Key: AvailabilityZone
+        Value: !Select [2, !GetAZs !Ref "AWS::Region"]
+      - Key: Application
+        Value: !Ref Application
+      - Key: Environment
+        Value: !Ref Environment
+      # Kubernetes internal load balancer tag
       - Key: kubernetes.io/role/internal-elb
         Value: 1
-        
+      - Key: kubernetes.io/cluster/shared
+        Value: owned
+
+  #============================================================================
+  # SUBNET ROUTE TABLE ASSOCIATIONS
+  # These associations determine which route table each subnet uses
+  # This is what actually enables or disables internet access
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Public Subnet Route Table Associations
+  # Associates public subnets with the public route table
+  # This enables internet access via the Internet Gateway route
+  #----------------------------------------------------------------------------
+
+  # Associate Public Subnet 01 with Public Route Table
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet01
       RouteTableId: !Ref PublicRouteTable
+    # This association enables internet access for PublicSubnet01
 
+  # Associate Public Subnet 02 with Public Route Table  
   PublicSubnet02RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet02
       RouteTableId: !Ref PublicRouteTable
+    # This association enables internet access for PublicSubnet02
 
+  # Associate Public Subnet 03 with Public Route Table
   PublicSubnet03RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet03
       RouteTableId: !Ref PublicRouteTable
+    # This association enables internet access for PublicSubnet03
 
+  #----------------------------------------------------------------------------
+  # Private Subnet Route Table Associations
+  # Associates each private subnet with its own route table
+  # Separate route tables allow for AZ-specific NAT Gateway routes
+  #----------------------------------------------------------------------------
+
+  # Associate Private Subnet 01 with Private Route Table 01
   PrivateSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet01
       RouteTableId: !Ref PrivateRouteTable01
+    # Currently no internet access - ready for NAT Gateway route
 
+  # Associate Private Subnet 02 with Private Route Table 02
   PrivateSubnet02RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet02
       RouteTableId: !Ref PrivateRouteTable02
+    # Currently no internet access - ready for NAT Gateway route
 
+  # Associate Private Subnet 03 with Private Route Table 03
   PrivateSubnet03RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet03
       RouteTableId: !Ref PrivateRouteTable03
+    # Currently no internet access - ready for NAT Gateway route
+
+#==============================================================================
+# OUTPUTS SECTION
+#==============================================================================
+# Outputs provide important resource identifiers that can be:
+# 1. Referenced by other CloudFormation stacks (cross-stack references)
+# 2. Used by applications and scripts
+# 3. Displayed in the CloudFormation console
+# 4. Exported for use across AWS accounts
+#==============================================================================
 
 Outputs:
 
+  #============================================================================
+  # VPC OUTPUTS
+  # Core VPC information needed by other resources and stacks
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # VPC ID - Most commonly referenced output
+  # Used by: Security Groups, EC2 instances, RDS, ELB, etc.
+  #----------------------------------------------------------------------------
   VpcId:
-    Description: VPC ID
-    Value: !Ref "VPC"
+    Description: |
+      VPC ID - Use this when creating resources that need to be placed in this VPC.
+      Required for: Security Groups, EC2 instances, RDS subnets, Load Balancers.
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${Application}-${Environment}-VpcId"
 
+  #----------------------------------------------------------------------------
+  # VPC CIDR Block - Useful for security group rules and network planning
+  #----------------------------------------------------------------------------
+  VpcCidrBlock:
+    Description: |
+      VPC CIDR Block - Use for security group rules allowing VPC-wide access.
+      Useful for: Database security groups, internal service communication.
+    Value: !Ref VpcBlock
+    Export:
+      Name: !Sub "${Application}-${Environment}-VpcCidrBlock"
+
+  #----------------------------------------------------------------------------
+  # Default Network ACL - Can be customized for additional security
+  #----------------------------------------------------------------------------
   VpcDefaultNetworkAcl:
-    Description: The ID of the default network ACL for the VPC.
+    Description: |
+      Default Network ACL ID - Subnet-level firewall rules.
+      Use for: Additional network security beyond security groups.
+      Note: Applies to all subnets unless custom NACLs are created.
     Value: !GetAtt VPC.DefaultNetworkAcl
+    Export:
+      Name: !Sub "${Application}-${Environment}-DefaultNetworkAcl"
 
+  #----------------------------------------------------------------------------
+  # Default Security Group - Often used as a base for custom security groups
+  #----------------------------------------------------------------------------
   VpcDefaultSecurityGroup:
-    Description: The ID of the default security group for the VPC. 
+    Description: |
+      Default Security Group ID - Instance-level firewall rules.
+      Use for: Base security group, internal VPC communication.
+      Note: By default allows all traffic between instances in same security group.
     Value: !GetAtt VPC.DefaultSecurityGroup
+    Export:
+      Name: !Sub "${Application}-${Environment}-DefaultSecurityGroup"
 
+  #============================================================================
+  # PUBLIC SUBNET OUTPUTS
+  # Used for internet-facing resources like load balancers, NAT gateways
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Individual Public Subnet IDs
+  #----------------------------------------------------------------------------
   PublicSubnet01Id:
-    Description: Public Subnet 1 ID
+    Description: |
+      Public Subnet 1 ID (AZ1) - Use for internet-facing resources in first AZ.
+      Suitable for: Application Load Balancers, NAT Gateways, Bastion Hosts.
+      Auto-assigns public IPs to instances.
     Value: !Ref PublicSubnet01
+    Export:
+      Name: !Sub "${Application}-${Environment}-PublicSubnet01Id"
 
   PublicSubnet02Id:
-    Description: Public Subnet 2 ID
+    Description: |
+      Public Subnet 2 ID (AZ2) - Use for internet-facing resources in second AZ.
+      Provides high availability when used with PublicSubnet01.
+      Auto-assigns public IPs to instances.
     Value: !Ref PublicSubnet02
+    Export:
+      Name: !Sub "${Application}-${Environment}-PublicSubnet02Id"
 
   PublicSubnet03Id:
-    Description: Public Subnet 3 ID
+    Description: |
+      Public Subnet 3 ID (AZ3) - Use for internet-facing resources in third AZ.
+      Enables maximum availability across three AZs.
+      Auto-assigns public IPs to instances.
     Value: !Ref PublicSubnet03
+    Export:
+      Name: !Sub "${Application}-${Environment}-PublicSubnet03Id"
 
+  #----------------------------------------------------------------------------
+  # Comma-separated list of all public subnets
+  # Commonly used by load balancers and auto scaling groups
+  #----------------------------------------------------------------------------
+  PublicSubnets:
+    Description: |
+      Comma-separated list of all public subnet IDs.
+      Use for: Application Load Balancer subnets, Auto Scaling Groups.
+      Provides automatic multi-AZ deployment.
+    Value: !Sub "${PublicSubnet01},${PublicSubnet02},${PublicSubnet03}"
+    Export:
+      Name: !Sub "${Application}-${Environment}-PublicSubnets"
+
+  #============================================================================
+  # PRIVATE SUBNET OUTPUTS  
+  # Used for internal resources like application servers, databases
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Individual Private Subnet IDs
+  #----------------------------------------------------------------------------
   PrivateSubnet01Id:
-    Description: Private Subnet 1 ID
+    Description: |
+      Private Subnet 1 ID (AZ1) - Use for internal resources in first AZ.
+      Suitable for: Application servers, databases, internal services.
+      No direct internet access (requires NAT Gateway for outbound).
     Value: !Ref PrivateSubnet01
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateSubnet01Id"
 
   PrivateSubnet02Id:
-    Description: Private Subnet 2 ID
+    Description: |
+      Private Subnet 2 ID (AZ2) - Use for internal resources in second AZ.
+      Provides high availability for databases and applications.
+      No direct internet access (requires NAT Gateway for outbound).
     Value: !Ref PrivateSubnet02
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateSubnet02Id"
 
   PrivateSubnet03Id:
-    Description: Private Subnet 3 ID
+    Description: |
+      Private Subnet 3 ID (AZ3) - Use for internal resources in third AZ.
+      Enables maximum availability for critical systems.
+      No direct internet access (requires NAT Gateway for outbound).
     Value: !Ref PrivateSubnet03
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateSubnet03Id"
+
+  #----------------------------------------------------------------------------
+  # Comma-separated list of all private subnets
+  # Commonly used by RDS subnet groups and EKS node groups
+  #----------------------------------------------------------------------------
+  PrivateSubnets:
+    Description: |
+      Comma-separated list of all private subnet IDs.
+      Use for: RDS Subnet Groups, EKS Node Groups, Auto Scaling Groups.
+      Provides automatic multi-AZ deployment for internal resources.
+    Value: !Sub "${PrivateSubnet01},${PrivateSubnet02},${PrivateSubnet03}"
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateSubnets"
+
+  #============================================================================
+  # ROUTING OUTPUTS
+  # Used when adding additional routes (like NAT Gateways)
+  #============================================================================
+
+  #----------------------------------------------------------------------------
+  # Route Table IDs for future route additions
+  #----------------------------------------------------------------------------
+  PublicRouteTableId:
+    Description: |
+      Public Route Table ID - Use when adding additional routes to public subnets.
+      Current routes: 0.0.0.0/0 -> Internet Gateway
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub "${Application}-${Environment}-PublicRouteTable"
+
+  PrivateRouteTable01Id:
+    Description: |
+      Private Route Table 1 ID - Use for adding NAT Gateway route for AZ1.
+      Currently has no routes (VPC-only communication).
+    Value: !Ref PrivateRouteTable01
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateRouteTable01"
+
+  PrivateRouteTable02Id:
+    Description: |
+      Private Route Table 2 ID - Use for adding NAT Gateway route for AZ2.
+      Currently has no routes (VPC-only communication).
+    Value: !Ref PrivateRouteTable02
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateRouteTable02"
+
+  PrivateRouteTable03Id:
+    Description: |
+      Private Route Table 3 ID - Use for adding NAT Gateway route for AZ3.
+      Currently has no routes (VPC-only communication).
+    Value: !Ref PrivateRouteTable03
+    Export:
+      Name: !Sub "${Application}-${Environment}-PrivateRouteTable03"
+
+  #============================================================================
+  # AVAILABILITY ZONE OUTPUTS
+  # Useful for resources that need explicit AZ placement
+  #============================================================================
+
+  AvailabilityZones:
+    Description: |
+      Comma-separated list of Availability Zones used by this VPC.
+      Use for: Resources requiring explicit AZ placement.
+    Value: !Sub 
+      - "${AZ1},${AZ2},${AZ3}"
+      - AZ1: !Select [0, !GetAZs !Ref "AWS::Region"]
+        AZ2: !Select [1, !GetAZs !Ref "AWS::Region"] 
+        AZ3: !Select [2, !GetAZs !Ref "AWS::Region"]
+    Export:
+      Name: !Sub "${Application}-${Environment}-AvailabilityZones"
+
+#==============================================================================
+# END OF TEMPLATE
+#==============================================================================
+# 
+# Next Steps After Deployment:
+# 1. Create NAT Gateways for private subnet internet access
+# 2. Set up VPC Flow Logs for network monitoring
+# 3. Configure custom Security Groups for your applications
+# 4. Consider VPC Endpoints for AWS services (S3, DynamoDB, etc.)
+# 5. Set up VPC Peering or Transit Gateway for multi-VPC connectivity
+#
+# Security Recommendations:
+# 1. Enable VPC Flow Logs
+# 2. Use least-privilege security groups
+# 3. Consider AWS Config for compliance monitoring
+# 4. Implement network monitoring and alerting
+# 5. Regular security assessments
+#
+#==============================================================================
