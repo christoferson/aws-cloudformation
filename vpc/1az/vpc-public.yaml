@@ -1,4 +1,22 @@
----
+#==============================================================================
+# CloudFormation Template: VPC with Public Subnet
+#==============================================================================
+# Purpose: Creates a basic VPC infrastructure with a single public subnet
+#
+# This template creates:
+# - VPC with configurable CIDR block
+# - Internet Gateway for public internet access
+# - Single public subnet in first availability zone
+# - Route table with internet gateway route
+# - Proper tagging for resource identification
+#
+# Use Cases:
+# - Development environments
+# - Simple web applications
+# - Testing infrastructure
+# - Single-tier applications requiring internet access
+#==============================================================================
+
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'VPC with Public Subnets only and spans 1 Availability Zone'
 
@@ -24,7 +42,7 @@ Parameters:
     Type: String
     Default: myapp
     Description: Application Name
-    
+
   Environment:
     Type: String
     Default: dev
@@ -42,6 +60,8 @@ Parameters:
 
 Resources:
 
+  # Main VPC - Virtual Private Cloud that serves as the network foundation
+  # Enables DNS support and hostnames for proper name resolution
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
@@ -53,6 +73,8 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc"
 
+  # Internet Gateway - Provides internet access to public subnets
+  # Acts as a bridge between VPC and the internet
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
@@ -60,12 +82,16 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-igw"
 
+  # VPC Gateway Attachment - Connects the Internet Gateway to the VPC
+  # Required for the IGW to function with the VPC
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
+  # Public Route Table - Defines routing rules for public subnets
+  # Contains route to Internet Gateway for outbound internet access
   PublicRouteTable:
     Type: "AWS::EC2::RouteTable"
     Properties:
@@ -78,6 +104,8 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-rt-public"
 
+  # Public Route - Default route that directs all traffic (0.0.0.0/0) to Internet Gateway
+  # Enables instances in public subnets to reach the internet
   PublicRoute:
     Type: "AWS::EC2::Route"
     DependsOn: VPCGatewayAttachment
@@ -86,13 +114,16 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
+  # Public Subnet 01 - First public subnet in the first availability zone
+  # Automatically assigns public IPs to instances launched within it
+  # Suitable for web servers, load balancers, and other internet-facing resources
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Public Subnet 01
+      Comment: Public Subnet 01 - Internet accessible subnet for public-facing resources
     Properties:
       VpcId: !Ref VPC
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: true  # Auto-assign public IPs to instances
       AvailabilityZone:
         Fn::Select:
         - 0
@@ -103,9 +134,11 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
-      #- Key: kubernetes.io/role/elb
+      #- Key: kubernetes.io/role/elb  # Uncomment for EKS load balancer support
       #  Value: 1
 
+  # Route Table Association - Links the public subnet to the public route table
+  # Ensures traffic from this subnet uses the public routing rules
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
