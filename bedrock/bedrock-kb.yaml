@@ -1,3 +1,55 @@
+#==============================================================================
+# CloudFormation Template: Amazon Bedrock Knowledge Base with OpenSearch Serverless
+#==============================================================================
+# Purpose: Creates a comprehensive AI knowledge base infrastructure using Amazon Bedrock
+# Author: [Your Name/Team]
+# Version: 1.0
+# Last Modified: [Date]
+#
+# This template creates:
+# - Amazon Bedrock Knowledge Base with vector search capabilities
+# - Integration with OpenSearch Serverless for vector storage
+# - S3 data source configuration for document ingestion
+# - Titan embedding model integration for text vectorization
+# - Configurable field mappings for vector, text, and metadata
+#
+# Architecture Overview:
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │                    Amazon Bedrock Knowledge Base                        │
+# │                                                                         │
+# │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    │
+# │  │   S3 Bucket     │    │  Knowledge Base │    │   OpenSearch    │    │
+# │  │   (Documents)   │───▶│   (Processing)  │───▶│   Serverless    │    │
+# │  │                 │    │                 │    │  (Vector Store) │    │
+# │  └─────────────────┘    └─────────────────┘    └─────────────────┘    │
+# │                                   │                                    │
+# │                          ┌─────────────────┐                          │
+# │                          │ Titan Embedding │                          │
+# │                          │     Model       │                          │
+# │                          └─────────────────┘                          │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# Data Flow:
+# 1. Documents uploaded to S3 bucket
+# 2. Knowledge Base processes documents using data source
+# 3. Text is converted to embeddings using Titan model
+# 4. Vectors stored in OpenSearch Serverless collection
+# 5. Knowledge base ready for semantic search queries
+#
+# Use Cases:
+# - Retrieval Augmented Generation (RAG) applications
+# - Semantic document search and discovery
+# - AI-powered customer support systems
+# - Enterprise knowledge management
+# - Intelligent document analysis and Q&A systems
+#
+# Prerequisites:
+# - OpenSearch Serverless collection must exist
+# - IAM role with appropriate Bedrock permissions
+# - S3 bucket with source documents
+# - Bedrock model access enabled in the region
+#==============================================================================
+
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Knowledge base with Amazon Opensearch Serverless vector database
 
@@ -50,43 +102,108 @@ Parameters:
 
 Resources:
 
+  # Amazon Bedrock Knowledge Base - Core AI knowledge management service
+  # Orchestrates the entire RAG (Retrieval Augmented Generation) pipeline
+  # Handles document processing, vectorization, and semantic search capabilities
+  # Integrates with foundation models for embedding generation and query processing
   KnowledgeBase:
     Type: AWS::Bedrock::KnowledgeBase
     Properties:
       Name: !Ref KnowledgeBaseName
       Description: !Ref KnowledgeBaseDescription
-      RoleArn: !Ref KnowledgeBaseRoleArn
+      RoleArn: !Ref KnowledgeBaseRoleArn  # IAM role with permissions for Bedrock, S3, and OpenSearch
+
+      # Knowledge Base Configuration - Defines the type and embedding model
+      # VECTOR type enables semantic search using vector embeddings
+      # Titan embedding model converts text to high-dimensional vectors for similarity matching
       KnowledgeBaseConfiguration:
-        Type: VECTOR
+        Type: VECTOR  # Enables vector-based semantic search
         VectorKnowledgeBaseConfiguration:
+          # Amazon Titan Embedding Model - Converts text to 1536-dimensional vectors
+          # Optimized for English text with strong semantic understanding
+          # Alternative: cohere.embed-multilingual-v3 for multilingual support
           EmbeddingModelArn: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v1
-          #cohere.embed-multilingual-v3
+          #cohere.embed-multilingual-v3  # Uncomment for multilingual embedding support
+
+      # Storage Configuration - OpenSearch Serverless for vector storage
+      # Provides scalable, managed vector database without infrastructure management
+      # Optimized for high-performance similarity search operations
       StorageConfiguration:
         Type: OPENSEARCH_SERVERLESS
         OpensearchServerlessConfiguration:
-          CollectionArn: !Ref VectorDatabaseCollectionArn
-          VectorIndexName: !Ref VectorDatabaseIndexName
-          FieldMapping:
-            VectorField: embeddings
-            TextField: text
-            MetadataField: metadata
+          CollectionArn: !Ref VectorDatabaseCollectionArn  # Pre-existing OpenSearch Serverless collection
+          VectorIndexName: !Ref VectorDatabaseIndexName    # Index name for vector storage
 
+          # Field Mapping - Defines how data is structured in the vector database
+          # Critical for proper vector search functionality and metadata retrieval
+          FieldMapping:
+            VectorField: embeddings   # Field storing the vector embeddings
+            TextField: text          # Field storing the original text content
+            MetadataField: metadata  # Field storing document metadata (source, timestamps, etc.)
+
+  # Knowledge Base Data Source - Connects S3 bucket to the knowledge base
+  # Handles document ingestion, processing, and synchronization
+  # Supports various document formats (PDF, TXT, DOCX, etc.)
+  # Manages chunking strategy for optimal vector generation and retrieval
   KnowledgeBaseDataSource:
     Type: AWS::Bedrock::DataSource
     Properties:
       KnowledgeBaseId: !Ref KnowledgeBase
       Name: !Ref DataSourceName
       Description: !Ref DataSourceDescription
+
+      # Data Deletion Policy - Controls what happens when data source is deleted
+      # RETAIN: Keeps processed data in vector store (recommended for production)
+      # DELETE: Removes all associated vectors and metadata
       DataDeletionPolicy: RETAIN
+
+      # Data Source Configuration - S3 bucket integration
+      # Automatically discovers and processes documents from specified S3 location
+      # Supports incremental updates and change detection
       DataSourceConfiguration:
         Type: S3
         S3Configuration:
-          BucketArn: arn:aws:s3:::foo-demo-dev-berock-kb-foo
+          BucketArn: arn:aws:s3:::foo-demo-dev-berock-kb-foo  # Source S3 bucket containing documents
+
+          # Optional: Inclusion Prefixes - Limit processing to specific files/folders
+          # Useful for organizing different document types or controlling ingestion scope
           #InclusionPrefixes:
           #  - aws-overview.pdf
+          #  - documents/
+          #  - manuals/
+
+          # Optional: Vector Ingestion Configuration - Advanced chunking settings
+          # Controls how documents are split into chunks for optimal embedding generation
+          # Proper chunking is crucial for retrieval accuracy and context preservation
           #VectorIngestionConfiguration:
           #  ChunkingConfiguration: 
-          #    ChunkingStrategy: FIXED_SIZE | NONE
+          #    ChunkingStrategy: FIXED_SIZE | NONE  # FIXED_SIZE for consistent chunks, NONE for whole documents
           #    FixedSizeChunkingConfiguration: 
-          #      MaxTokens:
-          #      OverlapPercentage:
+          #      MaxTokens: 300              # Maximum tokens per chunk (balance between context and precision)
+          #      OverlapPercentage: 20       # Overlap between chunks to preserve context across boundaries
+
+Outputs:
+
+  # Knowledge Base Outputs - Essential identifiers for integration with applications
+  KnowledgeBaseId:
+    Description: The unique identifier of the created Knowledge Base
+    Value: !Ref KnowledgeBase
+    Export:
+      Name: !Sub "${Application}-${Environment}-knowledge-base-id"
+
+  KnowledgeBaseArn:
+    Description: The ARN of the created Knowledge Base for IAM policies and cross-service integration
+    Value: !GetAtt KnowledgeBase.KnowledgeBaseArn
+    Export:
+      Name: !Sub "${Application}-${Environment}-knowledge-base-arn"
+
+  DataSourceId:
+    Description: The unique identifier of the data source for management operations
+    Value: !Ref KnowledgeBaseDataSource
+    Export:
+      Name: !Sub "${Application}-${Environment}-data-source-id"
+
+  # Usage Information
+  KnowledgeBaseEndpoint:
+    Description: Use this Knowledge Base ID with Bedrock Runtime API for queries
+    Value: !Sub "Use Knowledge Base ID '${KnowledgeBase}' with RetrieveAndGenerate API"
