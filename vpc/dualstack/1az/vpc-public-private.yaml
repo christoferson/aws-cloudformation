@@ -1,6 +1,29 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Dual-Stack (IPv4 + IPv6) VPC with Public Subnets only and spans 1 Availability Zone'
+Description: |
+  This template creates a Dual-Stack (IPv4 + IPv6) VPC with both public and private subnets.
+
+  Architecture Overview:
+  - Creates a VPC with both IPv4 and IPv6 CIDR blocks
+  - Deploys one public and one private subnet in a single Availability Zone
+  - Implements dual-stack networking (IPv4 and IPv6) throughout
+  - Sets up necessary routing and internet connectivity components
+
+  Key Components:
+  1. VPC with IPv4 and IPv6 CIDR blocks
+  2. Public Subnet with Internet Gateway (IGW) for both IPv4 and IPv6
+  3. Private Subnet with:
+     - NAT Gateway for IPv4 outbound traffic
+     - Egress-Only Internet Gateway for IPv6 outbound traffic
+
+  Network Flow:
+  - Public Subnet:
+    * Inbound and outbound internet access for both IPv4 and IPv6
+    * Hosts NAT Gateway for private subnet
+  - Private Subnet:
+    * Outbound-only internet access
+    * IPv4 traffic routes through NAT Gateway
+    * IPv6 traffic routes through Egress-Only Internet Gateway
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -17,8 +40,10 @@ Metadata:
         Parameters:
           - VpcBlock
           - PublicSubnet01Block
+          - PrivateSubnet01Block
 
 Parameters:
+
   Application:
     Type: String
     Default: myapp
@@ -32,12 +57,27 @@ Parameters:
   VpcBlock:
     Type: String
     Default: 10.0.0.0/16
-    Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
+    Description: |
+      The IPv4 CIDR range for the VPC. Must be a valid private (RFC 1918) CIDR range.
+      Example: 10.0.0.0/16 provides 65,536 addresses.
+      Note: IPv6 CIDR will be automatically assigned by AWS.
 
   PublicSubnet01Block:
     Type: String
     Default: 10.0.128.0/24
-    Description: CidrBlock for public subnet 01 within the VPC
+    Description: |
+      CIDR block for the public subnet. Must be within the VPC CIDR range.
+      Example: 10.0.128.0/24 provides 256 addresses.
+      This subnet will have direct internet access via Internet Gateway.
+
+  PrivateSubnet01Block:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: |
+      CIDR block for the private subnet. Must be within the VPC CIDR range.
+      Example: 10.0.0.0/24 provides 256 addresses.
+      This subnet will access internet via NAT Gateway (IPv4) and 
+      Egress-Only Internet Gateway (IPv6).
 
 Resources:
   #############################################################
@@ -165,6 +205,139 @@ Resources:
       SubnetId: !Ref PublicSubnet01
       RouteTableId: !Ref PublicRouteTable
 
+  #############################################################
+  # NAT GATEWAY CONFIGURATION
+  #############################################################
+  # NAT Gateway enables private subnet instances to access the internet (IPv4 only)
+  # while preventing inbound connections from the internet
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+    Metadata:
+      Comment: Elastic IP for NAT Gateway to maintain a consistent public IP
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet01  # NAT Gateway must be in a public subnet
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat"
+    Metadata:
+      Comment: |
+        NAT Gateway provides outbound internet connectivity for private subnet instances.
+        It translates private IPv4 addresses to public IPv4 addresses for internet access.
+
+  #############################################################
+  # EGRESS-ONLY INTERNET GATEWAY (for IPv6)
+  #############################################################
+  # Egress-Only IGW is the IPv6 equivalent of NAT Gateway
+  # It allows outbound IPv6 traffic while blocking inbound connections
+  EgressOnlyInternetGateway:
+    Type: AWS::EC2::EgressOnlyInternetGateway
+    Properties:
+      VpcId: !Ref VPC
+    Metadata:
+      Comment: |
+        Egress-Only Internet Gateway enables outbound-only IPv6 connectivity
+        for instances in private subnets. Unlike NAT Gateway, it doesn't perform
+        address translation as IPv6 addresses are globally unique.
+
+
+  #############################################################
+  # PRIVATE SUBNET CONFIGURATION
+  #############################################################
+  # Private Route Table defines how traffic is routed from private subnet
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Description
+          Value: Private Subnet Route Table
+        - Key: Network
+          Value: Private
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rt-private"
+    Metadata:
+      Comment: Route table for private subnet traffic management
+
+  # Route for outbound IPv4 internet traffic via NAT Gateway
+  PrivateRouteIPv4:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0  # All IPv4 internet traffic
+      NatGatewayId: !Ref NatGateway
+    Metadata:
+      Comment: Routes all outbound IPv4 traffic through NAT Gateway
+
+  # Route for outbound IPv6 internet traffic via Egress-Only IGW
+  PrivateRouteIPv6:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationIpv6CidrBlock: ::/0  # All IPv6 internet traffic
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+    Metadata:
+      Comment: Routes all outbound IPv6 traffic through Egress-Only Internet Gateway
+
+
+  # Private Subnet Configuration
+  PrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Metadata:
+      Comment: |
+        Private Subnet with dual-stack networking:
+        - No direct internet connectivity
+        - Outbound IPv4 via NAT Gateway
+        - Outbound IPv6 via Egress-Only Internet Gateway
+        - Protected from inbound internet connections
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false  # Don't auto-assign public IPv4 addresses
+      AssignIpv6AddressOnCreation: true  # Auto-assign IPv6 addresses
+      # Allocate a /64 IPv6 CIDR block from the VPC's /56 block
+      # Using index 1 to avoid conflict with public subnet (which uses index 0)
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 1
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PrivateSubnet01Block
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-vpc-subnet-private-1"
+        - Key: Network
+          Value: "Private"
+        - Key: Type
+          Value: "Dual-Stack"
+
+  # Associate Private Subnet with its Route Table
+  PrivateSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet01
+      RouteTableId: !Ref PrivateRouteTable
+    Metadata:
+      Comment: |
+        Links the private subnet to its route table, enabling:
+        - Outbound IPv4 internet access through NAT Gateway
+        - Outbound IPv6 internet access through Egress-Only Internet Gateway
+        - No inbound access from the internet
+
 Outputs:
   VpcId:
     Description: VPC ID
@@ -201,3 +374,23 @@ Outputs:
   Ipv6CidrBlockAssociation:
     Description: The association ID for the IPv6 CIDR block
     Value: !Ref VpcIpv6CidrBlock
+
+  PrivateSubnet01Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet01
+
+  PrivateSubnet01Ipv4Cidr:
+    Description: IPv4 CIDR of Private Subnet 1
+    Value: !GetAtt PrivateSubnet01.CidrBlock
+
+  PrivateSubnet01Ipv6Cidr:
+    Description: IPv6 CIDR of Private Subnet 1
+    Value: !GetAtt PrivateSubnet01.Ipv6CidrBlock
+
+  NatGatewayId:
+    Description: NAT Gateway ID
+    Value: !Ref NatGateway
+
+  EgressOnlyInternetGatewayId:
+    Description: Egress-Only Internet Gateway ID
+    Value: !Ref EgressOnlyInternetGateway
