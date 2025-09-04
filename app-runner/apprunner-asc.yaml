@@ -1,4 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Description: "App Runner AutoScaling Confguration"
+
+Parameters:
+
+  AutoScalingMaxConcurrency:
+    Type: String
+    Default: "100"
+
+  AutoScalingMinSize:
+    Type: String
+    Default: "1" #Min 1
+
+  AutoScalingMaxSize:
+    Type: String
+    Default: "25"
 
 Resources:
 
@@ -6,9 +21,9 @@ Resources:
     Type: AWS::AppRunner::AutoScalingConfiguration
     Properties:
       #AutoScalingConfigurationName: "AUTO_SCALING_CONFIGURATION_NAME"
-      MaxConcurrency: 100
-      MaxSize: 25
-      MinSize: 1
+      MaxConcurrency: !Ref AutoScalingMaxConcurrency
+      MinSize: !Ref AutoScalingMinSize
+      MaxSize: !Ref AutoScalingMaxSize
       Tags:
         - Key: "Name"
           Value: "AppRunnerAutoScalingCfg"
