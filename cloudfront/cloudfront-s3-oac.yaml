@@ -1,69 +1,129 @@
+# ===============================================================================
+# AWS CloudFront Distribution with Origin Access Control (OAC) Template
+# ===============================================================================
+# 
+# This template creates a CloudFront distribution that securely serves content
+# from an S3 bucket using Origin Access Control (OAC). OAC is the recommended
+# method for restricting access to S3 content, replacing the legacy Origin
+# Access Identity (OAI) approach.
+#
+# The distribution is configured with:
+# - Secure HTTPS access with HTTP to HTTPS redirection
+# - Optimized caching settings for static content
+# - Price Class 100 for cost optimization (US, Canada, Europe)
+# - Support for standard web content delivery methods (GET, HEAD)
+#
+# Version: 1.0
+# ===============================================================================
+
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudFront (Origin Access Control)
+Description: CloudFront Distribution with S3 Origin Access Control (OAC)
 
 Parameters:
-
+  # S3 bucket domain name that will serve as the origin for CloudFront
   BucketDomainName:
     Type: String
     Description: S3 Bucket Static Website Endpoint URL. (No Protocol Prefix)
     Default: bucket-name.s3.amazonaws.com
 
+  # Origin Access Control ID that provides secure access to the S3 bucket
   CloudFrontOriginAccessControlId:
     Type: String
-    Description: "CloudFrontOriginAccessControlId"
+    Description: "CloudFront Origin Access Control ID to secure S3 bucket access"
     Default: "E1021E835ZN5FD"
 
 Resources:
-
+  # CloudFront Distribution
+  # This resource creates a CDN that serves content from the specified S3 bucket
+  # using Origin Access Control for secure access
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
+        # Enable the distribution for content delivery
         Enabled: true
-        PriceClass: PriceClass_100 #PriceClass_100 | PriceClass_200 | PriceClass_All
+
+        # PriceClass determines the geographic coverage of the CDN
+        # PriceClass_100: US, Canada, Europe (lowest cost)
+        # PriceClass_200: PriceClass_100 + South America, Japan, Singapore, etc.
+        # PriceClass_All: Global coverage (highest cost)
+        PriceClass: PriceClass_100
+
+        # Custom domain configuration (commented out)
         #Aliases:
         #- !Ref WebsiteDomainName
+
+        # HTTP version and IPv6 settings
         HttpVersion: http2
         IPV6Enabled: false
+
+        # Description for the distribution
         Comment: !Sub Distribution with S3 Bucket (OAC)
+
+        # Origin configuration - defines where CloudFront gets the content
         Origins:
         - DomainName: !Ref BucketDomainName
           Id: !Sub "S3OriginOAC"
           ConnectionAttempts: 3
           ConnectionTimeout: 10
-          S3OriginConfig: {}
+          S3OriginConfig: {}  # Required for S3 origins even when using OAC
           OriginAccessControlId: !Ref CloudFrontOriginAccessControlId
+
+        # Default file to serve when accessing the root URL
         DefaultRootObject: index.html
+
+        # Cache behavior configuration - controls how CloudFront handles and caches requests
         DefaultCacheBehavior:
           TargetOriginId: !Sub "S3OriginOAC"
+
+          # Force HTTPS for all client connections
           ViewerProtocolPolicy: redirect-to-https
+
+          # HTTP methods allowed for the distribution
           AllowedMethods:
           - GET
           - HEAD
+
+          # HTTP methods that CloudFront will cache responses for
           CachedMethods:
           - GET
           - HEAD
+
           SmoothStreaming: false
-          DefaultTTL: 3600
-          MaxTTL: 86400
-          MinTTL: 60
+
+          # TTL (Time To Live) settings for cached content
+          DefaultTTL: 3600  # Default cache duration in seconds (1 hour)
+          MaxTTL: 86400     # Maximum time content stays in cache (24 hours)
+          MinTTL: 60        # Minimum time content stays in cache (1 minute)
+
+          # Enable compression for faster delivery
           Compress: true
+
+          # Controls what information is forwarded to the origin
           ForwardedValues:
             Cookies:
-              Forward: none
-            QueryString: false
+              Forward: none  # Don't forward cookies to origin
+            QueryString: false  # Don't forward query strings to origin
+
+        # SSL/TLS certificate configuration
+        # Currently using CloudFront's default certificate
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
+
+        # Custom certificate configuration (commented out)
         #ViewerCertificate:
         #  SslSupportMethod: sni-only
         #  MinimumProtocolVersion: TLSv1.1_2016
         #  AcmCertificateArn: !Sub "arn:aws:acm:us-east-1:${AWS::AccountId}:certificate/${CertificateID}"
+
+      # Resource tags
       Tags:
         - Key: "management"
           Value: "manual"
 
 Outputs:
-
+  # CloudFront domain name output
+  # This is the URL where the content will be available
   CloudFrontDomain:
     Description: CloudFront default domain name configured
     Value: !Sub https://${CloudFrontDistribution.DomainName}/
