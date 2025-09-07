@@ -1,25 +1,71 @@
+#==============================================================================
+# AWS CloudFormation Template
+# Title: CloudFront S3 Bucket Origin with Origin Access Control (OAC)
+# Version: 1.0
+#==============================================================================
+# 
+# DESCRIPTION:
+# This CloudFormation template creates a secure S3 bucket configured as a 
+# CloudFront origin using Origin Access Control (OAC). The template includes:
+# - Private S3 bucket with encryption and public access blocking
+# - CloudFront Origin Access Control configuration
+# - S3 bucket policy allowing CloudFront access via OAC
+#
+# PREREQUISITES:
+# - Existing CloudFront distribution ID (or create one separately)
+# - Appropriate IAM permissions to create S3 and CloudFront resources
+#
+# SECURITY FEATURES:
+# - S3 bucket configured as private with all public access blocked
+# - Server-side encryption enabled (AES256)
+# - Origin Access Control for secure CloudFront-to-S3 communication
+#==============================================================================
+
 AWSTemplateFormatVersion: 2010-09-09
-Description: CloudFront S3 Bucket Origin (Origin Access Control)
+Description: >
+  Creates a private S3 bucket with CloudFront Origin Access Control (OAC) 
+  for secure content delivery. Includes encryption, public access blocking, 
+  and appropriate IAM policies for CloudFront integration.
 
+#==============================================================================
+# PARAMETERS
+#==============================================================================
 Parameters:
-
   CloudFrontDistributionId:
     Type: String
-    Description: "CloudFrontDistributionId"
+    Description: >
+      The ID of the existing CloudFront distribution that will use this S3 
+      bucket as its origin. Example: E1521E835ZN7KD
     Default: "E1521E835ZN7KD"
+    AllowedPattern: ^[A-Z0-9]{14}$
+    ConstraintDescription: Must be a valid CloudFront distribution ID (14 alphanumeric characters)
 
   CloudFrontOriginAccessControlName:
     Type: String
-    Description: "CloudFrontOriginAccessControlName"
+    Description: >
+      A unique name for the CloudFront Origin Access Control. This name will 
+      be used to identify the OAC in the CloudFront console.
     Default: "S3OAC"
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: ^[a-zA-Z0-9\-_]+$
+    ConstraintDescription: Must contain only alphanumeric characters, hyphens, and underscores
 
+#==============================================================================
+# RESOURCES
+#==============================================================================
 Resources:
 
+  #============================================================================
+  # S3 BUCKET
+  # Creates a private S3 bucket with security best practices including
+  # encryption, versioning control, and public access blocking
+  #============================================================================
   Bucket:
     Type: "AWS::S3::Bucket"
     Properties:
-      #BucketName: !Ref BucketName
-      AccessControl: "Private" # Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, or AwsExecRead.
+      # BucketName: Auto-generated for uniqueness
+      AccessControl: "Private"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: True
         IgnorePublicAcls: True
@@ -27,34 +73,50 @@ Resources:
         RestrictPublicBuckets: True
       VersioningConfiguration:
          Status: Suspended
-      BucketEncryption: # SSE-KMS (CMK)
+      BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256 #AES256 | aws:kms
+              SSEAlgorithm: AES256
             BucketKeyEnabled: true
       Tags:
         - Key: "Name"
           Value: "cloudfront-s3-oac-origin"
         - Key: "Version"
           Value: "20221007"
+        - Key: "Purpose"
+          Value: "CloudFront Origin with OAC"
 
+  #============================================================================
+  # CLOUDFRONT ORIGIN ACCESS CONTROL
+  # Creates an OAC that allows CloudFront to securely access the S3 bucket
+  # without making the bucket publicly accessible
+  #============================================================================
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties: 
       OriginAccessControlConfig: 
-        Description: S3 Origin Access Control
+        Description: >
+          Origin Access Control for secure S3 bucket access from CloudFront.
+          Replaces legacy Origin Access Identity (OAI) with enhanced security.
         Name: !Ref CloudFrontOriginAccessControlName
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  #============================================================================
+  # S3 BUCKET POLICY
+  # Grants CloudFront service permission to read objects from the S3 bucket
+  # Only allows access from specified CloudFront distributions
+  #============================================================================
   BucketPolicy:
     Type: "AWS::S3::BucketPolicy"
     Properties:
       Bucket: !Ref Bucket
       PolicyDocument:
+        Version: "2012-10-17"
         Statement:
-        - Action: "s3:GetObject"
+        - Sid: "AllowCloudFrontServicePrincipal"
+          Action: "s3:GetObject"
           Effect: Allow
           Resource: !Sub "arn:aws:s3:::${Bucket}/*"
           Principal:
@@ -63,14 +125,49 @@ Resources:
             "ForAnyValue:StringEquals":
               AWS:SourceArn: 
                 - !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}"
+                # Additional distribution ID for multi-distribution access
                 - !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/E85IID7DAFXTMY"
 
+#==============================================================================
+# OUTPUTS
+#==============================================================================
 Outputs:
+  BucketName:
+    Description: >
+      The name of the created S3 bucket. Use this as the origin domain name 
+      in your CloudFront distribution configuration.
+    Value: !Ref Bucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
 
   BucketDomainName:
-    Description: S3 Bucket DomainName
-    Value: !Sub "${Bucket.DomainName}"
+    Description: >
+      The domain name of the S3 bucket. This is the full domain name that 
+      should be used as the CloudFront origin.
+    Value: !GetAtt Bucket.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketDomainName"
+
+  BucketArn:
+    Description: >
+      The ARN of the S3 bucket for use in other CloudFormation templates 
+      or IAM policies.
+    Value: !GetAtt Bucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"
 
   CloudFrontOriginAccessControlId:
-    Description: CloudFrontOriginAccessControl ID
+    Description: >
+      The ID of the CloudFront Origin Access Control. Use this ID when 
+      configuring the origin in your CloudFront distribution.
     Value: !GetAtt CloudFrontOriginAccessControl.Id
+    Export:
+      Name: !Sub "${AWS::StackName}-OAC-Id"
+
+  CloudFrontOriginAccessControlArn:
+    Description: >
+      The ARN of the CloudFront Origin Access Control for reference 
+      in other resources or templates.
+    Value: !Sub "arn:aws:cloudfront::${AWS::AccountId}:origin-access-control/${CloudFrontOriginAccessControl.Id}"
+    Export:
+      Name: !Sub "${AWS::StackName}-OAC-Arn"
