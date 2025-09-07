@@ -1,37 +1,76 @@
+# ===============================================================================
+# AWS App Runner Auto Scaling Configuration CloudFormation Template
+# ===============================================================================
+# 
+# This template creates an AWS App Runner Auto Scaling Configuration resource
+# that defines how App Runner services should scale in response to traffic.
+# The configuration includes parameters for maximum concurrency, minimum and
+# maximum size of the service.
+#
+# The template allows for customization of scaling parameters through input
+# parameters and outputs the ARN of the created configuration for reference
+# in other templates or resources.
+#
+# Version: 1.0
+# ===============================================================================
+
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "App Runner AutoScaling Confguration"
+Description: "App Runner AutoScaling Configuration for managing service scaling behavior"
 
 Parameters:
-
+  # Maximum number of concurrent requests that an instance processes
   AutoScalingMaxConcurrency:
     Type: String
     Default: "100"
+    Description: "Maximum number of concurrent requests that an instance processes"
 
+  # Minimum number of instances to run the service
   AutoScalingMinSize:
     Type: String
     Default: "1" #Min 1
+    Description: "Minimum number of instances for the service (minimum allowed is 1)"
+    AllowedPattern: "[1-9][0-9]*"
+    ConstraintDescription: "Must be a positive integer starting from 1"
 
+  # Maximum number of instances the service can scale to
   AutoScalingMaxSize:
     Type: String
     Default: "25"
+    Description: "Maximum number of instances the service can scale to"
+    AllowedPattern: "[1-9][0-9]*"
+    ConstraintDescription: "Must be a positive integer"
 
 Resources:
-
+  # App Runner Auto Scaling Configuration
+  # This resource defines how App Runner services scale in response to traffic
+  # It controls the number of instances and concurrent requests per instance
   AppRunnerAutoScalingConfiguration:
     Type: AWS::AppRunner::AutoScalingConfiguration
     Properties:
+      # Auto-generated name will be used if not specified
       #AutoScalingConfigurationName: "AUTO_SCALING_CONFIGURATION_NAME"
+
+      # Maximum number of concurrent requests that an instance processes
       MaxConcurrency: !Ref AutoScalingMaxConcurrency
+
+      # Minimum number of instances for the service
       MinSize: !Ref AutoScalingMinSize
+
+      # Maximum number of instances the service can scale to
       MaxSize: !Ref AutoScalingMaxSize
+
+      # Resource tags for identification and organization
       Tags:
         - Key: "Name"
           Value: "AppRunnerAutoScalingCfg"
 
 Outputs:    
-
+  # ARN of the created Auto Scaling Configuration
+  # This can be referenced in App Runner service configurations
   AppRunnerAutoScalingConfigurationArn:
+    Description: "ARN of the created App Runner Auto Scaling Configuration"
     Value: !Sub "${AppRunnerAutoScalingConfiguration.AutoScalingConfigurationArn}"
 
+  # Commented out output for the specific revision ARN
   #AppRunnerAutoScalingConfigurationRevision:
   #  Value: !Sub "${AppRunnerAutoScalingConfiguration.AutoScalingConfigurationArn}:${AppRunnerAutoScalingConfiguration.AutoScalingConfigurationRevision}"
