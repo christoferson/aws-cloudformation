@@ -1,0 +1,525 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  This template creates a Dual-Stack (IPv4 + IPv6) VPC with both public and private subnets.
+
+  Architecture Overview:
+  - Creates a VPC with both IPv4 and IPv6 CIDR blocks
+  - Deploys public and private subnets across TWO Availability Zones for high availability
+  - Implements dual-stack networking (IPv4 and IPv6) throughout
+  - Sets up necessary routing and internet connectivity components
+
+  Key Components:
+  1. VPC with IPv4 and IPv6 CIDR blocks
+  2. Public Subnets (2 AZs) with Internet Gateway (IGW) for both IPv4 and IPv6
+  3. Private Subnets (2 AZs) with:
+     - NAT Gateways for IPv4 outbound traffic (one per AZ for HA)
+     - Egress-Only Internet Gateway for IPv6 outbound traffic
+
+  Network Flow:
+  - Public Subnets:
+    * Inbound and outbound internet access for both IPv4 and IPv6
+    * Host NAT Gateways for private subnets
+  - Private Subnets:
+    * Outbound-only internet access
+    * IPv4 traffic routes through NAT Gateway in same AZ
+    * IPv6 traffic routes through Egress-Only Internet Gateway
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Application Configuration"
+        Parameters:
+          - Application
+          - Environment
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcBlock
+          - PublicSubnet01Block
+          - PublicSubnet02Block
+          - PrivateSubnet01Block
+          - PrivateSubnet02Block
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application Name
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment
+
+  VpcBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: |
+      The IPv4 CIDR range for the VPC. Must be a valid private (RFC 1918) CIDR range.
+      Example: 10.0.0.0/16 provides 65,536 addresses.
+      Note: IPv6 CIDR will be automatically assigned by AWS.
+
+  PublicSubnet01Block:
+    Type: String
+    Default: 10.0.128.0/24
+    Description: |
+      CIDR block for the first public subnet (AZ-1). Must be within the VPC CIDR range.
+      Example: 10.0.128.0/24 provides 256 addresses.
+      This subnet will have direct internet access via Internet Gateway.
+
+  PublicSubnet02Block:
+    Type: String
+    Default: 10.0.129.0/24
+    Description: |
+      CIDR block for the second public subnet (AZ-2). Must be within the VPC CIDR range.
+      Example: 10.0.129.0/24 provides 256 addresses.
+      This subnet will have direct internet access via Internet Gateway.
+
+  PrivateSubnet01Block:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: |
+      CIDR block for the first private subnet (AZ-1). Must be within the VPC CIDR range.
+      Example: 10.0.0.0/24 provides 256 addresses.
+      This subnet will access internet via NAT Gateway (IPv4) and 
+      Egress-Only Internet Gateway (IPv6).
+
+  PrivateSubnet02Block:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: |
+      CIDR block for the second private subnet (AZ-2). Must be within the VPC CIDR range.
+      Example: 10.0.1.0/24 provides 256 addresses.
+      This subnet will access internet via NAT Gateway (IPv4) and 
+      Egress-Only Internet Gateway (IPv6).
+
+Resources:
+  #############################################################
+  # VPC CONFIGURATION
+  #############################################################
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: "default"
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc"
+      - Key: Network
+        Value: "Dual-Stack"
+
+  # Add IPv6 CIDR block to the VPC
+  VpcIpv6CidrBlock:
+    Type: "AWS::EC2::VPCCidrBlock"
+    Properties:
+      VpcId: !Ref VPC
+      AmazonProvidedIpv6CidrBlock: true
+
+  #############################################################
+  # INTERNET CONNECTIVITY
+  #############################################################
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-igw"
+
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  #############################################################
+  # ROUTING CONFIGURATION - PUBLIC
+  #############################################################
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Description
+        Value: Public Subnets Route Table
+      - Key: Network
+        Value: Public
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-rt-public"
+
+  PublicRouteIPv4:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteIPv6:
+    Type: "AWS::EC2::Route"
+    DependsOn: [VPCGatewayAttachment, VpcIpv6CidrBlock]
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationIpv6CidrBlock: ::/0
+      GatewayId: !Ref InternetGateway
+
+  #############################################################
+  # PUBLIC SUBNETS CONFIGURATION
+  #############################################################
+  PublicSubnet01:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 0
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PublicSubnet01Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
+      - Key: Network
+        Value: "Public"
+      - Key: Type
+        Value: "Dual-Stack"
+
+  PublicSubnet02:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 1
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PublicSubnet02Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
+      - Key: Network
+        Value: "Public"
+      - Key: Type
+        Value: "Dual-Stack"
+
+  PublicSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet01
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet02
+      RouteTableId: !Ref PublicRouteTable
+
+  #############################################################
+  # NAT GATEWAYS CONFIGURATION (One per AZ for HA)
+  #############################################################
+  NatGateway01EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat-eip-1"
+
+  NatGateway02EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat-eip-2"
+
+  NatGateway01:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway01EIP.AllocationId
+      SubnetId: !Ref PublicSubnet01
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat-1"
+
+  NatGateway02:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway02EIP.AllocationId
+      SubnetId: !Ref PublicSubnet02
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat-2"
+
+  #############################################################
+  # EGRESS-ONLY INTERNET GATEWAY (for IPv6)
+  #############################################################
+  EgressOnlyInternetGateway:
+    Type: AWS::EC2::EgressOnlyInternetGateway
+    Properties:
+      VpcId: !Ref VPC
+
+  #############################################################
+  # PRIVATE SUBNETS CONFIGURATION
+  #############################################################
+  # Private Route Tables (one per AZ for NAT Gateway routing)
+  PrivateRouteTable01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Description
+          Value: Private Subnet 1 Route Table
+        - Key: Network
+          Value: Private
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rt-private-1"
+
+  PrivateRouteTable02:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Description
+          Value: Private Subnet 2 Route Table
+        - Key: Network
+          Value: Private
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rt-private-2"
+
+  # Private Routes for IPv4 (via NAT Gateway in same AZ)
+  PrivateRoute01IPv4:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable01
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway01
+
+  PrivateRoute02IPv4:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable02
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway02
+
+  # Private Routes for IPv6 (via Egress-Only IGW)
+  PrivateRoute01IPv6:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable01
+      DestinationIpv6CidrBlock: ::/0
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+
+  PrivateRoute02IPv6:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable02
+      DestinationIpv6CidrBlock: ::/0
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+
+  # Private Subnets
+  PrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 2
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PrivateSubnet01Block
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-vpc-subnet-private-1"
+        - Key: Network
+          Value: "Private"
+        - Key: Type
+          Value: "Dual-Stack"
+
+  PrivateSubnet02:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 3
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PrivateSubnet02Block
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-vpc-subnet-private-2"
+        - Key: Network
+          Value: "Private"
+        - Key: Type
+          Value: "Dual-Stack"
+
+  # Private Subnet Route Table Associations
+  PrivateSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet01
+      RouteTableId: !Ref PrivateRouteTable01
+
+  PrivateSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet02
+      RouteTableId: !Ref PrivateRouteTable02
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref "VPC"
+
+  VpcIpv4Cidr:
+    Description: IPv4 CIDR Block assigned to the VPC
+    Value: !GetAtt VPC.CidrBlock
+
+  VpcIpv6Cidr:
+    Description: IPv6 CIDR Block assigned to the VPC
+    Value: !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+
+  VpcDefaultNetworkAcl:
+    Description: The ID of the default network ACL for the VPC
+    Value: !GetAtt VPC.DefaultNetworkAcl
+
+  VpcDefaultSecurityGroup:
+    Description: The ID of the default security group for the VPC
+    Value: !GetAtt VPC.DefaultSecurityGroup
+
+  # Public Subnet Outputs
+  PublicSubnet01Id:
+    Description: Public Subnet 1 ID (AZ-1)
+    Value: !Ref PublicSubnet01
+
+  PublicSubnet02Id:
+    Description: Public Subnet 2 ID (AZ-2)
+    Value: !Ref PublicSubnet02
+
+  PublicSubnet01Ipv4Cidr:
+    Description: IPv4 CIDR of Public Subnet 1
+    Value: !GetAtt PublicSubnet01.CidrBlock
+
+  PublicSubnet02Ipv4Cidr:
+    Description: IPv4 CIDR of Public Subnet 2
+    Value: !GetAtt PublicSubnet02.CidrBlock
+
+  PublicSubnet01Ipv6Cidr:
+    Description: IPv6 CIDR of Public Subnet 1
+    Value: !GetAtt PublicSubnet01.Ipv6CidrBlock
+
+  PublicSubnet02Ipv6Cidr:
+    Description: IPv6 CIDR of Public Subnet 2
+    Value: !GetAtt PublicSubnet02.Ipv6CidrBlock
+
+  # Private Subnet Outputs
+  PrivateSubnet01Id:
+    Description: Private Subnet 1 ID (AZ-1)
+    Value: !Ref PrivateSubnet01
+
+  PrivateSubnet02Id:
+    Description: Private Subnet 2 ID (AZ-2)
+    Value: !Ref PrivateSubnet02
+
+  PrivateSubnet01Ipv4Cidr:
+    Description: IPv4 CIDR of Private Subnet 1
+    Value: !GetAtt PrivateSubnet01.CidrBlock
+
+  PrivateSubnet02Ipv4Cidr:
+    Description: IPv4 CIDR of Private Subnet 2
+    Value: !GetAtt PrivateSubnet02.CidrBlock
+
+  PrivateSubnet01Ipv6Cidr:
+    Description: IPv6 CIDR of Private Subnet 1
+    Value: !GetAtt PrivateSubnet01.Ipv6CidrBlock
+
+  PrivateSubnet02Ipv6Cidr:
+    Description: IPv6 CIDR of Private Subnet 2
+    Value: !GetAtt PrivateSubnet02.Ipv6CidrBlock
+
+  # NAT Gateway Outputs
+  NatGateway01Id:
+    Description: NAT Gateway 1 ID (AZ-1)
+    Value: !Ref NatGateway01
+
+  NatGateway02Id:
+    Description: NAT Gateway 2 ID (AZ-2)
+    Value: !Ref NatGateway02
+
+  EgressOnlyInternetGatewayId:
+    Description: Egress-Only Internet Gateway ID
+    Value: !Ref EgressOnlyInternetGateway
+
+  Ipv6CidrBlockAssociation:
+    Description: The association ID for the IPv6 CIDR block
+    Value: !Ref VpcIpv6CidrBlock
+
+  # Subnet Lists for easy reference
+  PublicSubnets:
+    Description: List of Public Subnet IDs
+    Value: !Join [",", [!Ref PublicSubnet01, !Ref PublicSubnet02]]
+
+  PrivateSubnets:
+    Description: List of Private Subnet IDs
+    Value: !Join [",", [!Ref PrivateSubnet01, !Ref PrivateSubnet02]]
+
+  AvailabilityZones:
+    Description: List of Availability Zones used
+    Value: !Join 
+      - ","
+      - - !GetAtt PublicSubnet01.AvailabilityZone
+        - !GetAtt PublicSubnet02.AvailabilityZone
