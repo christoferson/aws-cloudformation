@@ -4,14 +4,14 @@ Description: |
 
   Architecture Overview:
   - Creates a VPC with both IPv4 and IPv6 CIDR blocks
-  - Deploys public and private subnets across TWO Availability Zones for high availability
+  - Deploys public and private subnets across THREE Availability Zones for high availability
   - Implements dual-stack networking (IPv4 and IPv6) throughout
   - Sets up necessary routing and internet connectivity components
 
   Key Components:
   1. VPC with IPv4 and IPv6 CIDR blocks
-  2. Public Subnets (2 AZs) with Internet Gateway (IGW) for both IPv4 and IPv6
-  3. Private Subnets (2 AZs) with:
+  2. Public Subnets (3 AZs) with Internet Gateway (IGW) for both IPv4 and IPv6
+  3. Private Subnets (3 AZs) with:
      - NAT Gateways for IPv4 outbound traffic (one per AZ for HA)
      - Egress-Only Internet Gateway for IPv6 outbound traffic
 
@@ -40,8 +40,10 @@ Metadata:
           - VpcBlock
           - PublicSubnet01Block
           - PublicSubnet02Block
+          - PublicSubnet03Block
           - PrivateSubnet01Block
           - PrivateSubnet02Block
+          - PrivateSubnet03Block
 
 Parameters:
 
@@ -79,6 +81,14 @@ Parameters:
       Example: 10.0.129.0/24 provides 256 addresses.
       This subnet will have direct internet access via Internet Gateway.
 
+  PublicSubnet03Block:
+    Type: String
+    Default: 10.0.130.0/24
+    Description: |
+      CIDR block for the third public subnet (AZ-3). Must be within the VPC CIDR range.
+      Example: 10.0.130.0/24 provides 256 addresses.
+      This subnet will have direct internet access via Internet Gateway.
+
   PrivateSubnet01Block:
     Type: String
     Default: 10.0.0.0/24
@@ -94,6 +104,15 @@ Parameters:
     Description: |
       CIDR block for the second private subnet (AZ-2). Must be within the VPC CIDR range.
       Example: 10.0.1.0/24 provides 256 addresses.
+      This subnet will access internet via NAT Gateway (IPv4) and 
+      Egress-Only Internet Gateway (IPv6).
+
+  PrivateSubnet03Block:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: |
+      CIDR block for the third private subnet (AZ-3). Must be within the VPC CIDR range.
+      Example: 10.0.2.0/24 provides 256 addresses.
       This subnet will access internet via NAT Gateway (IPv4) and 
       Egress-Only Internet Gateway (IPv6).
 
@@ -231,6 +250,36 @@ Resources:
       - Key: Type
         Value: "Dual-Stack"
 
+  PublicSubnet03:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 2
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 2
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PublicSubnet03Block
+      Tags:
+      - Key: Name
+        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-3"
+      - Key: Network
+        Value: "Public"
+      - Key: Type
+        Value: "Dual-Stack"
+
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -241,6 +290,12 @@ Resources:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet02
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet03
       RouteTableId: !Ref PublicRouteTable
 
   #############################################################
@@ -262,6 +317,14 @@ Resources:
         - Key: Name
           Value: !Sub "${Application}-${Environment}-nat-eip-2"
 
+  NatGateway03EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat-eip-3"
+
   NatGateway01:
     Type: AWS::EC2::NatGateway
     Properties:
@@ -279,6 +342,15 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${Application}-${Environment}-nat-2"
+
+  NatGateway03:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway03EIP.AllocationId
+      SubnetId: !Ref PublicSubnet03
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-nat-3"
 
   #############################################################
   # EGRESS-ONLY INTERNET GATEWAY (for IPv6)
@@ -316,6 +388,18 @@ Resources:
         - Key: Name
           Value: !Sub "${Application}-${Environment}-rt-private-2"
 
+  PrivateRouteTable03:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Description
+          Value: Private Subnet 3 Route Table
+        - Key: Network
+          Value: Private
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rt-private-3"
+
   # Private Routes for IPv4 (via NAT Gateway in same AZ)
   PrivateRoute01IPv4:
     Type: AWS::EC2::Route
@@ -330,6 +414,13 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable02
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGateway02
+
+  PrivateRoute03IPv4:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable03
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway03
 
   # Private Routes for IPv6 (via Egress-Only IGW)
   PrivateRoute01IPv6:
@@ -346,6 +437,13 @@ Resources:
       DestinationIpv6CidrBlock: ::/0
       EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
 
+  PrivateRoute03IPv6:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable03
+      DestinationIpv6CidrBlock: ::/0
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+
   # Private Subnets
   PrivateSubnet01:
     Type: AWS::EC2::Subnet
@@ -356,7 +454,7 @@ Resources:
       AssignIpv6AddressOnCreation: true
       Ipv6CidrBlock: 
         Fn::Select:
-          - 2
+          - 3
           - Fn::Cidr:
               - Fn::Select:
                   - 0
@@ -386,7 +484,7 @@ Resources:
       AssignIpv6AddressOnCreation: true
       Ipv6CidrBlock: 
         Fn::Select:
-          - 3
+          - 4
           - Fn::Cidr:
               - Fn::Select:
                   - 0
@@ -407,6 +505,36 @@ Resources:
         - Key: Type
           Value: "Dual-Stack"
 
+  PrivateSubnet03:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock: 
+        Fn::Select:
+          - 5
+          - Fn::Cidr:
+              - Fn::Select:
+                  - 0
+                  - Fn::GetAtt: VPC.Ipv6CidrBlocks
+              - 256
+              - 64
+      AvailabilityZone:
+        Fn::Select:
+        - 2
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock: !Ref PrivateSubnet03Block
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-vpc-subnet-private-3"
+        - Key: Network
+          Value: "Private"
+        - Key: Type
+          Value: "Dual-Stack"
+
   # Private Subnet Route Table Associations
   PrivateSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -419,6 +547,12 @@ Resources:
     Properties:
       SubnetId: !Ref PrivateSubnet02
       RouteTableId: !Ref PrivateRouteTable02
+
+  PrivateSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet03
+      RouteTableId: !Ref PrivateRouteTable03
 
 Outputs:
   VpcId:
@@ -450,6 +584,10 @@ Outputs:
     Description: Public Subnet 2 ID (AZ-2)
     Value: !Ref PublicSubnet02
 
+  PublicSubnet03Id:
+    Description: Public Subnet 3 ID (AZ-3)
+    Value: !Ref PublicSubnet03
+
   PublicSubnet01Ipv4Cidr:
     Description: IPv4 CIDR of Public Subnet 1
     Value: !GetAtt PublicSubnet01.CidrBlock
@@ -458,6 +596,10 @@ Outputs:
     Description: IPv4 CIDR of Public Subnet 2
     Value: !GetAtt PublicSubnet02.CidrBlock
 
+  PublicSubnet03Ipv4Cidr:
+    Description: IPv4 CIDR of Public Subnet 3
+    Value: !GetAtt PublicSubnet03.CidrBlock
+
   PublicSubnet01Ipv6Cidr:
     Description: IPv6 CIDR of Public Subnet 1
     Value: !GetAtt PublicSubnet01.Ipv6CidrBlock
@@ -465,6 +607,10 @@ Outputs:
   PublicSubnet02Ipv6Cidr:
     Description: IPv6 CIDR of Public Subnet 2
     Value: !GetAtt PublicSubnet02.Ipv6CidrBlock
+
+  PublicSubnet03Ipv6Cidr:
+    Description: IPv6 CIDR of Public Subnet 3
+    Value: !GetAtt PublicSubnet03.Ipv6CidrBlock
 
   # Private Subnet Outputs
   PrivateSubnet01Id:
@@ -475,6 +621,10 @@ Outputs:
     Description: Private Subnet 2 ID (AZ-2)
     Value: !Ref PrivateSubnet02
 
+  PrivateSubnet03Id:
+    Description: Private Subnet 3 ID (AZ-3)
+    Value: !Ref PrivateSubnet03
+
   PrivateSubnet01Ipv4Cidr:
     Description: IPv4 CIDR of Private Subnet 1
     Value: !GetAtt PrivateSubnet01.CidrBlock
@@ -482,6 +632,10 @@ Outputs:
   PrivateSubnet02Ipv4Cidr:
     Description: IPv4 CIDR of Private Subnet 2
     Value: !GetAtt PrivateSubnet02.CidrBlock
+
+  PrivateSubnet03Ipv4Cidr:
+    Description: IPv4 CIDR of Private Subnet 3
+    Value: !GetAtt PrivateSubnet03.CidrBlock
 
   PrivateSubnet01Ipv6Cidr:
     Description: IPv6 CIDR of Private Subnet 1
@@ -491,6 +645,10 @@ Outputs:
     Description: IPv6 CIDR of Private Subnet 2
     Value: !GetAtt PrivateSubnet02.Ipv6CidrBlock
 
+  PrivateSubnet03Ipv6Cidr:
+    Description: IPv6 CIDR of Private Subnet 3
+    Value: !GetAtt PrivateSubnet03.Ipv6CidrBlock
+
   # NAT Gateway Outputs
   NatGateway01Id:
     Description: NAT Gateway 1 ID (AZ-1)
@@ -499,6 +657,10 @@ Outputs:
   NatGateway02Id:
     Description: NAT Gateway 2 ID (AZ-2)
     Value: !Ref NatGateway02
+
+  NatGateway03Id:
+    Description: NAT Gateway 3 ID (AZ-3)
+    Value: !Ref NatGateway03
 
   EgressOnlyInternetGatewayId:
     Description: Egress-Only Internet Gateway ID
@@ -511,11 +673,11 @@ Outputs:
   # Subnet Lists for easy reference
   PublicSubnets:
     Description: List of Public Subnet IDs
-    Value: !Join [",", [!Ref PublicSubnet01, !Ref PublicSubnet02]]
+    Value: !Join [",", [!Ref PublicSubnet01, !Ref PublicSubnet02, !Ref PublicSubnet03]]
 
   PrivateSubnets:
     Description: List of Private Subnet IDs
-    Value: !Join [",", [!Ref PrivateSubnet01, !Ref PrivateSubnet02]]
+    Value: !Join [",", [!Ref PrivateSubnet01, !Ref PrivateSubnet02, !Ref PrivateSubnet03]]
 
   AvailabilityZones:
     Description: List of Availability Zones used
@@ -523,3 +685,4 @@ Outputs:
       - ","
       - - !GetAtt PublicSubnet01.AvailabilityZone
         - !GetAtt PublicSubnet02.AvailabilityZone
+        - !GetAtt PublicSubnet03.AvailabilityZone
