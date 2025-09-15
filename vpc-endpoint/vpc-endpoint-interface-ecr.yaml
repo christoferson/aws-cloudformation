@@ -1,5 +1,42 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Vpc Endpoint (Interface Endpoint) - STS"
+Description: |
+  VPC Interface Endpoints for Amazon Elastic Container Registry (ECR) - Educational Template
+
+  This template creates VPC Interface Endpoints for Amazon ECR, enabling secure
+  container image operations without routing traffic over the internet.
+
+  WHAT IS AMAZON ELASTIC CONTAINER REGISTRY (ECR)?
+  Amazon ECR is a fully managed container registry that makes it easy to store,
+  manage, share, and deploy container images and artifacts anywhere.
+
+  ECR SERVICE COMPONENTS:
+
+  1. 🐳 ECR.DKR (Docker Registry):
+     - Container image push and pull operations
+     - Docker layer downloads and uploads
+     - Image manifest operations
+
+  2. 🔧 ECR.API (Control Plane):
+     - Repository management (create, delete, describe)
+     - Image lifecycle policies
+     - Repository permissions and policies
+     - Image scanning and vulnerability reports
+
+  WHY USE VPC ENDPOINTS FOR ECR?
+
+  🔒 ENHANCED SECURITY:
+  - Container images never traverse the public internet
+  - Private network isolation for container workloads
+  - Enhanced compliance posture
+
+  🚀 IMPROVED PERFORMANCE:
+  - Faster image pulls within AWS network
+  - Reduced latency for container deployments
+  - Higher throughput for large images
+
+  💰 COST OPTIMIZATION:
+  - Eliminates NAT Gateway charges for ECR traffic
+  - Reduced data transfer costs
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -18,54 +55,213 @@ Metadata:
           - VpcSubnetList
 
 Parameters:
-
   Application:
     Type: String
     Default: lab
     Description: Application Name
-    
+
   Environment:
     Type: String
     Default: dev
     Description: Environment
 
   VpcId:
-    Description : "VPC ID"
     Type: AWS::EC2::VPC::Id
+    Description: |
+      The VPC where ECR Interface Endpoints will be created.
+
+      VPC REQUIREMENTS FOR ECR:
+      - Must have DNS resolution enabled (enableDnsSupport: true)
+      - Must have DNS hostnames enabled (enableDnsHostnames: true)
+      - Should contain container services (ECS, EKS, EC2 with Docker)
 
   VpcSubnetList:
-    Description: "Private VpcSubnets for Endpoint"
     Type: List<AWS::EC2::Subnet::Id>
+    Description: |
+      Private subnets where ECR Interface Endpoint ENIs will be created.
+
+      RECOMMENDED:
+      - Private subnets for enhanced security
+      - Subnets in multiple AZs for high availability
+      - Subnets where container workloads run
 
 Resources:
+  #############################################################
+  # ECR DOCKER REGISTRY ENDPOINT (ECR.DKR)
+  #############################################################
 
+  VpcEndpointEcr:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Interface
 
- VpcEndpointEcr:
-  Type: AWS::EC2::VPCEndpoint
-  Properties:
-    VpcEndpointType: Interface
-    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
-    VpcId: !Ref VpcId
-    SubnetIds: !Ref VpcSubnetList
-    #SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
-    PrivateDnsEnabled: true
+      # ECR DOCKER REGISTRY SERVICE:
+      # Handles Docker push/pull operations and image layer transfers
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
 
- VpcEndpointEcrApi:
-  Type: AWS::EC2::VPCEndpoint
-  Properties:
-    VpcEndpointType: Interface
-    ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
-    VpcId: !Ref VpcId
-    SubnetIds: !Ref VpcSubnetList
-    #SecurityGroupIds: !Ref VpcEndpointSecurityGroupIdList
-    PrivateDnsEnabled: true
+      VpcId: !Ref VpcId
+      SubnetIds: !Ref VpcSubnetList
+
+      # PRIVATE DNS:
+      # Enables private DNS resolution for *.ecr.region.amazonaws.com
+      # Docker clients can use standard ECR registry URLs
+      PrivateDnsEnabled: true
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecr-dkr-endpoint"
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: "ECR Docker Registry"
+
+  #############################################################
+  # ECR API ENDPOINT (ECR.API)
+  #############################################################
+
+  VpcEndpointEcrApi:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Interface
+
+      # ECR API SERVICE:
+      # Handles repository management and control plane operations
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
+
+      VpcId: !Ref VpcId
+      SubnetIds: !Ref VpcSubnetList
+      PrivateDnsEnabled: true
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecr-api-endpoint"
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: "ECR API"
 
 Outputs:
-
   VpcEndpointEcrId:
-    Description: The Endpoint Id
+    Description: |
+      VPC Endpoint ID for ECR Docker Registry (ecr.dkr).
+
+      USE CASES:
+      - Docker image push and pull operations
+      - Container layer downloads and uploads
+      - Container deployment workflows
     Value: !Ref VpcEndpointEcr
 
   VpcEndpointEcrApiId:
-    Description: The Endpoint Id
+    Description: |
+      VPC Endpoint ID for ECR API (ecr.api).
+
+      USE CASES:
+      - Repository management operations
+      - Image lifecycle policy management
+      - Image scanning and vulnerability reports
     Value: !Ref VpcEndpointEcrApi
+
+  ContainerUsageExamples:
+    Description: |
+      Container workflow examples using ECR through VPC endpoints.
+    Value: !Sub |
+      ECR WORKFLOW EXAMPLES:
+
+      🐳 DOCKER COMMANDS:
+
+      # 1. Authenticate Docker to ECR
+      aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+
+      # 2. Create ECR repository
+      aws ecr create-repository --repository-name ${Application}/${Environment}/web-app --region ${AWS::Region}
+
+      # 3. Build and tag Docker image
+      docker build -t ${Application}-web-app .
+      docker tag ${Application}-web-app:latest ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Application}/${Environment}/web-app:latest
+
+      # 4. Push image to ECR
+      docker push ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Application}/${Environment}/web-app:latest
+
+      # 5. Pull image from ECR
+      docker pull ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Application}/${Environment}/web-app:latest
+
+      🔧 AWS CLI ECR OPERATIONS:
+
+      # List repositories
+      aws ecr describe-repositories --region ${AWS::Region}
+
+      # List images in repository
+      aws ecr list-images --repository-name ${Application}/${Environment}/web-app --region ${AWS::Region}
+
+      # Start image vulnerability scan
+      aws ecr start-image-scan --repository-name ${Application}/${Environment}/web-app --image-id imageTag=latest --region ${AWS::Region}
+
+  TroubleshootingGuide:
+    Description: |
+      Common ECR VPC endpoint troubleshooting steps.
+    Value: !Sub |
+      🔍 ECR VPC ENDPOINT TROUBLESHOOTING:
+
+      ❌ Issue: "Docker login fails"
+      ✅ Solutions:
+      1. Verify VPC DNS settings are enabled
+      2. Check security groups allow HTTPS (443) outbound
+      3. Test DNS resolution: nslookup ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+      4. Verify ECR authentication: aws ecr get-login-password --region ${AWS::Region}
+
+      ❌ Issue: "Image push/pull timeouts"
+      ✅ Solutions:
+      1. Check endpoint placement (same AZ as container hosts)
+      2. Verify security groups allow ECR traffic
+      3. Check for network ACL restrictions
+      4. Verify sufficient bandwidth for large images
+
+      ❌ Issue: "Access denied for ECR operations"
+      ✅ Solutions:
+      1. Check IAM permissions for ECR actions
+      2. Verify repository policies don't block access
+      3. Ensure correct AWS region configuration
+
+      🛠️ DIAGNOSTIC COMMANDS:
+
+      # Test ECR connectivity
+      aws ecr get-login-password --region ${AWS::Region} --debug
+
+      # Check endpoint status
+      aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${VpcEndpointEcr} ${VpcEndpointEcrApi}
+
+      # Test DNS resolution
+      nslookup ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+
+  CostOptimization:
+    Description: |
+      Cost optimization strategies for ECR VPC endpoints.
+    Value: !Sub |
+      💰 ECR VPC ENDPOINT COSTS:
+
+      INTERFACE ENDPOINT COSTS (2 ECR endpoints):
+      - Base: 2 × $0.01/hour × 24 × 30 = $14.40/month
+      - Per AZ: Each subnet adds $0.01/hour per endpoint
+      - Data processing: $0.01 per GB processed
+
+      COST OPTIMIZATION STRATEGIES:
+
+      1. IMAGE OPTIMIZATION:
+         - Use multi-stage Docker builds to reduce image size
+         - Implement image layer caching
+         - Use minimal base images
+         - Regular cleanup of unused images
+
+      2. REPOSITORY MANAGEMENT:
+         - Implement lifecycle policies to remove old images
+         - Use image compression where possible
+         - Regular audit of repository usage
+
+      3. NETWORK OPTIMIZATION:
+         - Place endpoints in same AZ as container workloads
+         - Use minimum required number of AZs
+         - Monitor data transfer patterns
