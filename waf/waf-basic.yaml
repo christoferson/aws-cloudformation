@@ -1,92 +1,232 @@
+#===============================================================================
+# AWS WAF v2 CloudFormation Template
+#===============================================================================
+# Purpose: Deploy AWS WAFv2 Web ACL with managed rule groups for application protection
+# Author: [Your Name]
+# Version: 1.0
+# Created: [Date]
+# Last Modified: [Date]
+#
+# Description:
+# This template creates a WAFv2 Web ACL that can be associated with either:
+# - Regional resources (ALB, API Gateway, AppSync, etc.) - Scope: REGIONAL
+# - CloudFront distributions - Scope: CLOUDFRONT
+#
+# The Web ACL includes AWS Managed Rules Common Rule Set with selective rule exclusions
+# for flexibility in different application environments.
+#
+# Prerequisites:
+# - Target resource (ALB, CloudFront, etc.) must exist before deployment
+# - Appropriate IAM permissions for WAFv2 operations
+# - CloudWatch logging permissions (optional but recommended)
+#
+# Cost Considerations:
+# - WAF Web ACL: $1.00 per month
+# - Rule evaluations: $0.60 per million requests
+# - CloudWatch metrics and logging charges apply
+#
+# Security Notes:
+# - Default action is ALLOW (consider BLOCK for high-security environments)
+# - Multiple rules are excluded - review based on your security requirements
+# - Enable logging for security monitoring and compliance
+#===============================================================================
+
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS WAFv2 Web ACL with managed rule groups for application protection'
 
+#===============================================================================
+# PARAMETERS
+#===============================================================================
+# Define input parameters for template customization
 Parameters:
-
   Application:
     Type: String
-    Description: "Application Name"
+    Description: "Application name used for resource naming and tagging"
     Default: app
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9-]*$'
+    ConstraintDescription: 'Must begin with a letter and contain only alphanumeric characters and hyphens'
 
   Environment:
     Type: String
-    Description: "Environment"
+    Description: "Environment designation (develop, staging, production)"
     Default: develop
+    AllowedValues:
+      - develop
+      - staging
+      - production
+    ConstraintDescription: 'Must be develop, staging, or production'
 
   Scope:
     Type: String
-    Description: "Select in the scope of waf(REGIONAL or CLOUDFRONT)"
+    Description: "WAF scope - REGIONAL for ALB/API Gateway, CLOUDFRONT for CloudFront distributions"
     AllowedValues:
-      - "REGIONAL"   # Regional resources (Application Load Balancers, Amazon API Gateway REST APIs, Amazon App Runner services, AWS AppSync GraphQL APIs, Amazon Cognito user pools and AWS Verified Access Instances)
-      - "CLOUDFRONT" # Amazon CloudFront distributions
+      - "REGIONAL"   # For ALB, API Gateway, AppSync, Cognito, App Runner, Verified Access
+      - "CLOUDFRONT" # For CloudFront distributions (must be deployed in us-east-1)
     Default: REGIONAL
+    ConstraintDescription: 'Must be either REGIONAL or CLOUDFRONT'
 
   WebAclAssociationResourceArn:
     Type: String
-    Description: Enter RegionalResource(ALB,APIGateway,AppSync) ARN or CloudFront ARN to associate with WEBACL.
+    Description: 'ARN of the resource to associate with the Web ACL (ALB, CloudFront, API Gateway, etc.)'
     Default: "arn:aws:elasticloadbalancing:ap-northeast-1:XXXXXXXXXXXX:loadbalancer/app/XXXXXXXXXXXX"
+    AllowedPattern: '^arn:aws:.*'
+    ConstraintDescription: 'Must be a valid AWS ARN'
 
+#===============================================================================
+# RESOURCES
+#===============================================================================
 Resources:
 
+  #=============================================================================
+  # AWS WAFv2 Web ACL
+  #=============================================================================
+  # Creates the main Web ACL with managed rule groups and custom configuration
+  # 
+  # Key Features:
+  # - Uses AWS Managed Rules Common Rule Set for baseline protection
+  # - Configurable rule exclusions for application compatibility
+  # - CloudWatch metrics and request sampling enabled
+  # - Default ALLOW action (can be changed to BLOCK for stricter security)
+  #
+  # Rule Exclusions Explained:
+  # - NoUserAgent_HEADER: Allows requests without User-Agent header
+  # - UserAgent_BadBots_HEADER: Disables bad bot detection via User-Agent
+  # - SizeRestrictions_*: Disables size limits on various request components
+  # - EC2MetaDataSSRF_*: Disables EC2 metadata SSRF protection
+  # - GenericLFI_*: Disables Local File Inclusion attack detection
+  # - RestrictedExtensions_*: Allows requests to restricted file extensions
+  # - GenericRFI_*: Disables Remote File Inclusion attack detection
+  # - CrossSiteScripting_*: Disables XSS protection (consider carefully!)
+  #=============================================================================
   WebAcl:
     Type: AWS::WAFv2::WebACL
     Properties: 
       Name: !Sub "${Environment}-${Application}-web-acl"
-      Description: "Demo WAF 1"
+      Description: !Sub "WAF Web ACL for ${Application} application in ${Environment} environment"
       Scope: !Ref Scope
-      DefaultAction: # web request doesn't match any of the rules in the WebACL
-        Allow: {}
+
+      # Default action for requests that don't match any rules
+      DefaultAction:
+        Allow: {} # Consider changing to Block: {} for high-security environments
+
+      # CloudWatch integration for monitoring and observability
       VisibilityConfig:
         CloudWatchMetricsEnabled: true
         SampledRequestsEnabled: true
         MetricName: !Sub ${Environment}-${Application}-web-acl
+
+      # Rule definitions
       Rules:
-        -
-          Name: AWS-AWSManagedRulesCommonRuleSet
-          Priority: 1 #AWS WAF processes rules with lower priority first. 
+        # AWS Managed Rules - Common Rule Set
+        # Provides protection against OWASP Top 10 vulnerabilities
+        - Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 1 # Lower numbers = higher priority
+
+          # Managed rule group configuration
           Statement:
             ManagedRuleGroupStatement:
               VendorName: AWS
               Name: AWSManagedRulesCommonRuleSet
+
+              # Excluded rules - customize based on your application needs
+              # WARNING: Excluding security rules may expose your application to attacks
               ExcludedRules:
-                - Name: NoUserAgent_HEADER
-                - Name: UserAgent_BadBots_HEADER
-                - Name: SizeRestrictions_QUERYSTRING
-                - Name: SizeRestrictions_Cookie_HEADER
-                - Name: SizeRestrictions_BODY
-                - Name: SizeRestrictions_URIPATH
-                - Name: EC2MetaDataSSRF_BODY
-                - Name: EC2MetaDataSSRF_COOKIE
-                - Name: EC2MetaDataSSRF_URIPATH
-                - Name: EC2MetaDataSSRF_QUERYARGUMENTS
-                - Name: GenericLFI_QUERYARGUMENTS
-                - Name: GenericLFI_URIPATH
-                - Name: GenericLFI_BODY
-                - Name: RestrictedExtensions_URIPATH
-                - Name: RestrictedExtensions_QUERYARGUMENTS
-                - Name: GenericRFI_QUERYARGUMENTS
-                - Name: GenericRFI_BODY
-                - Name: GenericRFI_URIPATH
-                - Name: CrossSiteScripting_COOKIE
-                - Name: CrossSiteScripting_QUERYARGUMENTS
-                - Name: CrossSiteScripting_BODY
-                - Name: CrossSiteScripting_URIPATH
+                - Name: NoUserAgent_HEADER          # Blocks requests without User-Agent
+                - Name: UserAgent_BadBots_HEADER     # Blocks known bad bot User-Agents
+                - Name: SizeRestrictions_QUERYSTRING # Limits query string size
+                - Name: SizeRestrictions_Cookie_HEADER # Limits cookie size
+                - Name: SizeRestrictions_BODY        # Limits request body size
+                - Name: SizeRestrictions_URIPATH     # Limits URI path length
+                - Name: EC2MetaDataSSRF_BODY         # Prevents EC2 metadata SSRF via body
+                - Name: EC2MetaDataSSRF_COOKIE       # Prevents EC2 metadata SSRF via cookies
+                - Name: EC2MetaDataSSRF_URIPATH      # Prevents EC2 metadata SSRF via URI
+                - Name: EC2MetaDataSSRF_QUERYARGUMENTS # Prevents EC2 metadata SSRF via query
+                - Name: GenericLFI_QUERYARGUMENTS    # Blocks Local File Inclusion in query
+                - Name: GenericLFI_URIPATH           # Blocks Local File Inclusion in URI
+                - Name: GenericLFI_BODY              # Blocks Local File Inclusion in body
+                - Name: RestrictedExtensions_URIPATH # Blocks dangerous file extensions
+                - Name: RestrictedExtensions_QUERYARGUMENTS # Blocks dangerous extensions in query
+                - Name: GenericRFI_QUERYARGUMENTS    # Blocks Remote File Inclusion in query
+                - Name: GenericRFI_BODY              # Blocks Remote File Inclusion in body
+                - Name: GenericRFI_URIPATH           # Blocks Remote File Inclusion in URI
+                - Name: CrossSiteScripting_COOKIE    # Blocks XSS in cookies
+                - Name: CrossSiteScripting_QUERYARGUMENTS # Blocks XSS in query parameters
+                - Name: CrossSiteScripting_BODY      # Blocks XSS in request body
+                - Name: CrossSiteScripting_URIPATH   # Blocks XSS in URI path
+
+          # Override action for managed rule groups (None = use rule group's actions)
           OverrideAction:
             None: {}
-          VisibilityConfig: # Defines and enables Amazon CloudWatch metrics and web request sample collection. 
+
+          # CloudWatch metrics configuration for this rule
+          VisibilityConfig:
             CloudWatchMetricsEnabled: true
             SampledRequestsEnabled: true
             MetricName: AWS-AWSManagedRulesCommonRuleSet
+
+      # Resource tags for organization and cost tracking
       Tags:
         - Key: "Name"
-          Value: "demo-waf"
-          
+          Value: !Sub "${Environment}-${Application}-web-acl"
+        - Key: "Environment"
+          Value: !Ref Environment
+        - Key: "Application"
+          Value: !Ref Application
+        - Key: "ManagedBy"
+          Value: "CloudFormation"
+
+  #=============================================================================
+  # Web ACL Association
+  #=============================================================================
+  # Associates the Web ACL with a target AWS resource
+  #
+  # Supported Resources:
+  # REGIONAL scope:
+  # - Application Load Balancer (ALB)
+  # - API Gateway REST API
+  # - AppSync GraphQL API
+  # - Cognito User Pool
+  # - App Runner Service
+  # - Verified Access Instance
+  #
+  # CLOUDFRONT scope:
+  # - CloudFront Distribution
+  #
+  # Note: CloudFront associations must be created in us-east-1 region
+  #=============================================================================
   WebACLAssociation:
     Type: AWS::WAFv2::WebACLAssociation
     Properties:
       ResourceArn: !Ref WebAclAssociationResourceArn
       WebACLArn: !GetAtt WebAcl.Arn
 
+#===============================================================================
+# OUTPUTS
+#===============================================================================
+# Return important resource information for reference and integration
 Outputs:
+  WebAclArn:
+    Description: 'ARN of the created Web ACL'
+    Value: !GetAtt WebAcl.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACL-ARN'
 
-  WebAclInfo:
-    Value: !Sub "${WebAcl}"
+  WebAclId:
+    Description: 'ID of the created Web ACL'
+    Value: !Ref WebAcl
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACL-ID'
+
+  WebAclName:
+    Description: 'Name of the created Web ACL'
+    Value: !Sub "${Environment}-${Application}-web-acl"
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACL-Name'
+
+  WebAclScope:
+    Description: 'Scope of the Web ACL (REGIONAL or CLOUDFRONT)'
+    Value: !Ref Scope
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACL-Scope'
