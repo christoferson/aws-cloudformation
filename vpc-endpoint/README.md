@@ -111,6 +111,10 @@ aws ecr describe-repositories --region eu-west-1
 
 [vpc-endpoint-interface](vpc-endpoint-interface.yaml)
 
+### Vpc Endpoint Interface Endpoint - Bedrock
+
+[vpc-endpoint-interface-bedrock](vpc-endpoint-interface-bedrock.yaml)
+
 --- 
 
 ### Vpc Endpoint Interface Endpoint - Instance Connect
