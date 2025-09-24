@@ -1,6 +1,65 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for AWS PrivateLink service with a sample backend'
+Description: 'AWS PrivateLink Service Provider - Creates a complete PrivateLink service with NLB backend for secure cross-VPC connectivity'
 
+#==============================================================================
+# STUDY GUIDE: AWS PRIVATELINK SERVICE PROVIDER
+#==============================================================================
+#
+# WHAT IS AWS PRIVATELINK?
+# AWS PrivateLink enables you to securely access services across different VPCs,
+# AWS accounts, and on-premises networks without exposing traffic to the public internet.
+# It creates a private connection using Elastic Network Interfaces (ENIs).
+#
+# PRIVATELINK ARCHITECTURE COMPONENTS:
+# 1. Service Provider (This Template):
+#    - VPC Endpoint Service (the service you're exposing)
+#    - Network Load Balancer (entry point for traffic)
+#    - Backend resources (EC2 instances, containers, etc.)
+#
+# 2. Service Consumer (Separate deployment):
+#    - VPC Endpoint (interface endpoint that connects to your service)
+#    - Consumer VPC and subnets
+#    - Security groups for access control
+#
+# KEY CONCEPTS:
+# • Service Provider: The account/VPC that hosts the service (this template)
+# • Service Consumer: The account/VPC that consumes the service
+# • VPC Endpoint Service: Makes your service available via PrivateLink
+# • VPC Endpoint: Consumer-side connection to your service
+# • Network Load Balancer: Required for PrivateLink (Layer 4 load balancing)
+# • Acceptance Required: Controls whether connections need approval
+#
+# TRAFFIC FLOW:
+# Consumer VPC → VPC Endpoint → PrivateLink → NLB → Target Group → EC2 Instances
+#
+# BENEFITS:
+# • Security: Traffic never leaves AWS backbone
+# • Scalability: Supports thousands of connections
+# • Simplicity: No VPC peering or transit gateway complexity
+# • Cross-Account: Enable secure multi-tenant architectures
+# • Compliance: Meets strict network isolation requirements
+#
+# USE CASES:
+# • SaaS applications serving multiple customers
+# • Shared services across business units
+# • Partner integrations without network complexity
+# • Microservices architectures with network isolation
+# • Database or API services with controlled access
+#
+# PRICING CONSIDERATIONS:
+# • VPC Endpoint Service: Hourly charge per AZ
+# • Data Processing: Per GB charges for data transfer
+# • NLB: Standard NLB pricing applies
+# • Cross-AZ traffic: Standard data transfer charges
+#
+# SECURITY BEST PRACTICES:
+# • Use least-privilege security groups
+# • Enable acceptance required for production
+# • Monitor connections and data transfer
+# • Implement proper authentication at application layer
+# • Use resource-based policies for fine-grained access control
+#
+#==============================================================================
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -15,6 +74,7 @@ Metadata:
         Parameters:
           - VpcId
           - SubnetIds
+          - NLBSubnetCidr
       - Label:
           default: "Instance Configuration"
         Parameters:
@@ -28,6 +88,8 @@ Metadata:
         default: "VPC ID for PrivateLink Service"
       SubnetIds:
         default: "Subnet IDs for NLB and EC2 instances"
+      NLBSubnetCidr:
+        default: "CIDR block for NLB subnet (for security group rules)"
       LatestAmiId:
         default: "Amazon Linux 2 AMI ID"
 
@@ -36,44 +98,55 @@ Parameters:
   Application:
     Type: String
     Default: myapp
-    Description: Application Name
+    Description: "Application name used for resource tagging and naming conventions"
 
   Environment:
     Type: String
     Default: dev
-    Description: Environment
+    Description: "Environment designation (dev/staging/prod) for resource organization and policies"
 
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Description: VPC ID where the resources will be created
+    Description: "VPC ID where the PrivateLink service and backend resources will be deployed"
+    ConstraintDescription: "Must be a valid VPC ID in the current region"
 
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: List of subnet IDs for the NLB and EC2 instance
+    Description: "List of subnet IDs for NLB and EC2 instances (recommend private subnets across multiple AZs)"
+    ConstraintDescription: "Must be valid subnet IDs within the specified VPC"
 
   LatestAmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
-    Description: The latest Amazon Linux 2 AMI from the Parameter Store
+    Description: "Latest Amazon Linux 2 AMI ID from Systems Manager Parameter Store"
 
   NLBSubnetCidr:
     Type: String
-    Description: CIDR block of the subnet where NLB is deployed
+    Description: "CIDR block of the subnet where NLB is deployed (used for security group ingress rules)"
     Default: 10.0.0.0/24
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$'
+    ConstraintDescription: "Must be a valid CIDR range (e.g., 10.0.0.0/24)"
 
 Resources:
 
-  # Security Group for NLB
+  # Network Load Balancer Security Group
+  # Controls inbound traffic to the NLB from PrivateLink consumers
+  # Note: NLB security groups are optional but recommended for additional security
   NLBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for the NLB
+      GroupDescription: "Security group for Network Load Balancer - controls PrivateLink service access"
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 80
+          FromPort: 80                                             # HTTP port for the service
           ToPort: 80
+          CidrIp: 0.0.0.0/0                                       # Allow from any source (PrivateLink provides network isolation)
+          Description: "Allow HTTP traffic from PrivateLink consumers"
+      SecurityGroupEgress:
+        - IpProtocol: -1                                          # Allow all outbound traffic
           CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
       Tags:
         - Key: Name
           Value: !Sub ${Application}-${Environment}-nlb-sg
@@ -81,19 +154,22 @@ Resources:
           Value: !Ref Application
         - Key: Environment
           Value: !Ref Environment
+        - Key: Purpose
+          Value: "PrivateLink NLB Security Group"
 
-  # Security Group for EC2 instance
+  # Backend Service Security Group
+  # Controls access to EC2 instances hosting the actual service
+  # Implements defense-in-depth by restricting access to NLB traffic only
   ServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for the Backend Service
+      GroupDescription: "Security group for backend service instances - allows traffic only from NLB"
       VpcId: !Ref VpcId
-      SecurityGroupIngress: []
-      # SecurityGroupIngress:
-      #   - IpProtocol: tcp
-      #     FromPort: 80
-      #     ToPort: 80
-      #     SourceSecurityGroupId: !Ref NLBSecurityGroup
+      SecurityGroupIngress: []                                    # Ingress rules defined separately for better dependency management
+      SecurityGroupEgress:
+        - IpProtocol: -1                                          # Allow all outbound for updates, API calls, etc.
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic for system updates and AWS API calls"
       Tags:
         - Key: Name
           Value: !Sub ${Application}-${Environment}-service-sg
@@ -101,18 +177,25 @@ Resources:
           Value: !Ref Application
         - Key: Environment
           Value: !Ref Environment
-          
-  # Allow traffic from NLB security group
+        - Key: Purpose
+          Value: "Backend Service Security Group"
+
+  # Security Group Ingress Rule: Allow traffic from NLB Security Group
+  # This rule allows traffic from the NLB to reach backend instances
+  # Separate resource prevents circular dependencies in CloudFormation
   ServiceSecurityGroupIngressFromNLB:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !Ref ServiceSecurityGroup
       IpProtocol: tcp
-      FromPort: 80
+      FromPort: 80                                                # Service port
       ToPort: 80
-      SourceSecurityGroupId: !Ref NLBSecurityGroup
+      SourceSecurityGroupId: !Ref NLBSecurityGroup              # Reference to NLB security group
+      Description: "Allow HTTP traffic from Network Load Balancer"
 
-  # Allow traffic from NLB subnet
+  # Security Group Ingress Rule: Allow traffic from NLB Subnet
+  # NLB may source traffic from its own IP addresses, not just the security group
+  # This ensures connectivity even when NLB uses its own IPs for health checks
   ServiceSecurityGroupIngressFromSubnet:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -120,73 +203,116 @@ Resources:
       IpProtocol: tcp
       FromPort: 80
       ToPort: 80
-      CidrIp: !Ref NLBSubnetCidr #"10.0.0.0/24" #!Ref NLBSubnetCidr
+      CidrIp: !Ref NLBSubnetCidr                                 # CIDR of NLB subnet
+      Description: "Allow HTTP traffic from NLB subnet CIDR for health checks and load balancing"
 
-
-  # EC2 Instance Role
+  # IAM Role for EC2 Instances
+  # Provides necessary permissions for instances to function properly
+  # Includes SSM for management and potential future AWS service integrations
   ServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub "${Application}-${Environment}-service-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: ec2.amazonaws.com
+              Service: ec2.amazonaws.com                          # Allow EC2 service to assume this role
             Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref 'AWS::Region'         # Restrict to current region
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore    # Enable Systems Manager for instance management
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
 
+  # Instance Profile for EC2 Instances
+  # Allows EC2 instances to use the IAM role defined above
   ServiceInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
+      InstanceProfileName: !Sub "${Application}-${Environment}-instance-profile"
       Roles:
         - !Ref ServiceRole
 
-  # Launch Template (replacing Launch Configuration)
+  # Launch Template for Auto Scaling Group
+  # Defines the configuration for EC2 instances that will host the service
+  # Includes user data script to set up a simple Flask web service
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateName: !Sub "${Application}-${Environment}-launch-template"
       LaunchTemplateData:
-        ImageId: !Ref LatestAmiId
-        InstanceType: t2.micro
+        ImageId: !Ref LatestAmiId                                 # Latest Amazon Linux 2 AMI
+        InstanceType: t2.micro                                    # Small instance for demo purposes
         IamInstanceProfile:
-          Name: !Ref ServiceInstanceProfile
+          Name: !Ref ServiceInstanceProfile                       # Attach IAM role for AWS service access
         SecurityGroupIds:
-          - !Ref ServiceSecurityGroup
-        UserData:
+          - !Ref ServiceSecurityGroup                             # Apply backend security group
+        UserData:                                                 # Bootstrap script to set up web service
           Fn::Base64: !Sub |
             #!/bin/bash
+            # Update system and install Python/Flask
             yum update -y
             yum install -y python3 pip
             pip3 install flask
 
+            # Create simple Flask application
             cat <<EOF > /home/ec2-user/app.py
             from flask import Flask, request, jsonify
+            import socket
+            import os
             app = Flask(__name__)
 
             @app.route('/health', methods=['GET'])
             def health_check():
-                return jsonify({'status': 'healthy'}), 200
+                """Health check endpoint for load balancer"""
+                return jsonify({
+                    'status': 'healthy',
+                    'instance_id': os.environ.get('EC2_INSTANCE_ID', 'unknown'),
+                    'hostname': socket.gethostname()
+                }), 200
 
             @app.route('/sum', methods=['GET', 'POST'])
             def sum_numbers():
+                """Sample API endpoint that adds two numbers"""
                 if request.method == 'GET':
-                    return jsonify({'status': 'healthy'}), 200
+                    return jsonify({'message': 'Send POST request with num1 and num2'}), 200
 
-                data = request.get_json()
-                num1 = data.get('num1', 0)
-                num2 = data.get('num2', 0)
-                return jsonify({'result': num1 + num2})
+                try:
+                    data = request.get_json()
+                    num1 = data.get('num1', 0)
+                    num2 = data.get('num2', 0)
+                    return jsonify({
+                        'result': num1 + num2,
+                        'instance_id': os.environ.get('EC2_INSTANCE_ID', 'unknown')
+                    })
+                except Exception as e:
+                    return jsonify({'error': str(e)}), 400
+
+            @app.route('/', methods=['GET'])
+            def root():
+                """Root endpoint with service information"""
+                return jsonify({
+                    'service': '${Application}-${Environment}',
+                    'status': 'running',
+                    'endpoints': ['/health', '/sum'],
+                    'instance_id': os.environ.get('EC2_INSTANCE_ID', 'unknown')
+                })
 
             if __name__ == '__main__':
                 app.run(host='0.0.0.0', port=80)
             EOF
 
+            # Create systemd service for the web application
             cat <<EOF > /etc/systemd/system/webservice.service
             [Unit]
-            Description=Simple Web Service
+            Description=PrivateLink Demo Web Service
             After=network.target
 
             [Service]
@@ -195,101 +321,261 @@ Resources:
             ExecStart=/usr/local/bin/flask run --host=0.0.0.0 --port=80
             Restart=always
             Environment=FLASK_APP=/home/ec2-user/app.py
+            Environment=EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 
             [Install]
             WantedBy=multi-user.target
             EOF
 
+            # Enable and start the service
+            systemctl daemon-reload
             systemctl enable webservice
             systemctl start webservice
 
-  # Update Auto Scaling Group to use Launch Template
+            # Signal CloudFormation that the instance is ready
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+      TagSpecifications:
+        - ResourceType: instance
+          Tags:
+            - Key: Name
+              Value: !Sub "${Application}-${Environment}-service-instance"
+            - Key: Application
+              Value: !Ref Application
+            - Key: Environment
+              Value: !Ref Environment
+
+  # Auto Scaling Group
+  # Manages EC2 instances hosting the service, provides high availability and scaling
+  # Automatically registers instances with the NLB target group
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier: !Ref SubnetIds
-      # Replace LaunchConfigurationName with LaunchTemplate
+      AutoScalingGroupName: !Sub "${Application}-${Environment}-asg"
+      VPCZoneIdentifier: !Ref SubnetIds                          # Deploy across multiple subnets/AZs
       LaunchTemplate:
-        LaunchTemplateId: !Ref LaunchTemplate
-        Version: !GetAtt LaunchTemplate.LatestVersionNumber
-      MinSize: 1
-      MaxSize: 2
-      DesiredCapacity: 1
+        LaunchTemplateId: !Ref LaunchTemplate                    # Use launch template for instance configuration
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber      # Always use latest version
+      MinSize: 1                                                  # Minimum instances for availability
+      MaxSize: 3                                                  # Maximum instances for cost control
+      DesiredCapacity: 2                                          # Target number of instances
+      HealthCheckType: ELB                                        # Use load balancer health checks
+      HealthCheckGracePeriod: 300                                 # Allow time for instance startup
       TargetGroupARNs:
-        - !Ref NLBTargetGroup
+        - !Ref NLBTargetGroup                                     # Automatically register with NLB
       Tags:
         - Key: Name
-          Value: PrivateLink-Service
+          Value: !Sub "${Application}-${Environment}-asg-instance"
           PropagateAtLaunch: true
+        - Key: Application
+          Value: !Ref Application
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+    CreationPolicy:                                               # Wait for instances to signal success
+      ResourceSignal:
+        Count: !Ref 'AWS::NoValue'                               # Don't wait for signal in this demo
+        Timeout: PT10M
 
   # Network Load Balancer
+  # Entry point for PrivateLink traffic, distributes requests to backend instances
+  # Must be internal scheme for PrivateLink service
   NetworkLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Type: network
-      Scheme: internal
-      Subnets: !Ref SubnetIds
+      Name: !Sub "${Application}-${Environment}-nlb"
+      Type: network                                               # Required for PrivateLink
+      Scheme: internal                                            # Internal-facing for PrivateLink
+      IpAddressType: ipv4                                         # IPv4 addressing
+      Subnets: !Ref SubnetIds                                     # Deploy across multiple AZs for HA
+      SecurityGroups:                                             # Optional for NLB but recommended
+        - !Ref NLBSecurityGroup
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled                  # Distribute traffic evenly across AZs
+          Value: 'true'
+        - Key: deletion_protection.enabled                        # Protect against accidental deletion
+          Value: 'false'                                          # Set to true for production
       Tags:
         - Key: Name
-          Value: PrivateLink-NLB
+          Value: !Sub "${Application}-${Environment}-nlb"
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "PrivateLink Service Load Balancer"
 
   # NLB Target Group
+  # Defines health check and routing configuration for backend instances
+  # Auto Scaling Group automatically registers/deregisters instances
   NLBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Port: 80
-      Protocol: TCP
-      VpcId: !Ref VpcId
-      TargetType: instance
-      HealthCheckProtocol: TCP    # NLB only supports TCP health checks
-      HealthCheckPort: 80
-      HealthCheckIntervalSeconds: 30
-      HealthyThresholdCount: 3
-      UnhealthyThresholdCount: 3
+      Name: !Sub "${Application}-${Environment}-tg"
+      Port: 80                                                    # Port where service listens
+      Protocol: TCP                                               # Layer 4 protocol for NLB
+      VpcId: !Ref VpcId                                          # Target VPC
+      TargetType: instance                                        # Target EC2 instances directly
+      HealthCheckEnabled: true                                    # Enable health checking
+      HealthCheckProtocol: TCP                                    # NLB supports TCP and HTTP health checks
+      HealthCheckPort: 80                                         # Port for health checks
+      HealthCheckIntervalSeconds: 30                              # Frequency of health checks
+      HealthyThresholdCount: 3                                    # Consecutive successful checks to mark healthy
+      UnhealthyThresholdCount: 3                                  # Consecutive failed checks to mark unhealthy
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds               # Time to wait before deregistering targets
+          Value: '30'
+        - Key: preserve_client_ip.enabled                         # Preserve original client IP
+          Value: 'true'
       Tags:
         - Key: Name
-          Value: PrivateLink-TargetGroup
-
-
+          Value: !Sub "${Application}-${Environment}-tg"
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
 
   # NLB Listener
+  # Defines how the load balancer listens for incoming connections
+  # Routes traffic to the target group containing backend instances
   NLBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 80
-      Protocol: TCP
+      LoadBalancerArn: !Ref NetworkLoadBalancer                  # Associate with NLB
+      Port: 80                                                    # Listen on HTTP port
+      Protocol: TCP                                               # TCP protocol for Layer 4 load balancing
       DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref NLBTargetGroup
+        - Type: forward                                           # Forward traffic to target group
+          TargetGroupArn: !Ref NLBTargetGroup                    # Target group containing instances
 
-  # VPC Endpoint Service (PrivateLink)
+  # VPC Endpoint Service (PrivateLink Service)
+  # Makes your service available to other VPCs via PrivateLink
+  # This is the core resource that enables cross-VPC private connectivity
   VPCEndpointService:
     Type: AWS::EC2::VPCEndpointService
     Properties:
-      NetworkLoadBalancerArns: 
+      NetworkLoadBalancerArns:                                    # NLB(s) that serve the traffic
         - !Ref NetworkLoadBalancer
-      AcceptanceRequired: true
+      AcceptanceRequired: true                                    # Require manual approval for connections
+      GatewayLoadBalancerArns: []                                # Not using Gateway Load Balancer
       Tags:
         - Key: Name
-          Value: PrivateLink-EndpointService
+          Value: !Sub "${Application}-${Environment}-privatelink-service"
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "PrivateLink Endpoint Service"
 
 Outputs:
+
+  # Auto Scaling Group Information
   AutoScalingGroupName:
-    Description: Auto Scaling Group Name
+    Description: "Name of the Auto Scaling Group managing backend instances"
     Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ASG-Name"
 
+  AutoScalingGroupArn:
+    Description: "ARN of the Auto Scaling Group"
+    Value: !Sub 
+      - "arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${ASGName}"
+      - ASGName: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ASG-ARN"
+
+  # Network Load Balancer Information
   NetworkLoadBalancerArn:
-    Description: Network Load Balancer ARN
+    Description: "ARN of the Network Load Balancer serving PrivateLink traffic"
     Value: !Ref NetworkLoadBalancer
+    Export:
+      Name: !Sub "${AWS::StackName}-NLB-ARN"
 
+  NetworkLoadBalancerDNSName:
+    Description: "DNS name of the Network Load Balancer (for internal testing)"
+    Value: !GetAtt NetworkLoadBalancer.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-NLB-DNS"
+
+  NetworkLoadBalancerHostedZoneID:
+    Description: "Hosted Zone ID of the Network Load Balancer"
+    Value: !GetAtt NetworkLoadBalancer.CanonicalHostedZoneID
+
+  # Target Group Information
+  TargetGroupArn:
+    Description: "ARN of the NLB Target Group"
+    Value: !Ref NLBTargetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-TG-ARN"
+
+  # VPC Endpoint Service Information (Most Important Outputs)
   VPCEndpointServiceId:
-    Description: VPC Endpoint Service ID
+    Description: "VPC Endpoint Service ID - used internally by AWS"
     Value: !GetAtt VPCEndpointService.ServiceId
+    Export:
+      Name: !Sub "${AWS::StackName}-Service-ID"
 
-  # The service name can be constructed using the ServiceId
   VPCEndpointServiceName:
-    Description: VPC Endpoint Service Name
+    Description: "VPC Endpoint Service Name - use this to create VPC Endpoints in consumer VPCs"
     Value: !Sub 
       - "com.amazonaws.vpce.${AWS::Region}.${ServiceId}"
       - ServiceId: !GetAtt VPCEndpointService.ServiceId
+    Export:
+      Name: !Sub "${AWS::StackName}-Service-Name"
+
+  # Security Group Information
+  NLBSecurityGroupId:
+    Description: "Security Group ID for the Network Load Balancer"
+    Value: !Ref NLBSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-NLB-SG"
+
+  ServiceSecurityGroupId:
+    Description: "Security Group ID for backend service instances"
+    Value: !Ref ServiceSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-Service-SG"
+
+  # Connection Instructions
+  ConnectionInstructions:
+    Description: "Instructions for connecting to this PrivateLink service"
+    Value: !Sub |
+      To connect to this PrivateLink service:
+      1. Create a VPC Endpoint in your consumer VPC using service name: com.amazonaws.vpce.${AWS::Region}.${VPCEndpointService.ServiceId}
+      2. Wait for connection approval (AcceptanceRequired is enabled)
+      3. Approve the connection in the VPC Console under Endpoint Services
+      4. Test connectivity using the VPC Endpoint DNS name
+      5. Available endpoints: / (info), /health (health check), /sum (POST with num1/num2)
+
+#==============================================================================
+# DEPLOYMENT AND TESTING GUIDE:
+#==============================================================================
+# 
+# POST-DEPLOYMENT STEPS:
+# 1. Note the VPCEndpointServiceName from outputs
+# 2. Create a VPC Endpoint in consumer VPC using this service name
+# 3. Approve the connection request in VPC Console > Endpoint Services
+# 4. Test connectivity from consumer VPC
+#
+# TESTING COMMANDS (from consumer VPC):
+# curl http://vpce-xxxxx-xxxxx.vpce-svc-xxxxx.region.vpce.amazonaws.com/
+# curl http://vpce-xxxxx-xxxxx.vpce-svc-xxxxx.region.vpce.amazonaws.com/health
+# curl -X POST -H "Content-Type: application/json" \
+#      -d '{"num1":5,"num2":3}' \
+#      http://vpce-xxxxx-xxxxx.vpce-svc-xxxxx.region.vpce.amazonaws.com/sum
+#
+# MONITORING:
+# • Check NLB target health in EC2 Console
+# • Monitor VPC Endpoint Service connections
+# • Review CloudWatch metrics for NLB and Auto Scaling Group
+# • Check application logs on EC2 instances via SSM Session Manager
+#
+# TROUBLESHOOTING:
+# • Verify security group rules allow traffic on port 80
+# • Check NLB target group health status
+# • Ensure VPC Endpoint connection is approved and available
+# • Verify DNS resolution in consumer VPC
+# • Check application logs for errors
+#
+#==============================================================================
