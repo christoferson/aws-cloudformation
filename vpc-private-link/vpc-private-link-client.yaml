@@ -1,5 +1,81 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Client configuration for PrivateLink service consumption with test EC2 instance'
+Description: 'AWS PrivateLink Service Consumer - Creates VPC Endpoint and test infrastructure to consume PrivateLink services'
+
+#==============================================================================
+# STUDY GUIDE: AWS PRIVATELINK SERVICE CONSUMER
+#==============================================================================
+#
+# WHAT IS A PRIVATELINK SERVICE CONSUMER?
+# A PrivateLink Service Consumer is the client side of AWS PrivateLink that connects
+# to services provided by other VPCs or AWS accounts through VPC Endpoints.
+# This template creates the consumer infrastructure to access PrivateLink services.
+#
+# CONSUMER ARCHITECTURE COMPONENTS:
+# 1. VPC Endpoint (Interface Endpoint):
+#    - Creates ENIs in your subnets to access the remote service
+#    - Provides private IP addresses for service connectivity
+#    - Enables DNS resolution for the service
+#
+# 2. Security Groups:
+#    - Control outbound access from your resources to the service
+#    - Control inbound access to the VPC Endpoint
+#    - Implement least-privilege access principles
+#
+# 3. Consumer Resources:
+#    - EC2 instances, Lambda functions, or other AWS services
+#    - Applications that need to access the PrivateLink service
+#    - Test infrastructure for validation
+#
+# PRIVATELINK CONSUMER WORKFLOW:
+# 1. Service Provider creates VPC Endpoint Service
+# 2. Consumer creates VPC Endpoint using the service name
+# 3. Connection request is sent to the service provider
+# 4. Service provider approves the connection (if acceptance required)
+# 5. Consumer can access the service via private connectivity
+#
+# TRAFFIC FLOW (CONSUMER PERSPECTIVE):
+# Consumer App → Security Group → VPC Endpoint → PrivateLink → Provider Service
+#
+# KEY CONCEPTS:
+# • VPC Endpoint: Your gateway to the PrivateLink service
+# • Service Name: Unique identifier for the PrivateLink service (com.amazonaws.vpce.region.vpce-svc-xxxxx)
+# • DNS Resolution: VPC Endpoint provides DNS names for service access
+# • Cross-Account Access: Can connect to services in different AWS accounts
+# • Network Isolation: Traffic never traverses the public internet
+#
+# BENEFITS FOR CONSUMERS:
+# • Security: Private connectivity without internet exposure
+# • Performance: Lower latency through AWS backbone
+# • Scalability: No bandwidth limitations of internet gateways
+# • Simplified Networking: No complex VPC peering or transit gateway setup
+# • Cost Optimization: Potential savings on NAT Gateway usage
+#
+# CONSUMER USE CASES:
+# • Accessing SaaS applications privately
+# • Consuming shared services from other business units
+# • Integrating with partner services securely
+# • Accessing microservices across account boundaries
+# • Consuming centralized services (logging, monitoring, etc.)
+#
+# SECURITY CONSIDERATIONS:
+# • Use restrictive security groups (least privilege)
+# • Enable VPC Flow Logs to monitor endpoint traffic
+# • Implement application-level authentication
+# • Monitor and audit service access patterns
+# • Consider network ACLs for additional security layers
+#
+# PRICING IMPACT:
+# • VPC Endpoint: Hourly charge per endpoint per AZ
+# • Data Processing: Per GB charges for data transferred
+# • No charges for the PrivateLink service itself (provider pays)
+# • Compare costs with alternative connectivity methods
+#
+# DNS RESOLUTION OPTIONS:
+# • Private DNS Enabled: Use service's public DNS name (automatic routing)
+# • Private DNS Disabled: Use VPC Endpoint-specific DNS names
+# • Custom DNS: Route through your own DNS infrastructure
+#
+#==============================================================================
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -26,211 +102,518 @@ Metadata:
       Application:
         default: "Application Name"
       Environment:
-        default: "Environment Name"
+        default: "Environment Name (dev/staging/prod)"
       VpcId:
-        default: "Client VPC ID"
-      SubnetId:
-        default: "Subnet ID for EC2 instance"
+        default: "Consumer VPC ID"
+      SubnetIds:
+        default: "Subnet IDs for VPC Endpoint and test instance"
       ServiceName:
-        default: "PrivateLink Service Name"
+        default: "PrivateLink Service Name (from service provider)"
       LatestAmiId:
         default: "Amazon Linux 2 AMI ID"
 
 Parameters:
+
   Application:
     Type: String
     Default: myapp-client
-    Description: Application Name
+    Description: "Application name for the consumer side (used for resource tagging)"
 
   Environment:
     Type: String
     Default: dev
-    Description: Environment
+    Description: "Environment designation (dev/staging/prod) for resource organization"
 
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: |
-      Select any VPC with DNS hostnames and DNS resolution enabled.
-      The VPC must have internet connectivity (direct or via NAT) for SSM to work.
+      Consumer VPC ID where the VPC Endpoint will be created.
+      Requirements:
+      - DNS hostnames and DNS resolution must be enabled
+      - Must have internet connectivity (direct or via NAT) for SSM access
+      - Should have available IP addresses in selected subnets
+    ConstraintDescription: "Must be a valid VPC ID with DNS resolution enabled"
 
-  SubnetIds:  # Changed from SubnetId to SubnetIds
+  SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: |
-      Select subnets for the VPC Endpoint.
-      - Can be public or private subnets
-      - Multiple subnets recommended for high availability
-      - Must have available IP addresses
-      For the test EC2 instance, the first subnet in the list will be used.
+      Subnet IDs for VPC Endpoint ENI placement and test instance.
+      Recommendations:
+      - Use private subnets for better security
+      - Select subnets in multiple AZs for high availability
+      - Ensure subnets have available IP addresses
+      - First subnet will be used for the test EC2 instance
+    ConstraintDescription: "Must be valid subnet IDs within the specified VPC"
 
   ServiceName:
     Type: String
-    Description: VPC Endpoint Service Name (from the service template)
+    Description: "VPC Endpoint Service Name from the service provider (format: com.amazonaws.vpce.region.vpce-svc-xxxxx)"
+    AllowedPattern: '^com\.amazonaws\.vpce\.[a-z0-9-]+\.vpce-svc-[a-z0-9]+$'
+    ConstraintDescription: "Must be a valid VPC Endpoint Service Name"
 
   LatestAmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
-    Description: The latest Amazon Linux 2 AMI from the Parameter Store
-
+    Description: "Latest Amazon Linux 2 AMI ID from Systems Manager Parameter Store"
 
 Resources:
 
   #############################################################
-  # SECURITY GROUPS
+  # SECURITY GROUPS - NETWORK ACCESS CONTROL
   #############################################################
+
+  # VPC Endpoint Security Group
+  # Controls access TO the VPC Endpoint from consumer resources
+  # This acts as a firewall for the PrivateLink service access
   EndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for VPC Endpoint
+      GroupDescription: "Security group for VPC Endpoint - controls access to PrivateLink service"
       VpcId: !Ref VpcId
+      SecurityGroupIngress: []                                    # Ingress rules defined separately
+      SecurityGroupEgress:
+        - IpProtocol: -1                                          # Allow all outbound (endpoint needs to reach service)
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic to PrivateLink service"
       Tags:
         - Key: Name
           Value: !Sub ${Application}-${Environment}-endpoint-sg
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "VPC Endpoint Security Group"
 
+  # Consumer EC2 Security Group
+  # Controls access FROM consumer resources (EC2 instances, Lambda, etc.)
+  # Implements outbound rules for accessing the PrivateLink service
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for test EC2 instance
+      GroupDescription: "Security group for consumer resources accessing PrivateLink service"
       VpcId: !Ref VpcId
+      SecurityGroupIngress: []                                    # No inbound access needed for client
       SecurityGroupEgress:
-        - IpProtocol: tcp
+        - IpProtocol: tcp                                         # HTTPS for SSM access
           FromPort: 443
           ToPort: 443
-          CidrIp: 0.0.0.0/0  # For SSM access
+          CidrIp: 0.0.0.0/0
+          Description: "Allow HTTPS for Systems Manager access"
+        # Additional egress rules defined separately
       Tags:
         - Key: Name
-          Value: !Sub ${Application}-${Environment}-ec2-sg
+          Value: !Sub ${Application}-${Environment}-consumer-sg
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "Consumer Resources Security Group"
 
-  # Separate security group rules
+  # Security Group Rule: Allow consumer resources to access VPC Endpoint
+  # This rule allows EC2 instances to send traffic to the VPC Endpoint
+  # Separate resource prevents circular dependencies
   EndpointSecurityGroupIngress:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !Ref EndpointSecurityGroup
       IpProtocol: tcp
-      FromPort: 80
+      FromPort: 80                                                # Service port (HTTP in this example)
       ToPort: 80
-      SourceSecurityGroupId: !Ref EC2SecurityGroup
+      SourceSecurityGroupId: !Ref EC2SecurityGroup              # Allow from consumer security group
+      Description: "Allow HTTP traffic from consumer resources"
 
-  EC2SecurityGroupEgress:
+  # Security Group Rule: Allow consumer resources to reach VPC Endpoint
+  # This rule allows outbound traffic from consumer resources to the endpoint
+  EC2SecurityGroupEgressToEndpoint:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
       GroupId: !Ref EC2SecurityGroup
       IpProtocol: tcp
-      FromPort: 80
+      FromPort: 80                                                # Service port
       ToPort: 80
-      DestinationSecurityGroupId: !Ref EndpointSecurityGroup
+      DestinationSecurityGroupId: !Ref EndpointSecurityGroup    # Target VPC Endpoint security group
+      Description: "Allow HTTP traffic to PrivateLink service via VPC Endpoint"
 
   #############################################################
-  # VPC ENDPOINT
+  # VPC ENDPOINT - PRIVATELINK SERVICE ACCESS
   #############################################################
+
+  # VPC Endpoint (Interface Endpoint)
+  # This is the core resource that enables private connectivity to the PrivateLink service
+  # Creates ENIs in your subnets that act as entry points to the remote service
   ServiceVPCEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
-      VpcId: !Ref VpcId
-      ServiceName: !Ref ServiceName
-      VpcEndpointType: Interface
-      SubnetIds: !Ref SubnetIds
+      VpcId: !Ref VpcId                                          # Consumer VPC
+      ServiceName: !Ref ServiceName                              # PrivateLink service identifier
+      VpcEndpointType: Interface                                  # Interface endpoint for PrivateLink
+      SubnetIds: !Ref SubnetIds                                   # Subnets where ENIs will be created
       SecurityGroupIds:
-        - !Ref EndpointSecurityGroup
-      PrivateDnsEnabled: false
+        - !Ref EndpointSecurityGroup                             # Security group for access control
+      PrivateDnsEnabled: false                                    # Use endpoint-specific DNS names
+      PolicyDocument:                                             # Optional: Resource-based policy for additional access control
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'                                        # Allow all principals (security groups control access)
+            Action:
+              - '*'                                               # Allow all actions (service controls what's available)
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:PrincipalVpc': !Ref VpcId                   # Restrict to this VPC only
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-privatelink-endpoint
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ServiceName
+          Value: !Ref ServiceName
 
   #############################################################
-  # TEST EC2 INSTANCE
+  # TEST INFRASTRUCTURE - EC2 INSTANCE FOR VALIDATION
   #############################################################
+
+  # IAM Role for Test EC2 Instance
+  # Provides necessary permissions for the test instance to function
+  # Includes SSM for remote access and VPC endpoint describe permissions
   EC2Role:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub "${Application}-${Environment}-consumer-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: ec2.amazonaws.com
+              Service: ec2.amazonaws.com                          # Allow EC2 service to assume role
             Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref 'AWS::Region'         # Restrict to current region
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore    # Enable Systems Manager access
       Policies:
-        - PolicyName: VPCEndpointAccess
+        - PolicyName: VPCEndpointAccess                           # Custom policy for VPC endpoint operations
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                  - ec2:DescribeVpcEndpoints
+                  - ec2:DescribeVpcEndpoints                      # Allow querying VPC endpoint details
+                  - ec2:DescribeNetworkInterfaces                 # Allow querying ENI details
                 Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:RequestedRegion': !Ref 'AWS::Region'
+      Tags:
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
 
+  # Instance Profile for EC2 Role
+  # Allows EC2 instances to use the IAM role defined above
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
+      InstanceProfileName: !Sub "${Application}-${Environment}-consumer-profile"
       Roles:
         - !Ref EC2Role
 
+  # Test EC2 Instance
+  # Provides a test environment to validate PrivateLink connectivity
+  # Includes pre-configured scripts for testing the remote service
   TestInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref LatestAmiId
-      InstanceType: t2.micro
-      SubnetId: !Select [0, !Ref SubnetIds]  # Uses first subnet
+      ImageId: !Ref LatestAmiId                                   # Latest Amazon Linux 2
+      InstanceType: t2.micro                                      # Small instance for testing
+      SubnetId: !Select [0, !Ref SubnetIds]                      # Deploy in first subnet
       SecurityGroupIds:
-        - !Ref EC2SecurityGroup
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      Tags:
-        - Key: Name
-          Value: !Sub ${Application}-${Environment}-test-instance
-      UserData:
+        - !Ref EC2SecurityGroup                                   # Apply consumer security group
+      IamInstanceProfile: !Ref EC2InstanceProfile                # Attach IAM role
+      UserData:                                                   # Bootstrap script for testing tools
         Fn::Base64: !Sub |
           #!/bin/bash
+          # Update system and install required tools
           yum update -y
-          yum install -y jq curl
+          yum install -y jq curl aws-cli
 
-          # Create a test script
-          cat <<EOF > /home/ec2-user/test-service.sh
+          # Create comprehensive test script
+          cat <<'EOF' > /home/ec2-user/test-privatelink-service.sh
           #!/bin/bash
 
-          # Get the endpoint DNS name from the first DNS entry
+          echo "=== PrivateLink Service Consumer Test Script ==="
+          echo "Application: ${Application}"
+          echo "Environment: ${Environment}"
+          echo "VPC Endpoint ID: ${ServiceVPCEndpoint}"
+          echo "Service Name: ${ServiceName}"
+          echo ""
+
+          # Get VPC Endpoint details
+          echo "=== VPC Endpoint Information ==="
+          aws ec2 describe-vpc-endpoints \
+            --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+            --query 'VpcEndpoints[0].{State:State,ServiceName:ServiceName,CreationTimestamp:CreationTimestamp}' \
+            --output table
+
+          # Get the endpoint DNS names
+          echo ""
+          echo "=== Available DNS Endpoints ==="
+          ENDPOINT_DNS_LIST=$(aws ec2 describe-vpc-endpoints \
+            --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+            --query 'VpcEndpoints[0].DnsEntries[*].DnsName' \
+            --output text)
+
+          if [ -z "$ENDPOINT_DNS_LIST" ]; then
+            echo "ERROR: No DNS entries found for VPC Endpoint"
+            exit 1
+          fi
+
+          # Use the first DNS entry for testing
+          ENDPOINT_DNS=$(echo $ENDPOINT_DNS_LIST | awk '{print $1}')
+          echo "Primary Endpoint DNS: $ENDPOINT_DNS"
+          echo "All DNS Entries: $ENDPOINT_DNS_LIST"
+
+          # Test DNS resolution
+          echo ""
+          echo "=== DNS Resolution Test ==="
+          nslookup $ENDPOINT_DNS
+
+          # Test basic connectivity
+          echo ""
+          echo "=== Connectivity Tests ==="
+
+          # Test root endpoint
+          echo "Testing root endpoint (/):"
+          curl -s -w "HTTP Status: %{http_code}\nTime: %{time_total}s\n" \
+            http://$ENDPOINT_DNS/ | jq . 2>/dev/null || echo "Response: $(curl -s http://$ENDPOINT_DNS/)"
+
+          echo ""
+
+          # Test health endpoint
+          echo "Testing health endpoint (/health):"
+          curl -s -w "HTTP Status: %{http_code}\nTime: %{time_total}s\n" \
+            http://$ENDPOINT_DNS/health | jq . 2>/dev/null || echo "Response: $(curl -s http://$ENDPOINT_DNS/health)"
+
+          echo ""
+
+          # Test sum endpoint with POST data
+          echo "Testing sum endpoint (/sum) with POST data:"
+          curl -s -w "HTTP Status: %{http_code}\nTime: %{time_total}s\n" \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"num1": 15, "num2": 27}' \
+            http://$ENDPOINT_DNS/sum | jq . 2>/dev/null || echo "Response: $(curl -s -X POST -H 'Content-Type: application/json' -d '{"num1": 15, "num2": 27}' http://$ENDPOINT_DNS/sum)"
+
+          echo ""
+          echo "=== Test Complete ==="
+          echo "If you see successful responses above, PrivateLink connectivity is working!"
+          EOF
+
+          # Make script executable
+          chmod +x /home/ec2-user/test-privatelink-service.sh
+
+          # Create a simple connectivity test script
+          cat <<'EOF' > /home/ec2-user/quick-test.sh
+          #!/bin/bash
           ENDPOINT_DNS=$(aws ec2 describe-vpc-endpoints \
             --vpc-endpoint-ids ${ServiceVPCEndpoint} \
             --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
             --output text)
 
-          echo "Testing PrivateLink service via endpoint: \$ENDPOINT_DNS"
-
-          # Test the sum endpoint
-          curl -X POST \
-            http://\$ENDPOINT_DNS/sum \
-            -H 'Content-Type: application/json' \
-            -d '{"num1": 5, "num2": 3}'
-
-          echo
+          echo "Quick test of PrivateLink service:"
+          echo "Endpoint: $ENDPOINT_DNS"
+          curl -s http://$ENDPOINT_DNS/ | jq . 2>/dev/null || curl -s http://$ENDPOINT_DNS/
           EOF
 
-          chmod +x /home/ec2-user/test-service.sh
+          chmod +x /home/ec2-user/quick-test.sh
+
+          # Create troubleshooting script
+          cat <<'EOF' > /home/ec2-user/troubleshoot.sh
+          #!/bin/bash
+          echo "=== PrivateLink Troubleshooting ==="
+
+          echo "1. VPC Endpoint Status:"
+          aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+            --query 'VpcEndpoints[0].State' --output text
+
+          echo ""
+          echo "2. Network Interfaces:"
+          aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+            --query 'VpcEndpoints[0].NetworkInterfaceIds' --output table
+
+          echo ""
+          echo "3. Security Groups:"
+          aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${ServiceVPCEndpoint} \
+            --query 'VpcEndpoints[0].Groups' --output table
+
+          echo ""
+          echo "4. Route Table Check:"
+          curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/ | head -1 | xargs -I {} curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/{}/subnet-id
+          EOF
+
+          chmod +x /home/ec2-user/troubleshoot.sh
+
+          # Set ownership
+          chown ec2-user:ec2-user /home/ec2-user/*.sh
+
+          # Signal CloudFormation (optional)
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource TestInstance --region ${AWS::Region} || true
+
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-test-instance
+        - Key: Application
+          Value: !Ref Application
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "PrivateLink Service Testing"
 
 Outputs:
 
+  # VPC Endpoint Information
   VPCEndpointId:
-    Description: VPC Endpoint ID
+    Description: "VPC Endpoint ID for the PrivateLink service connection"
     Value: !Ref ServiceVPCEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCEndpoint-ID"
 
-  # Remove the direct DNS reference and use a command instead
+  VPCEndpointState:
+    Description: "Current state of the VPC Endpoint"
+    Value: !GetAtt ServiceVPCEndpoint.State
+
+  VPCEndpointNetworkInterfaceIds:
+    Description: "Network Interface IDs created by the VPC Endpoint"
+    Value: !Join [",", !GetAtt ServiceVPCEndpoint.NetworkInterfaceIds]
+
+  # DNS and Connectivity Information
   EndpointDnsCommand:
-    Description: Command to get the Endpoint DNS Name
+    Description: "AWS CLI command to retrieve VPC Endpoint DNS names"
     Value: !Sub |
       aws ec2 describe-vpc-endpoints \
         --vpc-endpoint-ids ${ServiceVPCEndpoint} \
-        --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
+        --query 'VpcEndpoints[0].DnsEntries[*].DnsName' \
         --output text
 
+  ServiceConnectivityTest:
+    Description: "Command to test basic service connectivity"
+    Value: !Sub |
+      ENDPOINT_DNS=$(aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${ServiceVPCEndpoint} --query 'VpcEndpoints[0].DnsEntries[0].DnsName' --output text)
+      curl http://$ENDPOINT_DNS/health
+
+  # Test Instance Information
   TestInstanceId:
-    Description: Test EC2 Instance ID
+    Description: "Test EC2 Instance ID for PrivateLink service validation"
     Value: !Ref TestInstance
+    Export:
+      Name: !Sub "${AWS::StackName}-TestInstance-ID"
 
   TestInstancePrivateIP:
-    Description: Test EC2 Instance Private IP
+    Description: "Private IP address of the test EC2 instance"
     Value: !GetAtt TestInstance.PrivateIp
 
-  TestScript:
-    Description: Command to test the service
-    Value: !Sub |
-      1. Connect to the EC2 instance using Session Manager
-      2. Run: /home/ec2-user/test-service.sh
+  TestInstanceAZ:
+    Description: "Availability Zone of the test EC2 instance"
+    Value: !GetAtt TestInstance.AvailabilityZone
 
+  # Security Group Information
+  EndpointSecurityGroupId:
+    Description: "Security Group ID for the VPC Endpoint"
+    Value: !Ref EndpointSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-EndpointSG-ID"
+
+  ConsumerSecurityGroupId:
+    Description: "Security Group ID for consumer resources"
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ConsumerSG-ID"
+
+  # Testing Instructions
+  TestingInstructions:
+    Description: "Step-by-step instructions for testing the PrivateLink service"
+    Value: !Sub |
+      === PrivateLink Service Testing Instructions ===
+
+      1. CONNECT TO TEST INSTANCE:
+         - Use AWS Systems Manager Session Manager
+         - Instance ID: ${TestInstance}
+         - Or use: aws ssm start-session --target ${TestInstance}
+
+      2. RUN COMPREHENSIVE TEST:
+         sudo su - ec2-user
+         ./test-privatelink-service.sh
+
+      3. RUN QUICK TEST:
+         ./quick-test.sh
+
+      4. TROUBLESHOOT ISSUES:
+         ./troubleshoot.sh
+
+      5. MANUAL TESTING:
+         # Get endpoint DNS
+         ENDPOINT_DNS=$(aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${ServiceVPCEndpoint} --query 'VpcEndpoints[0].DnsEntries[0].DnsName' --output text)
+
+         # Test endpoints
+         curl http://$ENDPOINT_DNS/
+         curl http://$ENDPOINT_DNS/health
+         curl -X POST -H 'Content-Type: application/json' -d '{"num1":10,"num2":5}' http://$ENDPOINT_DNS/sum
+
+  # Service Information
+  ConnectedServiceName:
+    Description: "Name of the connected PrivateLink service"
+    Value: !Ref ServiceName
+
+  ConnectionStatus:
+    Description: "Instructions to check connection status"
+    Value: !Sub |
+      Check connection status with:
+      aws ec2 describe-vpc-endpoints --vpc-endpoint-ids ${ServiceVPCEndpoint} --query 'VpcEndpoints[0].State' --output text
+
+      Expected status: Available
+      If Pending: Connection may need approval from service provider
+      If Failed: Check security groups and service name
+
+#==============================================================================
+# POST-DEPLOYMENT VALIDATION GUIDE:
+#==============================================================================
+#
+# IMMEDIATE CHECKS:
+# 1. Verify VPC Endpoint state is "Available" (may be "Pending" if approval required)
+# 2. Check that ENIs were created in your subnets
+# 3. Verify security group rules are correctly applied
+# 4. Confirm test instance is running and accessible via SSM
+#
+# CONNECTION APPROVAL (if required):
+# 1. If VPC Endpoint state is "PendingAcceptance":
+#    - Contact the service provider to approve the connection
+#    - Or approve it yourself if you own both sides
+# 2. Wait for state to change to "Available"
+#
+# TESTING PROCEDURE:
+# 1. Connect to test instance via SSM Session Manager
+# 2. Run the comprehensive test script: ./test-privatelink-service.sh
+# 3. Verify all endpoints return successful responses
+# 4. Check that responses include instance information from provider side
+#
+# TROUBLESHOOTING COMMON ISSUES:
+# • "Connection refused": Check security group rules
+# • "DNS resolution failed": Verify VPC DNS settings
+# • "Timeout": Check NACLs and route tables
+# • "403/401 errors": Check service-side authentication
+# • "Pending state": Connection needs provider approval
+#
+# MONITORING AND MAINTENANCE:
+# • Monitor VPC Endpoint metrics in CloudWatch
+# • Set up VPC Flow Logs for traffic analysis
+# • Regularly test connectivity to detect issues early
+# • Monitor costs for endpoint usage and data transfer
+#
+#==============================================================================
