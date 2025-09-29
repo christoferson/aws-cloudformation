@@ -1,7 +1,49 @@
----
+#==============================================================================
+# CloudFormation Template: VPC with Public and Private Subnets
+#==============================================================================
+# Purpose: Creates a multi-tier VPC infrastructure with public and private subnets
+# Author: [Your Name/Team]
+# Version: 1.0
+# Last Modified: [Date]
+#
+# This template creates:
+# - VPC with configurable CIDR block
+# - Internet Gateway for public internet access
+# - One public subnet for internet-facing resources
+# - One private subnet for backend/database resources
+# - Separate route tables for public and private subnets
+# - Proper tagging for resource identification and Kubernetes integration
+#
+# Architecture:
+# ┌─────────────────────────────────────────────────────────────┐
+# │                           VPC                               │
+# │  ┌─────────────────┐              ┌─────────────────┐      │
+# │  │  Public Subnet  │              │ Private Subnet  │      │
+# │  │   (AZ-1)        │              │   (AZ-1)        │      │
+# │  │ - Web Servers   │              │ - App Servers   │      │
+# │  │ - Load Balancer │              │ - Databases     │      │
+# │  └─────────────────┘              └─────────────────┘      │
+# │           │                                 │               │
+# │  ┌─────────────────┐              ┌─────────────────┐      │
+# │  │ Public Route    │              │ Private Route   │      │
+# │  │ Table           │              │ Table           │      │
+# │  └─────────────────┘              └─────────────────┘      │
+# │           │                                                 │
+# │  ┌─────────────────┐                                       │
+# │  │ Internet        │                                       │
+# │  │ Gateway         │                                       │
+# │  └─────────────────┘                                       │
+# └─────────────────────────────────────────────────────────────┘
+#
+# Use Cases:
+# - Multi-tier web applications
+# - Applications requiring database isolation
+# - Kubernetes clusters with public and private node groups
+# - Secure backend services with controlled internet access
+#==============================================================================
+
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'VPC with Public and Private Subnets spanning 2 Availability Zones'
-
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -18,9 +60,7 @@ Metadata:
         Parameters:
           - VpcBlock
           - PublicSubnet01Block
-          - PublicSubnet02Block
           - PrivateSubnet01Block
-          - PrivateSubnet02Block
 
 Parameters:
 
@@ -28,7 +68,7 @@ Parameters:
     Type: String
     Default: myapp
     Description: Application Name
-    
+
   Environment:
     Type: String
     Default: dev
@@ -44,34 +84,30 @@ Parameters:
     Default: 10.0.128.0/24
     Description: CidrBlock for public subnet 01 within the VPC
 
-  PublicSubnet02Block:
-    Type: String
-    Default: 10.0.144.0/24
-    Description: CidrBlock for public subnet 02 within the VPC
-
   PrivateSubnet01Block:
     Type: String
     Default: 10.0.0.0/20
     Description: CidrBlock for private subnet 01 within the VPC
 
-  PrivateSubnet02Block:
-    Type: String
-    Default: 10.0.32.0/20
-    Description: CidrBlock for private subnet 02 within the VPC
-
 Resources:
 
+  # Main VPC - Virtual Private Cloud that serves as the isolated network foundation
+  # Configured with DNS support for proper hostname resolution within the VPC
+  # Forms the container for all network resources in this infrastructure
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
       CidrBlock:  !Ref VpcBlock
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      InstanceTenancy: "default"
+      EnableDnsSupport: true      # Enables DNS resolution within VPC
+      EnableDnsHostnames: true    # Enables DNS hostnames for instances
+      InstanceTenancy: "default"  # Uses shared hardware (cost-effective)
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc"
 
+  # Internet Gateway - Provides bidirectional internet connectivity
+  # Essential component for public subnet internet access
+  # Horizontally scaled, redundant, and highly available by design
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
@@ -79,12 +115,18 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-igw"
 
+  # VPC Gateway Attachment - Establishes the connection between VPC and Internet Gateway
+  # Required before any internet routing can be configured
+  # Creates the foundation for public subnet internet connectivity
   VPCGatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
+  # Public Route Table - Routing configuration for internet-accessible subnets
+  # Contains routes that direct traffic to the Internet Gateway
+  # Used by public subnets to enable outbound and inbound internet connectivity
   PublicRouteTable:
     Type: "AWS::EC2::RouteTable"
     Properties:
@@ -97,14 +139,20 @@ Resources:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-rt-public"
 
+  # Public Route - Default route directing all internet traffic through Internet Gateway
+  # Enables instances in public subnets to communicate with the internet
+  # Critical for web servers, load balancers, and other internet-facing services
   PublicRoute:
     Type: "AWS::EC2::Route"
-    DependsOn: VPCGatewayAttachment
+    DependsOn: VPCGatewayAttachment  # Ensures IGW is attached before creating route
     Properties:
       RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
+      DestinationCidrBlock: 0.0.0.0/0  # All traffic not destined for VPC
       GatewayId: !Ref InternetGateway
 
+  # Private Route Table - Routing configuration for internal-only subnets
+  # Currently contains only local VPC routes (no internet access)
+  # Can be extended with NAT Gateway routes for controlled outbound access
   PrivateRouteTable01:
     Type: "AWS::EC2::RouteTable"
     Properties:
@@ -115,23 +163,17 @@ Resources:
       - Key: Network
         Value: Private01
 
-  PrivateRouteTable02:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: !Sub "${Application}-${Environment}-rt-private-2"
-      - Key: Network
-        Value: Private02
-
+  # Public Subnet 01 - Internet-accessible subnet in first availability zone
+  # Automatically assigns public IP addresses to launched instances
+  # Ideal for web servers, application load balancers, and bastion hosts
+  # Tagged for Kubernetes external load balancer placement
   PublicSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Public Subnet 01
+      Comment: Public Subnet 01 - Internet-facing subnet for public resources like load balancers and web servers
     Properties:
       VpcId: !Ref VPC
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: true  # Auto-assign public IPs for internet connectivity
       AvailabilityZone:
         Fn::Select:
         - "0"
@@ -141,32 +183,17 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-public-1"
-      #- Key: kubernetes.io/role/elb
+      #- Key: kubernetes.io/role/elb  # Uncomment for EKS external load balancer support
       #  Value: 1
 
-  PublicSubnet02:
-    Type: AWS::EC2::Subnet
-    Metadata:
-      Comment: Public Subnet 02
-    Properties:
-      VpcId: !Ref VPC
-      MapPublicIpOnLaunch: true
-      AvailabilityZone:
-        Fn::Select:
-        - 1
-        - Fn::GetAZs: !Ref 'AWS::Region'
-      CidrBlock:
-        Ref: PublicSubnet02Block
-      Tags:
-      - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-public-2"
-      #- Key: kubernetes.io/role/elb
-      #  Value: 1
-
+  # Private Subnet 01 - Internal subnet with no direct internet access
+  # Provides secure environment for application servers and databases
+  # Instances can only be accessed from within VPC or through bastion hosts
+  # Tagged for Kubernetes internal load balancer placement
   PrivateSubnet01:
     Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Private Subnet 01
+      Comment: Private Subnet 01 - Secure internal subnet for application servers, databases, and backend services
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone:
@@ -178,50 +205,26 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${Application}-${Environment}-vpc-subnet-private-1"
-      - Key: kubernetes.io/role/internal-elb
+      - Key: kubernetes.io/role/internal-elb  # Enables internal load balancer placement
         Value: 1
 
-  PrivateSubnet02:
-    Type: AWS::EC2::Subnet
-    Metadata:
-      Comment: Private Subnet 02
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone:
-        Fn::Select:
-        - "1"
-        - Fn::GetAZs: !Ref "AWS::Region"
-      CidrBlock:
-        Ref: PrivateSubnet02Block
-      Tags:
-      - Key: Name
-        Value: !Sub "${Application}-${Environment}-vpc-subnet-private-2"
-      - Key: kubernetes.io/role/internal-elb
-        Value: 1
-
+  # Public Subnet Route Table Association - Links public subnet to public routing
+  # Ensures all traffic from public subnet follows public routing rules
+  # Enables internet connectivity for resources in the public subnet
   PublicSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet01
       RouteTableId: !Ref PublicRouteTable
 
-  PublicSubnet02RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet02
-      RouteTableId: !Ref PublicRouteTable
-
+  # Private Subnet Route Table Association - Links private subnet to private routing
+  # Ensures private subnet traffic remains internal to VPC by default
+  # Provides foundation for adding NAT Gateway routes if outbound access is needed
   PrivateSubnet01RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet01
       RouteTableId: !Ref PrivateRouteTable01
-
-  PrivateSubnet02RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet02
-      RouteTableId: !Ref PrivateRouteTable02
 
 Outputs:
 
@@ -241,16 +244,6 @@ Outputs:
     Description: Public Subnet 1 ID
     Value: !Ref PublicSubnet01
 
-  PublicSubnet02Id:
-    Description: Public Subnet 2 ID
-    Value: !Ref PublicSubnet02
-
   PrivateSubnet01Id:
     Description: Private Subnet 1 ID
     Value: !Ref PrivateSubnet01
-
-  PrivateSubnet02Id:
-    Description: Private Subnet 2 ID
-    Value: !Ref PrivateSubnet02
-
-
