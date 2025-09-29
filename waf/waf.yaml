@@ -1,0 +1,202 @@
+# ============================================================================
+# AWS CloudFormation Template: WAF v2 with S3 Logging
+# ============================================================================
+# Description: This template creates a comprehensive WAF v2 setup with:
+#              - Web ACL with AWS Managed Rules (Common Rule Set)
+#              - S3 buckets for WAF logs and Athena query results
+#              - Logging configuration for WAF
+#              - Web ACL association with specified resource (ALB/CloudFront)
+#
+# Author: [Your Name]
+# Version: 1.0
+# Last Modified: [Date]
+#
+# Prerequisites:
+#   - Valid ARN for the resource to associate with WAF
+#   - Appropriate IAM permissions for WAF and S3 operations
+#
+# Supported Scopes:
+#   - REGIONAL: For ALB, API Gateway, AppSync
+#   - CLOUDFRONT: For CloudFront distributions
+# ============================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+# ============================================================================
+# PARAMETERS SECTION
+# Define input parameters for template customization
+# ============================================================================
+Parameters:
+  Application:
+    Type: String
+    Default: app
+    Description: "Application Name - Used for resource naming and tagging"
+
+  Environment:
+    Type: String
+    Default: develop
+    Description: "Environment (e.g., develop, staging, production) - Used for resource naming"
+
+  Scope:
+    Type: String
+    Default: REGIONAL
+    AllowedValues:
+      - REGIONAL
+      - CLOUDFRONT
+    Description: "WAF scope - REGIONAL for ALB/API Gateway/AppSync, CLOUDFRONT for CloudFront distributions"
+
+  WebAclAssociationResourceArn:
+    Type: String
+    Default: "arn:aws:elasticloadbalancing:ap-northeast-1:XXXXXXXXXXXX:loadbalancer/app/XXXXXXXXXXXX"
+    Description: "ARN of the resource to associate with WAF (ALB, API Gateway, AppSync, or CloudFront)"
+
+# ============================================================================
+# RESOURCES SECTION
+# Define AWS resources to be created
+# ============================================================================
+Resources:
+
+# ------------------------------------------------------------
+# S3 BUCKETS
+# Purpose: Storage for WAF logs and Athena query results
+# ------------------------------------------------------------
+
+  # S3 Bucket for storing WAF access logs
+  # This bucket will receive all WAF log entries for analysis and compliance
+  S3BucketForWaflog:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Bucket name follows naming convention: aws-waf-logs-{env}-{app}-{account}
+      BucketName: !Sub aws-waf-logs-${Environment}-${Application}-${AWS::AccountId}
+
+      # Set private access control to prevent unauthorized access
+      AccessControl: Private
+
+      # Block all public access to ensure security compliance
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True          # Block public ACLs on bucket and objects
+        BlockPublicPolicy: True        # Block public bucket policies
+        IgnorePublicAcls: True        # Ignore existing public ACLs
+        RestrictPublicBuckets: True   # Restrict public bucket policies
+
+  # S3 Bucket for storing Athena query results
+  # Used when analyzing WAF logs with Amazon Athena
+  S3BucketForAthenaQuery:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Bucket name follows naming convention: athena-query-results-{env}-{app}-{account}
+      BucketName: !Sub athena-query-results-${Environment}-${Application}-${AWS::AccountId}
+
+      # Set private access control to prevent unauthorized access
+      AccessControl: Private
+
+      # Block all public access to ensure security compliance
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True          # Block public ACLs on bucket and objects
+        BlockPublicPolicy: True        # Block public bucket policies
+        IgnorePublicAcls: True        # Ignore existing public ACLs
+        RestrictPublicBuckets: True   # Restrict public bucket policies
+
+# ------------------------------------------------------------
+# WAF v2 RESOURCES
+# Purpose: Web Application Firewall for protecting web applications
+# ------------------------------------------------------------
+
+  # Main Web ACL that defines the firewall rules and behavior
+  # Configured with AWS Managed Rules for common web application threats
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties: 
+      # Web ACL name follows naming convention
+      Name: !Sub ${Environment}-${Application}-web-acl
+
+      # Scope determines where WAF can be used (REGIONAL or CLOUDFRONT)
+      Scope: !Ref Scope
+
+      # Default action when no rules match - currently set to ALLOW
+      # Consider changing to BLOCK for stricter security in production
+      DefaultAction:
+        Allow: {}
+
+      # Enable CloudWatch metrics and request sampling for monitoring
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true    # Enable CloudWatch metrics
+        SampledRequestsEnabled: true      # Enable request sampling for analysis
+        MetricName: !Sub ${Environment}-${Application}-web-acl
+
+      # Define WAF rules - currently using AWS Managed Common Rule Set
+      Rules:
+        - 
+          # AWS Managed Rules - Common Rule Set
+          # Provides protection against common web application vulnerabilities
+          Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 1                     # Rule evaluation priority (lower = higher priority)
+
+          # Reference to AWS managed rule group
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+
+              # Excluded rules - these rules are disabled to prevent false positives
+              # Review and adjust based on your application requirements
+              ExcludedRules:
+                - Name: NoUserAgent_HEADER              # Blocks requests without User-Agent
+                - Name: UserAgent_BadBots_HEADER        # Blocks known bad bot User-Agents
+                - Name: SizeRestrictions_QUERYSTRING    # Limits query string size
+                - Name: SizeRestrictions_Cookie_HEADER  # Limits cookie header size
+                - Name: SizeRestrictions_BODY          # Limits request body size
+                - Name: SizeRestrictions_URIPATH       # Limits URI path length
+                - Name: EC2MetaDataSSRF_BODY           # Prevents EC2 metadata SSRF via body
+                - Name: EC2MetaDataSSRF_COOKIE         # Prevents EC2 metadata SSRF via cookies
+                - Name: EC2MetaDataSSRF_URIPATH        # Prevents EC2 metadata SSRF via URI
+                - Name: EC2MetaDataSSRF_QUERYARGUMENTS # Prevents EC2 metadata SSRF via query args
+                - Name: GenericLFI_QUERYARGUMENTS      # Prevents Local File Inclusion via query args
+                - Name: GenericLFI_URIPATH             # Prevents Local File Inclusion via URI path
+                - Name: GenericLFI_BODY                # Prevents Local File Inclusion via body
+                - Name: RestrictedExtensions_URIPATH   # Blocks requests to restricted file extensions
+                - Name: RestrictedExtensions_QUERYARGUMENTS # Blocks restricted extensions in query args
+                - Name: GenericRFI_QUERYARGUMENTS      # Prevents Remote File Inclusion via query args
+                - Name: GenericRFI_BODY                # Prevents Remote File Inclusion via body
+                - Name: GenericRFI_URIPATH             # Prevents Remote File Inclusion via URI
+                - Name: CrossSiteScripting_COOKIE      # Prevents XSS via cookies
+                - Name: CrossSiteScripting_QUERYARGUMENTS # Prevents XSS via query arguments
+                - Name: CrossSiteScripting_BODY        # Prevents XSS via request body
+                - Name: CrossSiteScripting_URIPATH     # Prevents XSS via URI path
+
+          # Override action for managed rule group (None means use rule group's actions)
+          OverrideAction:
+            None: {}
+
+          # Enable monitoring for this rule group
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            SampledRequestsEnabled: true
+            MetricName: AWS-AWSManagedRulesCommonRuleSet
+
+  # WAF Logging Configuration
+  # Configures where WAF logs should be sent (S3 bucket in this case)
+  WAFLogConfig:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      # Destination for WAF logs - using the S3 bucket created above
+      LogDestinationConfigs:
+        - !GetAtt S3BucketForWaflog.Arn
+
+      # ARN of the Web ACL to enable logging for
+      ResourceArn: !GetAtt WebAcl.Arn
+
+  # Web ACL Association
+  # Associates the Web ACL with the specified AWS resource (ALB, CloudFront, etc.)
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      # ARN of the resource to protect (provided as parameter)
+      ResourceArn: !Ref WebAclAssociationResourceArn
+
+      # ARN of the Web ACL to associate
+      WebACLArn: !GetAtt WebAcl.Arn
+
+# ============================================================================
+# END OF TEMPLATE
+# ============================================================================
