@@ -1,36 +1,91 @@
+#==============================================================================
+# CloudFormation Template: SQS Standard Queue with Dead Letter Queue
+#==============================================================================
+# Purpose: Creates a standard SQS queue with an associated dead letter queue
+#          for handling failed message processing scenarios
+# 
+# Architecture:
+#   - Primary SQS queue for normal message processing
+#   - Dead letter queue to capture messages that fail processing after 5 attempts
+#   - Both queues are tagged for environment identification
+#
+# Use Case: Ideal for reliable message processing where failed messages need
+#           to be preserved for analysis or manual intervention
+#==============================================================================
+
 AWSTemplateFormatVersion: "2010-09-09"
 Description: SQS Standard Queue with Dead Letter Queue
 
 Resources:
 
+  #============================================================================
+  # Primary SQS Standard Queue
+  #============================================================================
+  # This is the main queue where messages are initially sent for processing.
+  # Messages that fail processing (exceed maxReceiveCount) are automatically
+  # moved to the dead letter queue for further investigation.
+  #============================================================================
   StandardQueue: 
     Type: AWS::SQS::Queue
     Properties: 
+       # Queue identifier - should be unique within the AWS account/region
        QueueName: sqs-queue-deadletter
+
+       # Time (in seconds) that messages are hidden from other consumers
+       # after being received by one consumer (30 seconds = short processing time)
        VisibilityTimeout: 30
+
+       # Dead letter queue configuration for failed message handling
        RedrivePolicy: 
+         # ARN of the dead letter queue where failed messages will be sent
          deadLetterTargetArn: !GetAtt StandardQueueDeadLetter.Arn
+         # Maximum number of times a message can be received before being
+         # moved to the dead letter queue (5 attempts = moderate retry policy)
          maxReceiveCount: 5
+
+       # Resource tagging for organization and cost tracking
        Tags:
          -
             Key: env
             Value: test
 
+  #============================================================================
+  # Dead Letter Queue (DLQ)
+  #============================================================================
+  # This queue receives messages that have failed processing in the primary
+  # queue after exceeding the maximum receive count. Messages here typically
+  # require manual intervention or specialized error handling logic.
+  #============================================================================
   StandardQueueDeadLetter: 
     Type: AWS::SQS::Queue
     Properties: 
+       # DLQ identifier - clearly indicates its purpose as a dead letter queue
        QueueName: sqs-queue-deadletter-dlq
+
+       # Note: No RedrivePolicy configured - this is the final destination
+       # for failed messages. Consider adding CloudWatch alarms to monitor
+       # message accumulation in this queue.
+
+       # Resource tagging for organization and cost tracking
        Tags:
          -
             Key: env
             Value: test
 
+#==============================================================================
+# Template Outputs
+#==============================================================================
+# These outputs provide the ARNs of both queues, which can be used by other
+# CloudFormation stacks, applications, or for cross-referencing resources.
+#==============================================================================
 Outputs:
 
+  # Primary queue ARN - use this for sending messages and normal queue operations
   StandardQueueArn: 
-    Description: "ARN of queue"
+    Description: "ARN of the primary SQS queue for message processing"
     Value: !GetAtt StandardQueue.Arn
 
+  # Dead letter queue ARN - use this for monitoring and error message retrieval
   StandardQueueDeadLetterArn: 
-    Description: "ARN of dead-letter queue"
+    Description: "ARN of the dead letter queue for failed messages"
     Value: !GetAtt StandardQueueDeadLetter.Arn
