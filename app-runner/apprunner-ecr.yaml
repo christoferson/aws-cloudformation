@@ -1,3 +1,22 @@
+#==============================================================================
+# AWS CloudFormation Template: App Runner with Private ECR Integration
+#==============================================================================
+# Purpose: Provisions AWS App Runner service with private ECR repository access
+#
+# This template creates:
+# - IAM Access Role (Service Role) for pulling images from private ECR
+# - IAM Instance Role for runtime permissions within the application
+# - IAM Managed Policy with common AWS service permissions
+# - App Runner Service with private ECR integration and auto-deployments
+#
+# Key Learning Points:
+# - Difference between Access Role and Instance Role in App Runner
+# - Private ECR requires authentication configuration
+# - Auto-deployments enable automatic updates when new images are pushed
+# - AWS managed policy for ECR access vs custom policies
+# - Two different service principals for App Runner roles
+#==============================================================================
+
 AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
@@ -12,10 +31,15 @@ Parameters:
 
   ContainerRepositoryType:
     Type: String
-    Default: "ECR"
+    Default: "ECR" # Private ECR repository
 
 Resources:
 
+  # App Runner Access Role (Service Role)
+  # Study Note: Access Role = Used by App Runner SERVICE to pull container images
+  # Key Point: Principal is "build.apprunner.amazonaws.com" (for image operations)
+  # This is different from Instance Role which uses "tasks.apprunner.amazonaws.com"
+  # Required when using private ECR repositories
   AppRunnerServiceRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -25,13 +49,20 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - build.apprunner.amazonaws.com
+                - build.apprunner.amazonaws.com # App Runner build service
             Action:
               - "sts:AssumeRole"
       Path: /
       ManagedPolicyArns:
+        # Study Note: AWS managed policy provides ECR permissions
+        # Includes: ecr:GetAuthorizationToken, ecr:BatchCheckLayerAvailability,
+        # ecr:GetDownloadUrlForLayer, ecr:BatchGetImage
         - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
 
+  # App Runner Instance Role
+  # Study Note: Instance Role = Runtime permissions for your APPLICATION CODE
+  # Principal is "tasks.apprunner.amazonaws.com" (for running tasks)
+  # This role is assumed by your container when it's running
   AppRunnerInstanceRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -41,13 +72,16 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - tasks.apprunner.amazonaws.com
+                - tasks.apprunner.amazonaws.com # App Runner task execution
             Action:
               - "sts:AssumeRole"
       Path: /
       ManagedPolicyArns:
         - !Ref AppRunnerInstanceRolePolicy
 
+  # Custom Managed Policy for Instance Role
+  # Study Note: Defines what AWS services your application can access at runtime
+  # These permissions are available to your application code via AWS SDK
   AppRunnerInstanceRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
@@ -55,54 +89,76 @@ Resources:
       PolicyDocument:
         Version: 2012-10-17
         Statement:
+          # CloudWatch Logs - Application logging
           - Action:
               - 'logs:CreateLogGroup'
               - 'logs:CreateLogStream'
               - 'logs:PutLogEvents'
             Effect: Allow
             Resource: '*'
+          # S3 - Object storage operations
           - Action:
               - 's3:GetObject'
               - 's3:PutObject'
               - 's3:GetObjectVersion'
             Effect: Allow
             Resource: '*'
+          # Bedrock - Generative AI services
           - Action:
               - 'bedrock:*'
             Effect: Allow
             Resource: '*'
+          # Systems Manager Parameter Store - Configuration
           - Action:
               - 'ssm:GetParameters'
             Effect: Allow
             Resource: '*'
+          # Secrets Manager - Secure credential retrieval
           - Action:
               - 'secretsmanager:GetSecretValue'
             Effect: Allow
             Resource: '*'
+          # KMS - Encryption/decryption operations
           - Action:
               - 'kms:Decrypt*'
             Effect: Allow
             Resource: '*'
 
+  # AWS App Runner Service with Private ECR
+  # Study Note: This configuration shows private ECR integration
+  # Key differences from public ECR: requires AuthenticationConfiguration
+  # AutoDeploymentsEnabled=true means new image pushes trigger deployments
   AppRunnerService:
     Type: AWS::AppRunner::Service
     Properties:
-      #ServiceName: 
+      #ServiceName: # Auto-generated if not specified
       SourceConfiguration:
+        # Study Note: AuthenticationConfiguration is REQUIRED for private ECR
+        # This tells App Runner which role to use for pulling images
+        # Access Role must have ECR permissions (AWSAppRunnerServicePolicyForECRAccess)
         AuthenticationConfiguration:
           AccessRoleArn: !GetAtt AppRunnerServiceRole.Arn
+        # Study Note: AutoDeploymentsEnabled=true enables CI/CD workflow
+        # App Runner monitors ECR for new image pushes and auto-deploys
+        # Useful for automated deployment pipelines
         AutoDeploymentsEnabled: true
         ImageRepository:
           ImageIdentifier: !Ref ContainerImageUri
-          ImageRepositoryType: !Ref ContainerRepositoryType
+          ImageRepositoryType: !Ref ContainerRepositoryType # "ECR" = private ECR
           ImageConfiguration:
             Port: !Ref ContainerServicePort
+      # Study Note: Instance configuration defines compute resources
+      # InstanceRoleArn provides runtime permissions to your application
       InstanceConfiguration:
         Cpu: 1 vCPU
         Memory: 2 GB
         InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn 
+      # Study Note: No ObservabilityConfiguration = basic CloudWatch metrics only
+      # Study Note: No AutoScalingConfiguration = default scaling (1-25 instances)
 
 Outputs:    
 
+  # Study Note: App Runner provides HTTPS endpoint automatically
+  # Custom domains can be configured post-deployment
   AppRunnerServiceUrl:
     Value: !GetAtt AppRunnerService.ServiceUrl
