@@ -1,3 +1,20 @@
+#==============================================================================
+# AWS CloudFormation Template: AWS App Runner Service
+#==============================================================================
+# Purpose: Provisions an AWS App Runner service with associated IAM roles
+#
+# This template creates:
+# - IAM Instance Role for App Runner service with necessary permissions
+# - IAM Managed Policy with permissions for logging, S3, Bedrock, SSM, Secrets Manager, and KMS
+# - App Runner Service configured with ECR Public image repository
+#
+# Key Learning Points:
+# - App Runner is a fully managed container application service
+# - Instance roles provide runtime permissions to your application
+# - ECR Public repositories don't require authentication configuration
+# - Observability and auto-scaling are configured separately and referenced by ARN
+#==============================================================================
+
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Provision an AppRunner Service Role, Instance Role and Service backed by ECR Public Image"
 
@@ -18,13 +35,17 @@ Parameters:
   ObservabilityConfigurationArn:
     Type: String
     Default: "arn:aws:apprunner:us-west-1:0000000000:observabilityconfiguration/name"
-  
+
   AppRunnerAutoScalingConfigurationArn:
     Type: String
     Default: "arn:aws:apprunner:us-west-1:0000000000:autoscalingconfiguration/name"
 
 Resources:
 
+  # IAM Instance Role for App Runner Service
+  # Study Note: This is the role that your application code assumes at runtime
+  # Different from Access Role (used for pulling images from private ECR)
+  # Principal: tasks.apprunner.amazonaws.com (specific to App Runner tasks)
   AppRunnerInstanceRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -41,6 +62,10 @@ Resources:
       ManagedPolicyArns:
         - !Ref AppRunnerInstanceRolePolicy
 
+  # IAM Managed Policy for App Runner Instance Role
+  # Study Note: Best practice to use managed policies for reusability
+  # These permissions allow the application to interact with AWS services
+  # Resource: '*' is used here but should be scoped down in production
   AppRunnerInstanceRolePolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
@@ -48,40 +73,52 @@ Resources:
       PolicyDocument:
         Version: 2012-10-17
         Statement:
+          # CloudWatch Logs - Essential for application monitoring
           - Action:
               - 'logs:CreateLogGroup'
               - 'logs:CreateLogStream'
               - 'logs:PutLogEvents'
             Effect: Allow
             Resource: '*'
+          # S3 - Common for file storage and static assets
           - Action:
               - 's3:GetObject'
               - 's3:PutObject'
               - 's3:GetObjectVersion'
             Effect: Allow
             Resource: '*'
+          # Bedrock - AWS AI/ML service for generative AI applications
           - Action:
               - 'bedrock:*'
             Effect: Allow
             Resource: '*'
+          # Systems Manager Parameter Store - For configuration management
           - Action:
               - 'ssm:GetParameters'
             Effect: Allow
             Resource: '*'
+          # Secrets Manager - For secure credential storage
           - Action:
               - 'secretsmanager:GetSecretValue'
             Effect: Allow
             Resource: '*'
+          # KMS - For encryption/decryption operations
           - Action:
               - 'kms:Decrypt*'
             Effect: Allow
             Resource: '*'
 
+  # AWS App Runner Service
+  # Study Note: App Runner is a fully managed service for containerized web apps
+  # Key features: Auto-scaling, load balancing, health checks, HTTPS by default
+  # Supports both source code (with buildpacks) and container images
   AppRunnerService:
     Type: AWS::AppRunner::Service
     Properties:
       #ServiceName: 
       SourceConfiguration:
+        # Study Note: AuthenticationConfiguration only needed for private ECR
+        # ECR_PUBLIC repositories are accessible without authentication
         #AuthenticationConfiguration:
         #  AccessRoleArn: !GetAtt AppRunnerServiceRole.Arn
         AutoDeploymentsEnabled: false
@@ -90,13 +127,19 @@ Resources:
           ImageRepositoryType: !Ref ContainerRepositoryType
           ImageConfiguration:
             Port: !Ref ContainerServicePort
+      # Study Note: App Runner offers predefined CPU/Memory combinations
+      # 0.25 vCPU/0.5GB, 0.5 vCPU/1GB, 1 vCPU/2GB, 2 vCPU/4GB, 4 vCPU/8GB
       InstanceConfiguration:
         Cpu: 1 vCPU
         Memory: 2 GB
         InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      # Study Note: Observability includes AWS X-Ray tracing
+      # Must be created separately and referenced by ARN
       ObservabilityConfiguration:
         ObservabilityEnabled: true
         ObservabilityConfigurationArn: !Ref ObservabilityConfigurationArn
+      # Study Note: Auto-scaling based on concurrent requests or CPU utilization
+      # Default scales between 1-25 instances
       AutoScalingConfigurationArn: !Ref AppRunnerAutoScalingConfigurationArn
       Tags:
         - Key: "Name"
