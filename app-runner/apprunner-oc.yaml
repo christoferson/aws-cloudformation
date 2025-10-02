@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "App Runner Observability Configuration"
+
+#===============================================================================
+# STUDY GUIDE: AWS App Runner Observability Configuration
+#===============================================================================
+# 
+# AWS App Runner Observability Configuration enables monitoring and tracing
+# for containerized applications running on AWS App Runner service.
+#
+# KEY CONCEPTS:
+# • Observability Configuration: Defines monitoring settings for App Runner services
+# • X-Ray Integration: Enables distributed tracing using AWS X-Ray
+# • Performance Monitoring: Tracks application performance and request flows
+# • Service Map: Visualizes service dependencies and communication patterns
+#
+# TRACING VENDORS:
+# • AWSXRAY: AWS X-Ray distributed tracing service
+#   - Traces requests across microservices
+#   - Identifies performance bottlenecks
+#   - Provides service dependency maps
+#   - Integrates with CloudWatch for metrics
+#
+# CONFIGURATION FEATURES:
+# • Automatic instrumentation for supported runtimes
+# • Custom trace annotations and metadata
+# • Sampling rules for cost optimization
+# • Integration with CloudWatch Logs and Metrics
+#
+# BEST PRACTICES:
+# • Use descriptive configuration names for easy identification
+# • Apply consistent tagging strategy for resource management
+# • Configure appropriate sampling rates to balance cost and visibility
+# • Monitor trace data retention and costs
+#
+# EXAM TIPS:
+# • Understand X-Ray integration with App Runner
+# • Know how to enable tracing for containerized applications
+# • Remember that observability configuration is reusable across services
+# • Understand the relationship between App Runner and other AWS observability services
+#
+#===============================================================================
+
+Resources:
+
+  # Creates an observability configuration for AWS App Runner services
+  # This configuration enables AWS X-Ray distributed tracing to monitor
+  # application performance, track requests across services, and identify
+  # bottlenecks in containerized applications
+  AppRunnerObservabilityConfiguration:
+    Type: AWS::AppRunner::ObservabilityConfiguration
+    Properties:
+      # Optional: Specify a custom name for the observability configuration
+      # If not provided, AWS will generate a unique name automatically
+      # Naming convention: Use descriptive names that indicate purpose and environment
+      #ObservabilityConfigurationName: String
+
+      # Configures distributed tracing settings for the App Runner service
+      # Currently supports AWS X-Ray as the tracing vendor
+      # X-Ray provides end-to-end request tracking and service dependency mapping
+      TraceConfiguration:
+        Vendor: "AWSXRAY"  # Currently the only supported vendor for App Runner tracing
+
+      # Resource tags for organization, cost allocation, and governance
+      # Tags are inherited by services that use this observability configuration
+      Tags:
+        - Key: "Name"
+          Value: "AppRunnerObservabilityCfg"
+
+Outputs:
+
+  # Returns the ARN of the created observability configuration
+  # This ARN is used when creating App Runner services that need observability
+  # The ARN format: arn:aws:apprunner:region:account:observabilityconfiguration/name/revision/hash
+  AppRunnerObservabilityConfigurationArn:
+    Description: "ARN of the App Runner Observability Configuration for use with App Runner services"
+    Value: !Sub "${AppRunnerObservabilityConfiguration.ObservabilityConfigurationArn}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ObservabilityConfigArn"
