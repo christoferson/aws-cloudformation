@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Bedrock AgentCore Runtime with Docker Container Support'
+
+Parameters:
+  AgentRuntimeName:
+    Type: String
+    Default: 'MyAgentRuntime'
+    Description: 'Name of the AgentCore Runtime'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9_]{0,47}'
+
+  RuntimeDescription:
+    Type: String
+    Default: 'AgentCore Runtime for hosting AI agents'
+    Description: 'Description of the runtime'
+    MaxLength: 1200
+
+  ECRImageUri:
+    Type: String
+    Description: 'ECR Image URI for the agent runtime (e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-agent:latest)'
+
+  ProtocolType:
+    Type: String
+    Default: 'HTTP'
+    AllowedValues:
+      - 'HTTP'
+      - 'MCP'
+    Description: 'Protocol configuration for the runtime'
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'VPC ID for the runtime'
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 'Subnet IDs for the runtime (select at least 2)'
+
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: 'Security Group IDs for the runtime'
+
+Resources:
+  # IAM Role for AgentCore Runtime
+  AgentRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AgentRuntimeName}-RuntimeRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - bedrock.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: AgentRuntimePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock/agentcore/*'
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*'
+              - Effect: Allow
+                Action:
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeSubnets'
+                  - 'ec2:DescribeSecurityGroups'
+                Resource: '*'
+
+  # CloudWatch Log Group
+  RuntimeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/bedrock/agentcore/${AgentRuntimeName}'
+      RetentionInDays: 7
+
+  # Bedrock AgentCore Runtime
+  AgentCoreRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref AgentRuntimeName
+      Description: !Ref RuntimeDescription
+      RoleArn: !GetAtt AgentRuntimeRole.Arn
+      ProtocolConfiguration: !Ref ProtocolType
+
+      # Agent Runtime Artifact (Docker Container)
+      AgentRuntimeArtifact:
+        DockerImage:
+          ImageUri: !Ref ECRImageUri
+          EnvironmentVariables:
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: AWS_REGION
+              Value: !Ref 'AWS::Region'
+
+      # Network Configuration
+      NetworkConfiguration:
+        VpcConfiguration:
+          VpcId: !Ref VpcId
+          SubnetIds: !Ref SubnetIds
+          SecurityGroupIds: !Ref SecurityGroupIds
+
+      # Environment Variables
+      EnvironmentVariables:
+        RUNTIME_ENV: production
+        AWS_ACCOUNT_ID: !Ref 'AWS::AccountId'
+        LOG_GROUP: !Ref RuntimeLogGroup
+
+      # Authorizer Configuration (Optional - for authentication)
+      AuthorizerConfiguration:
+        AuthorizerType: IAM
+
+      # Tags
+      Tags:
+        Environment: Production
+        ManagedBy: CloudFormation
+        Application: BedrockAgentCore
+
+Outputs:
+  AgentRuntimeId:
+    Description: 'AgentCore Runtime ID'
+    Value: !Ref AgentCoreRuntime
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeId'
+
+  AgentRuntimeArn:
+    Description: 'AgentCore Runtime ARN'
+    Value: !GetAtt AgentCoreRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeArn'
+
+  AgentRuntimeVersion:
+    Description: 'AgentCore Runtime Version'
+    Value: !GetAtt AgentCoreRuntime.AgentRuntimeVersion
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeVersion'
+
+  AgentRuntimeStatus:
+    Description: 'AgentCore Runtime Status'
+    Value: !GetAtt AgentCoreRuntime.Status
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeStatus'
+
+  CreatedAt:
+    Description: 'Runtime Creation Time'
+    Value: !GetAtt AgentCoreRuntime.CreatedAt
+
+  LastUpdatedAt:
+    Description: 'Runtime Last Update Time'
+    Value: !GetAtt AgentCoreRuntime.LastUpdatedAt
+
+  RuntimeRoleArn:
+    Description: 'IAM Role ARN for the Runtime'
+    Value: !GetAtt AgentRuntimeRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+
+  LogGroupName:
+    Description: 'CloudWatch Log Group Name'
+    Value: !Ref RuntimeLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'
