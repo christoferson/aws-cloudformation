@@ -1,0 +1,247 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bedrock AgentCore Runtime for ECS - VPC Mode (No Exports)'
+
+Parameters:
+  AgentRuntimeName:
+    Type: String
+    Default: 'ECSAgentRuntime'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9_]{0,47}'
+    Description: 'Name of the AgentCore Runtime'
+
+  ContainerImageUri:
+    Type: String
+    Description: 'ECR Container Image URI (e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-agent:latest)'
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'VPC where your ECS cluster runs'
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 'Private subnet IDs (same subnets as your ECS tasks or with connectivity)'
+
+  ECSTaskSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: 'Security group of your ECS tasks that will call the runtime'
+
+Resources:
+  # Security Group for AgentCore Runtime
+  RuntimeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AgentRuntimeName}-SG'
+      GroupDescription: 'Security group for AgentCore Runtime'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow inbound from ECS tasks
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ECSTaskSecurityGroupId
+          Description: 'HTTPS from ECS tasks'
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ECSTaskSecurityGroupId
+          Description: 'HTTP from ECS tasks'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'Allow all outbound'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AgentRuntimeName}-SecurityGroup'
+
+  # IAM Role for AgentCore Runtime
+  AgentRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AgentRuntimeName}-RuntimeRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - bedrock.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: AgentRuntimePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock/agentcore/*'
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+              - Effect: Allow
+                Action:
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeSubnets'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:AssignPrivateIpAddresses'
+                  - 'ec2:UnassignPrivateIpAddresses'
+                Resource: '*'
+
+  # CloudWatch Log Group
+  RuntimeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/bedrock/agentcore/${AgentRuntimeName}'
+      RetentionInDays: 14
+
+  # AgentCore Runtime in VPC Mode
+  AgentCoreRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref AgentRuntimeName
+      Description: 'AgentCore Runtime for ECS tasks in VPC'
+      RoleArn: !GetAtt AgentRuntimeRole.Arn
+      ProtocolConfiguration: HTTP
+
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref ContainerImageUri
+
+      NetworkConfiguration:
+        NetworkMode: VPC
+        NetworkModeConfig:
+          Subnets: !Ref PrivateSubnetIds
+          SecurityGroups:
+            - !Ref RuntimeSecurityGroup
+
+      EnvironmentVariables:
+        RUNTIME_ENV: production
+        AWS_REGION: !Ref 'AWS::Region'
+        LOG_LEVEL: INFO
+
+      AuthorizerConfiguration:
+        AuthorizerType: IAM
+
+      Tags:
+        Environment: Production
+        NetworkMode: VPC
+        CalledBy: ECS
+
+  # Runtime Endpoint (Stable URL for your ECS tasks)
+  AgentRuntimeEndpoint:
+    Type: AWS::BedrockAgentCore::RuntimeEndpoint
+    Properties:
+      Name: !Sub '${AgentRuntimeName}-prod'
+      AgentRuntimeId: !Ref AgentCoreRuntime
+      Description: 'Production endpoint for ECS tasks to invoke'
+      Tags:
+        Environment: Production
+        Purpose: ECS-Integration
+
+  # SSM Parameters to store values for other stacks to reference
+  RuntimeIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/bedrock/agentcore/${AgentRuntimeName}/runtime-id'
+      Type: String
+      Value: !Ref AgentCoreRuntime
+      Description: 'AgentCore Runtime ID'
+      Tags:
+        Environment: Production
+
+  RuntimeArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/bedrock/agentcore/${AgentRuntimeName}/runtime-arn'
+      Type: String
+      Value: !GetAtt AgentCoreRuntime.AgentRuntimeArn
+      Description: 'AgentCore Runtime ARN'
+      Tags:
+        Environment: Production
+
+  EndpointIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/bedrock/agentcore/${AgentRuntimeName}/endpoint-id'
+      Type: String
+      Value: !GetAtt AgentRuntimeEndpoint.Id
+      Description: 'Runtime Endpoint ID'
+      Tags:
+        Environment: Production
+
+  EndpointArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/bedrock/agentcore/${AgentRuntimeName}/endpoint-arn'
+      Type: String
+      Value: !GetAtt AgentRuntimeEndpoint.AgentRuntimeEndpointArn
+      Description: 'Runtime Endpoint ARN'
+      Tags:
+        Environment: Production
+
+  EndpointUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/bedrock/agentcore/${AgentRuntimeName}/endpoint-url'
+      Type: String
+      Value: !Sub 'https://${AgentRuntimeEndpoint.Id}.runtime.bedrock.${AWS::Region}.amazonaws.com'
+      Description: 'Runtime Endpoint URL'
+      Tags:
+        Environment: Production
+
+  SecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/bedrock/agentcore/${AgentRuntimeName}/security-group-id'
+      Type: String
+      Value: !Ref RuntimeSecurityGroup
+      Description: 'Runtime Security Group ID'
+      Tags:
+        Environment: Production
+
+Outputs:
+  AgentRuntimeId:
+    Description: 'AgentCore Runtime ID'
+    Value: !Ref AgentCoreRuntime
+
+  AgentRuntimeArn:
+    Description: 'AgentCore Runtime ARN'
+    Value: !GetAtt AgentCoreRuntime.AgentRuntimeArn
+
+  RuntimeEndpointId:
+    Description: 'Runtime Endpoint ID (use this in your ECS tasks)'
+    Value: !GetAtt AgentRuntimeEndpoint.Id
+
+  RuntimeEndpointArn:
+    Description: 'Runtime Endpoint ARN'
+    Value: !GetAtt AgentRuntimeEndpoint.AgentRuntimeEndpointArn
+
+  RuntimeEndpointUrl:
+    Description: 'Runtime Endpoint URL for ECS tasks to call'
+    Value: !Sub 'https://${AgentRuntimeEndpoint.Id}.runtime.bedrock.${AWS::Region}.amazonaws.com'
+
+  RuntimeSecurityGroupId:
+    Description: 'Security Group ID of the Runtime'
+    Value: !Ref RuntimeSecurityGroup
+
+  SSMParameterPrefix:
+    Description: 'SSM Parameter Store prefix for runtime values'
+    Value: !Sub '/bedrock/agentcore/${AgentRuntimeName}/'
