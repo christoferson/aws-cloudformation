@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudTrail Trail - CloudWatch Logs
+
+Resources:
+
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      LifecycleConfiguration:
+        Rules: 
+        - Id: lifecycle-rule-expire
+          Status: Enabled
+          ExpirationInDays: 120
+          NoncurrentVersionExpirationInDays: 120
+    DeletionPolicy: Retain
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: AllowReadAcl
+          Effect: Allow
+          Principal:
+            Service: cloudtrail.amazonaws.com
+          Action: s3:GetBucketAcl
+          Resource: !Sub "arn:aws:s3:::${CloudTrailBucket}"
+        - Sid: AllowPutObject
+          Effect: Allow
+          Principal:
+            Service: cloudtrail.amazonaws.com
+          Action: s3:PutObject
+          Resource: !Sub "arn:aws:s3:::${CloudTrailBucket}/AWSLogs/${AWS::AccountId}/*"
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: bucket-owner-full-control
+
+  CloudTrailLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      #LogGroupName: !Sub "/my/cloudtrail/logs"
+      RetentionInDays: 1
+
+  CloudTrailLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - cloudtrail.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+      - PolicyName: 'cloudtrail-policy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            Resource: !GetAtt 'CloudTrailLogGroup.Arn'
+
+  CloudTrailLogsRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: root
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogStream
+          Resource:
+          - !GetAtt CloudTrailLogGroup.Arn
+        - Effect: Allow
+          Action:
+          - logs:PutLogEvents
+          Resource:
+          - !GetAtt CloudTrailLogGroup.Arn
+      Roles:
+      - !Ref CloudTrailLogsRole
+
+
+  CloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Properties:
+      IsLogging: true # Whether the CloudTrail trail is currently logging AWS API calls.
+      #TrailName: cloudtrail-demo
+      S3BucketName: !Ref CloudTrailBucket
+      #S3KeyPrefix: "trail"
+      CloudWatchLogsRoleArn: !GetAtt CloudTrailLogsRole.Arn
+      CloudWatchLogsLogGroupArn: !GetAtt CloudTrailLogGroup.Arn
+      IncludeGlobalServiceEvents: true  # Specifies whether the trail is publishing events from global services such as IAM to the log files.
+      #KMSKeyId: !Ref myKey
+      IsMultiRegionTrail: true #Specifies whether the trail applies only to the current region or to all regions.
+      EnableLogFileValidation: true
+      IsOrganizationTrail: false
+      Tags:
+        - Key: "Name"
+          Value: "cloudtrail-cloudwatch"
+        - Key: "t2"
+          Value: "v2"
+
+Outputs:
+
+  CloudTrailTrailArn:
+    Description: Trail ARN
+    Value: !GetAtt CloudTrail.Arn
