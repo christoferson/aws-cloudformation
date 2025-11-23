@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Stage 2: Bedrock AgentCore Runtime (Deploy AFTER building image)'
+
+Parameters:
+  AgentRuntimeName:
+    Type: String
+    Default: my_bedrock_agent_runtime
+    Description: Name for the AgentCore Runtime (letters, numbers, underscores only)
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9_]{0,47}'
+    ConstraintDescription: Must start with a letter and contain only letters, numbers, and underscores
+
+  ImageUri:
+    Type: String
+    Description: Full ECR image URI (from Stage 1 outputs)
+    # Example: 123456789012.dkr.ecr.us-east-1.amazonaws.com/bedrock-agent-runtime:latest
+
+Resources:
+  # ============================================
+  # AgentCore Runtime IAM Role
+  # ============================================
+  RuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-RuntimeRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RuntimePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock/agentcore/*'
+
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+
+  # ============================================
+  # AgentCore Runtime
+  # ============================================
+  AgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref AgentRuntimeName
+      RoleArn: !GetAtt RuntimeRole.Arn
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref ImageUri
+
+Outputs:
+  AgentRuntimeArn:
+    Description: AgentCore Runtime ARN
+    Value: !GetAtt AgentRuntime.AgentRuntimeArn
+
+  AgentRuntimeName:
+    Description: AgentCore Runtime Name
+    Value: !Ref AgentRuntime
+
+  RuntimeRoleArn:
+    Description: Runtime IAM Role ARN
+    Value: !GetAtt RuntimeRole.Arn
