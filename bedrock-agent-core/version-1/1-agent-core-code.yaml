@@ -1,0 +1,299 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Stage 1: Infrastructure for Bedrock AgentCore (ECR + CodeBuild)'
+
+Parameters:
+  ECRRepositoryName:
+    Type: String
+    Default: bedrock-agent-runtime
+    Description: Name for the ECR Repository
+
+Resources:
+  # ============================================
+  # ECR Repository
+  # ============================================
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ECRRepositoryName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  # ============================================
+  # CodeBuild IAM Role
+  # ============================================
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CodeBuildRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+      Policies:
+        - PolicyName: CodeBuildBasePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${AWS::StackName}-*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: !GetAtt ECRRepository.Arn
+
+  # ============================================
+  # CodeBuild Project
+  # ============================================
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-BuildProject'
+      Description: Builds ARM-based Docker image for Bedrock AgentCore
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Value: !Ref ECRRepositoryName
+          - Name: IMAGE_TAG
+            Value: latest
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo "Logging in to Amazon ECR..."
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+                - echo "Build started on `date`"
+            build:
+              commands:
+                - echo "Creating Dockerfile..."
+                - |
+                  cat > Dockerfile << 'EOF'
+                  FROM public.ecr.aws/docker/library/python:3.13-slim
+
+                  WORKDIR /app
+
+                  COPY requirements.txt .
+                  RUN pip install --no-cache-dir --upgrade pip && \
+                      pip install --no-cache-dir -r requirements.txt
+
+                  COPY app.py .
+
+                  EXPOSE 8080
+
+                  HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+                    CMD python -c "import requests; requests.get('http://localhost:8080/ping')"
+
+                  CMD ["python", "app.py"]
+                  EOF
+
+                - echo "Creating requirements.txt..."
+                - |
+                  cat > requirements.txt << 'EOF'
+                  fastapi==0.109.0
+                  pydantic==2.5.3
+                  uvicorn[standard]==0.27.0
+                  strands-agents==0.1.0
+                  requests==2.31.0
+                  EOF
+
+                - echo "Creating app.py..."
+                - |
+                  cat > app.py << 'EOF'
+                  from fastapi import FastAPI, HTTPException
+                  from pydantic import BaseModel, Field
+                  from typing import Dict, Any
+                  from datetime import datetime
+                  import logging
+                  import sys
+
+                  logging.basicConfig(
+                      level=logging.INFO,
+                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                      stream=sys.stdout
+                  )
+                  logger = logging.getLogger(__name__)
+
+                  app = FastAPI(
+                      title="Bedrock AgentCore Runtime",
+                      version="1.0.0",
+                      description="Custom agent runtime for Amazon Bedrock AgentCore"
+                  )
+
+                  try:
+                      from strands import Agent
+                      strands_agent = Agent()
+                      logger.info("Strands Agent initialized successfully")
+                  except Exception as e:
+                      logger.error(f"Failed to initialize Strands Agent: {e}")
+                      strands_agent = None
+
+                  class InvocationRequest(BaseModel):
+                      input: Dict[str, Any] = Field(..., description="Input data containing prompt")
+
+                  class InvocationResponse(BaseModel):
+                      output: Dict[str, Any] = Field(..., description="Agent response output")
+
+                  class HealthResponse(BaseModel):
+                      status: str
+                      timestamp: str
+                      agent_loaded: bool
+
+                  @app.get("/ping", response_model=HealthResponse)
+                  async def ping():
+                      logger.info("Health check requested")
+                      return HealthResponse(
+                          status="healthy",
+                          timestamp=datetime.utcnow().isoformat(),
+                          agent_loaded=strands_agent is not None
+                      )
+
+                  @app.post("/invocations", response_model=InvocationResponse)
+                  async def invoke_agent(request: InvocationRequest):
+                      try:
+                          logger.info(f"Invocation request received: {request.input}")
+
+                          if strands_agent is None:
+                              raise HTTPException(
+                                  status_code=503,
+                                  detail="Agent not initialized. Service unavailable."
+                              )
+
+                          user_message = request.input.get("prompt", "")
+                          if not user_message:
+                              raise HTTPException(
+                                  status_code=400,
+                                  detail="No prompt found in input. Please provide a 'prompt' key in the input."
+                              )
+
+                          logger.info(f"Processing prompt: {user_message}")
+                          result = strands_agent(user_message)
+
+                          response = {
+                              "message": result.message,
+                              "timestamp": datetime.utcnow().isoformat(),
+                              "model": "strands-agent",
+                              "status": "success"
+                          }
+
+                          logger.info(f"Successfully processed request")
+                          return InvocationResponse(output=response)
+
+                      except HTTPException:
+                          raise
+                      except Exception as e:
+                          logger.error(f"Agent processing failed: {str(e)}", exc_info=True)
+                          raise HTTPException(
+                              status_code=500,
+                              detail=f"Agent processing failed: {str(e)}"
+                          )
+
+                  @app.get("/")
+                  async def root():
+                      return {
+                          "service": "Bedrock AgentCore Runtime",
+                          "version": "1.0.0",
+                          "endpoints": {
+                              "health": "/ping",
+                              "invoke": "/invocations"
+                          }
+                      }
+
+                  @app.on_event("startup")
+                  async def startup_event():
+                      logger.info("Application starting up...")
+                      logger.info(f"Agent loaded: {strands_agent is not None}")
+
+                  @app.on_event("shutdown")
+                  async def shutdown_event():
+                      logger.info("Application shutting down...")
+
+                  if __name__ == "__main__":
+                      import uvicorn
+                      logger.info("Starting Uvicorn server on 0.0.0.0:8080")
+                      uvicorn.run(
+                          app,
+                          host="0.0.0.0",
+                          port=8080,
+                          log_level="info",
+                          access_log=True
+                      )
+                  EOF
+
+                - echo "Building Docker image..."
+                - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+                - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+
+            post_build:
+              commands:
+                - echo "Pushing Docker image to ECR..."
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+                - echo "Build completed on `date`"
+                - echo "Image URI:" $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub '/aws/codebuild/${AWS::StackName}-BuildProject'
+
+Outputs:
+  ECRRepositoryUri:
+    Description: ECR Repository URI
+    Value: !GetAtt ECRRepository.RepositoryUri
+
+  CodeBuildProjectName:
+    Description: CodeBuild Project Name - Run this manually before Stage 2
+    Value: !Ref BuildProject
+
+  ImageUri:
+    Description: Full Image URI to use in Stage 2
+    Value: !Sub '${ECRRepository.RepositoryUri}:latest'
