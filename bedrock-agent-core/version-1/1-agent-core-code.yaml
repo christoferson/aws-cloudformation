@@ -140,11 +140,11 @@ Resources:
                 - echo "Creating requirements.txt..."
                 - |
                   cat > requirements.txt << 'EOF'
-                  fastapi==0.109.0
-                  pydantic==2.5.3
-                  uvicorn[standard]==0.27.0
-                  strands-agents==0.1.0
-                  requests==2.31.0
+                  fastapi>=0.109.0
+                  pydantic>=2.11.0
+                  uvicorn[standard]>=0.27.0
+                  strands-agents>=0.1.0
+                  requests>=2.31.0
                   EOF
 
                 - echo "Creating app.py..."
