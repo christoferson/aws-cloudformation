@@ -86,7 +86,7 @@ Resources:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub '${AWS::StackName}-BuildProject'
-      Description: Builds ARM-based Docker image for Bedrock AgentCore
+      Description: Builds ARM64-based Docker image for Bedrock AgentCore
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: NO_ARTIFACTS
@@ -119,7 +119,7 @@ Resources:
                 - echo "Creating Dockerfile..."
                 - |
                   cat > Dockerfile << 'EOF'
-                  FROM public.ecr.aws/docker/library/python:3.13-slim
+                  FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.11-slim
 
                   WORKDIR /app
 
@@ -130,9 +130,6 @@ Resources:
                   COPY app.py .
 
                   EXPOSE 8080
-
-                  HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-                    CMD python -c "import requests; requests.get('http://localhost:8080/ping')"
 
                   CMD ["python", "app.py"]
                   EOF
@@ -151,7 +148,7 @@ Resources:
                 - |
                   cat > app.py << 'EOF'
                   from fastapi import FastAPI, HTTPException
-                  from pydantic import BaseModel, Field
+                  from pydantic import BaseModel
                   from typing import Dict, Any
                   from datetime import datetime
                   import logging
@@ -170,6 +167,7 @@ Resources:
                       description="Custom agent runtime for Amazon Bedrock AgentCore"
                   )
 
+                  # Initialize Strands Agent
                   try:
                       from strands import Agent
                       strands_agent = Agent()
@@ -178,37 +176,33 @@ Resources:
                       logger.error(f"Failed to initialize Strands Agent: {e}")
                       strands_agent = None
 
+                  # Request/Response Models
                   class InvocationRequest(BaseModel):
-                      input: Dict[str, Any] = Field(..., description="Input data containing prompt")
+                      input: Dict[str, Any]
 
                   class InvocationResponse(BaseModel):
-                      output: Dict[str, Any] = Field(..., description="Agent response output")
+                      output: Dict[str, Any]
 
-                  class HealthResponse(BaseModel):
-                      status: str
-                      timestamp: str
-                      agent_loaded: bool
-
-                  @app.get("/ping", response_model=HealthResponse)
+                  # Health check endpoint (required)
+                  @app.get("/ping")
                   async def ping():
                       logger.info("Health check requested")
-                      return HealthResponse(
-                          status="healthy",
-                          timestamp=datetime.utcnow().isoformat(),
-                          agent_loaded=strands_agent is not None
-                      )
+                      return {"status": "healthy"}
 
+                  # Main invocation endpoint (required)
                   @app.post("/invocations", response_model=InvocationResponse)
                   async def invoke_agent(request: InvocationRequest):
                       try:
                           logger.info(f"Invocation request received: {request.input}")
 
+                          # Validate agent is loaded
                           if strands_agent is None:
                               raise HTTPException(
                                   status_code=503,
                                   detail="Agent not initialized. Service unavailable."
                               )
 
+                          # Extract prompt
                           user_message = request.input.get("prompt", "")
                           if not user_message:
                               raise HTTPException(
@@ -216,17 +210,18 @@ Resources:
                                   detail="No prompt found in input. Please provide a 'prompt' key in the input."
                               )
 
+                          # Process with Strands Agent
                           logger.info(f"Processing prompt: {user_message}")
                           result = strands_agent(user_message)
 
+                          # Format response
                           response = {
                               "message": result.message,
                               "timestamp": datetime.utcnow().isoformat(),
-                              "model": "strands-agent",
-                              "status": "success"
+                              "model": "strands-agent"
                           }
 
-                          logger.info(f"Successfully processed request")
+                          logger.info("Successfully processed request")
                           return InvocationResponse(output=response)
 
                       except HTTPException:
@@ -238,26 +233,6 @@ Resources:
                               detail=f"Agent processing failed: {str(e)}"
                           )
 
-                  @app.get("/")
-                  async def root():
-                      return {
-                          "service": "Bedrock AgentCore Runtime",
-                          "version": "1.0.0",
-                          "endpoints": {
-                              "health": "/ping",
-                              "invoke": "/invocations"
-                          }
-                      }
-
-                  @app.on_event("startup")
-                  async def startup_event():
-                      logger.info("Application starting up...")
-                      logger.info(f"Agent loaded: {strands_agent is not None}")
-
-                  @app.on_event("shutdown")
-                  async def shutdown_event():
-                      logger.info("Application shutting down...")
-
                   if __name__ == "__main__":
                       import uvicorn
                       logger.info("Starting Uvicorn server on 0.0.0.0:8080")
@@ -265,8 +240,7 @@ Resources:
                           app,
                           host="0.0.0.0",
                           port=8080,
-                          log_level="info",
-                          access_log=True
+                          log_level="info"
                       )
                   EOF
 
@@ -289,11 +263,17 @@ Outputs:
   ECRRepositoryUri:
     Description: ECR Repository URI
     Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepositoryUri'
 
   CodeBuildProjectName:
     Description: CodeBuild Project Name - Run this manually before Stage 2
     Value: !Ref BuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-CodeBuildProjectName'
 
   ImageUri:
     Description: Full Image URI to use in Stage 2
     Value: !Sub '${ECRRepository.RepositoryUri}:latest'
+    Export:
+      Name: !Sub '${AWS::StackName}-ImageUri'
