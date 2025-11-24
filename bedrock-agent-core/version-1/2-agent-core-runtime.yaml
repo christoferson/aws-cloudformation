@@ -12,7 +12,6 @@ Parameters:
   ImageUri:
     Type: String
     Description: Full ECR image URI (from Stage 1 outputs)
-    # Example: 123456789012.dkr.ecr.us-east-1.amazonaws.com/bedrock-agent-runtime:latest
 
 Resources:
   # ============================================
@@ -25,41 +24,86 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Effect: Allow
+          - Sid: AssumeRolePolicy
+            Effect: Allow
             Principal:
               Service: bedrock-agentcore.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: RuntimePolicy
+        - PolicyName: AgentCoreRuntimePolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Effect: Allow
+              # Bedrock permissions
+              - Sid: BedrockPermissions
+                Effect: Allow
                 Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock/agentcore/*'
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
 
-              - Effect: Allow
+              # ECR permissions
+              - Sid: ECRImageAccess
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+
+              - Sid: ECRTokenAccess
+                Effect: Allow
                 Action:
                   - ecr:GetAuthorizationToken
                 Resource: '*'
 
-              - Effect: Allow
+              # CloudWatch Logs permissions
+              - Sid: LogsCreateAndDescribe
+                Effect: Allow
                 Action:
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:BatchGetImage
+                  - logs:DescribeLogStreams
+                  - logs:CreateLogGroup
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+
+              - Sid: LogsDescribeGroups
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+
+              - Sid: LogsPutEvents
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*'
+
+              # X-Ray permissions
+              - Sid: XRayAccess
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
                 Resource: '*'
 
-              - Effect: Allow
+              # CloudWatch Metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
                 Action:
-                  - bedrock:InvokeModel
-                  - bedrock:InvokeModelWithResponseStream
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+
+              # Workload Identity permissions
+              - Sid: GetAgentAccessToken
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
                 Resource:
-                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default'
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/${AgentRuntimeName}-*'
 
   # ============================================
   # AgentCore Runtime
@@ -79,11 +123,17 @@ Outputs:
   AgentRuntimeArn:
     Description: AgentCore Runtime ARN
     Value: !GetAtt AgentRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub '${AWS::StackName}-AgentRuntimeArn'
 
   AgentRuntimeName:
     Description: AgentCore Runtime Name
     Value: !Ref AgentRuntime
+    Export:
+      Name: !Sub '${AWS::StackName}-AgentRuntimeName'
 
   RuntimeRoleArn:
     Description: Runtime IAM Role ARN
     Value: !GetAtt RuntimeRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RuntimeRoleArn'
