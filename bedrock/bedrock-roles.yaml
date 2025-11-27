@@ -152,8 +152,17 @@ Resources:
               - "s3:GetObject"
               - "s3:PutObject"
               - "s3:GetObjectVersion"
+              - "s3:ListBucket"
             Effect: Allow
             Resource: "*"
+          - Action: # Permissions for S3 Vector Storage
+              - "s3vectors:QueryVectors"
+              - "s3vectors:GetVectors"
+              - "s3vectors:PutVectors"
+              - "s3vectors:DeleteVectors"
+            Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/*/index/*"
           - Action:
               - "bedrock:ListFoundationModels"
               - "bedrock:ListCustomModels"
@@ -173,29 +182,24 @@ Resources:
               - "aoss:APIAccessAll"
             Effect: Allow
             Resource: "*"
-            #  - !Sub "arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/collection-id?"
           - Action: # (Optional) Permissions to access your Amazon Aurora database cluster
               - "rds:DescribeDBClusters"
             Effect: Allow
             Resource: "*"
           - Action: # (Optional) Permissions to access your Amazon Aurora database cluster
-              - "rds:DescribeDBClusters"
-            Effect: Allow
-            Resource: "*" # "arn:aws:rds:region:account-id:cluster:db-cluster-id"
-          - Action: # (Optional) Permissions to access your Amazon Aurora database cluster
               - "rds-data:BatchExecuteStatement"
               - "rds-data:ExecuteStatement"
             Effect: Allow
-            Resource: "*" # "arn:aws:rds:region:account-id:cluster:db-cluster-id"
+            Resource: "*"
           - Action: # (Optional) Permissions to access a vector database configured with an AWS Secrets Manager secret
               - "secretsmanager:GetSecretValue"
             Effect: Allow
-            Resource: "*" # "arn:aws:secretsmanager:region:account-id:secret:secret-id"
+            Resource: "*"
           - Action: # (Optional) Permissions for AWS to manage a AWS KMS key for transient data storage during data ingestion
               - "kms:GenerateDataKey"
               - "kms:Decrypt"
             Effect: Allow
-            Resource: "*" # "arn:aws:kms:region:account-id:key/key-id"
+            Resource: "*"
 
   # AmazonBedrockExecutionRoleForModelCustomization
 
