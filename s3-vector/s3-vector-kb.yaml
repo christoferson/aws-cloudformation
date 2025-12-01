@@ -1,0 +1,884 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Multi-Tenant Knowledge Base System - Pattern 1 (Metadata-Based Isolation)
+
+  This template creates a shared infrastructure for multiple users/tenants:
+  - Single S3 Vector Bucket with one Vector Index
+  - Single S3 Document Bucket (with prefixes per user/KB)
+  - Single Bedrock Knowledge Base
+  - Single Data Source
+  - Lambda for automatic ingestion triggers
+  - DynamoDB table for KB metadata tracking
+
+  Users create "logical" Knowledge Bases that are isolated via metadata filtering.
+
+# ============================================================================
+# METADATA
+# ============================================================================
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Application Configuration"
+        Parameters:
+          - ApplicationName
+          - Environment
+
+      - Label:
+          default: "Vector Configuration"
+        Parameters:
+          - Dimension
+          - DistanceMetric
+
+      - Label:
+          default: "Embedding Model Configuration"
+        Parameters:
+          - EmbeddingModelId
+          - EmbeddingModelProvider
+
+      - Label:
+          default: "Chunking Configuration"
+        Parameters:
+          - ChunkingStrategy
+          - MaxTokens
+          - OverlapPercentage
+
+# ============================================================================
+# PARAMETERS
+# ============================================================================
+Parameters:
+  ApplicationName:
+    Type: String
+    Description: Name of the application
+    Default: kb-system
+    AllowedPattern: ^[a-z0-9-]+$
+    ConstraintDescription: Must contain only lowercase letters, numbers, and hyphens
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Environment name for resource naming
+
+  # --------------------------------------------------------------------------
+  # Vector Configuration
+  # --------------------------------------------------------------------------
+  Dimension:
+    Type: Number
+    Default: 1024
+    AllowedValues:
+      - 256
+      - 384
+      - 512
+      - 1024
+      - 1536
+      - 3072
+    Description: |
+      Embedding dimension (must match your embedding model):
+      - 256, 512, 1024: Titan V2
+      - 1024: Nova Multimodal, Cohere
+      - 1536: Titan V1
+      - 3072: Nova Multimodal (max)
+
+  DistanceMetric:
+    Type: String
+    Default: euclidean
+    AllowedValues:
+      - cosine
+      - euclidean
+    Description: Distance metric for similarity search (euclidean recommended for RAG)
+
+  # --------------------------------------------------------------------------
+  # Embedding Model Configuration
+  # --------------------------------------------------------------------------
+  EmbeddingModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    AllowedValues:
+      - amazon.titan-embed-text-v2:0
+      - amazon.titan-embed-text-v1
+      - amazon.nova-2-multimodal-embeddings-v1:0
+      - cohere.embed-english-v3
+      - cohere.embed-multilingual-v3
+    Description: Bedrock embedding model to use
+
+  EmbeddingModelProvider:
+    Type: String
+    Default: amazon
+    AllowedValues:
+      - amazon
+      - cohere
+    Description: Embedding model provider (used for ARN construction)
+
+  # --------------------------------------------------------------------------
+  # Chunking Configuration
+  # --------------------------------------------------------------------------
+  ChunkingStrategy:
+    Type: String
+    Default: FIXED_SIZE
+    AllowedValues:
+      - FIXED_SIZE
+      - NONE
+    Description: |
+      Chunking strategy for documents:
+      - FIXED_SIZE: Split documents into fixed-size chunks (recommended)
+      - NONE: No chunking (use for pre-chunked documents)
+
+  MaxTokens:
+    Type: Number
+    Default: 300
+    MinValue: 20
+    MaxValue: 8192
+    Description: Maximum tokens per chunk (for FIXED_SIZE strategy)
+
+  OverlapPercentage:
+    Type: Number
+    Default: 20
+    MinValue: 0
+    MaxValue: 99
+    Description: Percentage of overlap between chunks (for FIXED_SIZE strategy)
+
+# ============================================================================
+# CONDITIONS
+# ============================================================================
+Conditions:
+  UseFixedSizeChunking: !Equals [!Ref ChunkingStrategy, FIXED_SIZE]
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
+Resources:
+
+  # ==========================================================================
+  # S3 VECTOR STORAGE
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # S3 Vector Bucket
+  # --------------------------------------------------------------------------
+  VectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      EncryptionConfiguration:
+        SseType: AES256
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  # --------------------------------------------------------------------------
+  # Vector Index (Shared by all users/KBs)
+  # --------------------------------------------------------------------------
+  SharedVectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketArn: !Ref VectorBucket
+      DataType: float32
+      Dimension: !Ref Dimension
+      DistanceMetric: !Ref DistanceMetric
+
+      # Metadata Configuration
+      # These keys CANNOT be used for filtering (display only)
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - document_title
+          - source_url
+          - created_timestamp
+          - file_name
+          - file_size
+          - content_preview
+
+      # All other metadata keys ARE filterable:
+      # - user_id (CRITICAL for isolation)
+      # - kb_id (CRITICAL for isolation)
+      # - document_id
+      # - document_type
+      # - category
+      # - tags
+      # - etc.
+
+  # ==========================================================================
+  # S3 DOCUMENT STORAGE
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Shared Document Bucket
+  # Structure: s3://bucket/{user_id}/{kb_id}/{documents}
+  # --------------------------------------------------------------------------
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: IngestionTriggerLambdaPermission
+    Properties:
+      BucketName: !Sub '${ApplicationName}-${Environment}-docs-${AWS::AccountId}'
+
+      # Versioning for document history
+      VersioningConfiguration:
+        Status: Enabled
+
+      # Security: Block all public access
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+      # Encryption at rest
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+      # Lifecycle rules for cost optimization
+      LifecycleConfiguration:
+        Rules:
+          # Delete old versions after 90 days
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+
+          # Move to Intelligent-Tiering after 30 days
+          - Id: MoveToIntelligentTiering
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: INTELLIGENT_TIERING
+
+      # S3 Event Notifications → Lambda (for auto-ingestion)
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt IngestionTriggerLambda.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  # Only trigger for documents in user folders
+                  # Pattern: {user_id}/{kb_id}/*
+                  - Name: prefix
+                    Value: ''
+                  - Name: suffix
+                    Value: ''
+
+      # Tags for cost tracking
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ==========================================================================
+  # DYNAMODB - METADATA TRACKING
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Knowledge Base Metadata Table
+  # Tracks logical KBs, ownership, and configuration
+  # --------------------------------------------------------------------------
+  KnowledgeBaseMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ApplicationName}-${Environment}-kb-metadata'
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: kb_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: kb_id
+          KeyType: HASH
+
+      # GSI for querying by user
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+      # Point-in-time recovery
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+      # Encryption at rest
+      SSESpecification:
+        SSEEnabled: true
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # --------------------------------------------------------------------------
+  # Document Metadata Table
+  # Tracks documents, ingestion status, and metadata
+  # --------------------------------------------------------------------------
+  DocumentMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ApplicationName}-${Environment}-doc-metadata'
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: kb_id
+          AttributeType: S
+        - AttributeName: uploaded_at
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+
+      # GSI for querying by KB
+      GlobalSecondaryIndexes:
+        - IndexName: KbIdIndex
+          KeySchema:
+            - AttributeName: kb_id
+              KeyType: HASH
+            - AttributeName: uploaded_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+      # TTL for automatic cleanup of deleted documents
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+      SSESpecification:
+        SSEEnabled: true
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # IAM ROLES AND POLICIES
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Knowledge Base Execution Role
+  # Allows Bedrock KB to access S3 and Vector Store
+  # --------------------------------------------------------------------------
+  KnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ApplicationName}-${Environment}-kb-role'
+      Description: Execution role for Bedrock Knowledge Base
+
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+
+      ManagedPolicyArns:
+        # Bedrock foundation model access
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+
+      Policies:
+        # S3 Document Bucket Access
+        - PolicyName: S3DocumentAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadDocuments
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DocumentBucket.Arn
+                  - !Sub '${DocumentBucket.Arn}/*'
+
+        # S3 Vector Store Access
+        - PolicyName: S3VectorAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: VectorOperations
+                Effect: Allow
+                Action:
+                  - s3vectors:PutVectors
+                  - s3vectors:GetVectors
+                  - s3vectors:DeleteVectors
+                  - s3vectors:QueryVectors
+                  - s3vectors:ListVectors
+                Resource:
+                  - !GetAtt VectorBucket.VectorBucketArn
+                  - !Sub '${VectorBucket.VectorBucketArn}/*'
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # --------------------------------------------------------------------------
+  # Lambda Execution Role (for Ingestion Trigger)
+  # --------------------------------------------------------------------------
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ApplicationName}-${Environment}-lambda-role'
+      Description: Execution role for ingestion trigger Lambda
+
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        # Bedrock Agent Access (for triggering ingestion)
+        - PolicyName: BedrockAgentAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:StartIngestionJob
+                  - bedrock:GetIngestionJob
+                  - bedrock:ListIngestionJobs
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+
+        # S3 Access (to read object metadata)
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectMetadata
+                  - s3:GetObjectTagging
+                Resource:
+                  - !Sub '${DocumentBucket.Arn}/*'
+
+        # DynamoDB Access (to update document metadata)
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt DocumentMetadataTable.Arn
+                  - !Sub '${DocumentMetadataTable.Arn}/index/*'
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # BEDROCK KNOWLEDGE BASE
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Shared Knowledge Base (for all users/tenants)
+  # --------------------------------------------------------------------------
+  SharedKnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: !Sub '${ApplicationName}-${Environment}-shared-kb'
+      Description: !Sub 'Shared multi-tenant knowledge base for ${ApplicationName}'
+      RoleArn: !GetAtt KnowledgeBaseRole.Arn
+
+      # Vector Configuration
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          # Embedding Model ARN
+          EmbeddingModelArn: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}'
+
+          # Embedding Model Configuration (for models that support it)
+          EmbeddingModelConfiguration:
+            BedrockEmbeddingModelConfiguration:
+              Dimensions: !Ref Dimension
+
+      # Storage Configuration (S3 Vectors)
+      StorageConfiguration:
+        Type: S3_VECTORS
+        S3VectorsConfiguration:
+          VectorBucketArn: !GetAtt VectorBucket.VectorBucketArn
+          IndexName: !Ref SharedVectorIndex
+
+      Tags:
+        Application: !Ref ApplicationName
+        Environment: !Ref Environment
+        ManagedBy: CloudFormation
+
+  # --------------------------------------------------------------------------
+  # Shared Data Source (S3 Bucket)
+  # --------------------------------------------------------------------------
+  SharedDataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      Name: !Sub '${ApplicationName}-${Environment}-shared-datasource'
+      Description: Shared S3 data source for all users
+      KnowledgeBaseId: !Ref SharedKnowledgeBase
+
+      # S3 Configuration
+      DataSourceConfiguration:
+        Type: S3
+        S3Configuration:
+          BucketArn: !GetAtt DocumentBucket.Arn
+          # No inclusion prefixes - ingest from entire bucket
+          # Filtering happens at query time via metadata
+
+      # Vector Ingestion Configuration
+      VectorIngestionConfiguration:
+        # Chunking Strategy
+        ChunkingConfiguration:
+          ChunkingStrategy: !Ref ChunkingStrategy
+          FixedSizeChunkingConfiguration: !If
+            - UseFixedSizeChunking
+            - MaxTokens: !Ref MaxTokens
+              OverlapPercentage: !Ref OverlapPercentage
+            - !Ref AWS::NoValue
+
+  # ==========================================================================
+  # LAMBDA FUNCTIONS
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Ingestion Trigger Lambda
+  # Triggered by S3 events when documents are uploaded
+  # --------------------------------------------------------------------------
+  IngestionTriggerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ApplicationName}-${Environment}-ingestion-trigger'
+      Description: Triggers KB ingestion when documents are uploaded to S3
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+
+      Environment:
+        Variables:
+          KNOWLEDGE_BASE_ID: !Ref SharedKnowledgeBase
+          DATA_SOURCE_ID: !Ref SharedDataSource
+          DOCUMENT_METADATA_TABLE: !Ref DocumentMetadataTable
+          APPLICATION_NAME: !Ref ApplicationName
+          ENVIRONMENT: !Ref Environment
+
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          from urllib.parse import unquote_plus
+
+          bedrock_agent = boto3.client('bedrock-agent')
+          dynamodb = boto3.resource('dynamodb')
+          s3 = boto3.client('s3')
+
+          KNOWLEDGE_BASE_ID = os.environ['KNOWLEDGE_BASE_ID']
+          DATA_SOURCE_ID = os.environ['DATA_SOURCE_ID']
+          DOCUMENT_METADATA_TABLE = os.environ['DOCUMENT_METADATA_TABLE']
+
+          def lambda_handler(event, context):
+              """
+              Triggered by S3 ObjectCreated events.
+              Starts Bedrock KB ingestion job and tracks document metadata.
+              """
+              print(f"Received event: {json.dumps(event)}")
+
+              try:
+                  # Parse S3 event
+                  for record in event['Records']:
+                      bucket = record['s3']['bucket']['name']
+                      key = unquote_plus(record['s3']['object']['key'])
+                      size = record['s3']['object']['size']
+
+                      print(f"Processing: s3://{bucket}/{key} (size: {size})")
+
+                      # Parse S3 key structure: {user_id}/{kb_id}/{filename}
+                      parts = key.split('/')
+                      if len(parts) < 3:
+                          print(f"Skipping invalid key structure: {key}")
+                          continue
+
+                      user_id = parts[0]
+                      kb_id = parts[1]
+                      filename = '/'.join(parts[2:])
+
+                      # Get object metadata
+                      try:
+                          obj_metadata = s3.head_object(Bucket=bucket, Key=key)
+                          user_metadata = obj_metadata.get('Metadata', {})
+                      except Exception as e:
+                          print(f"Error getting object metadata: {e}")
+                          user_metadata = {}
+
+                      # Generate document ID
+                      document_id = f"{user_id}_{kb_id}_{filename}".replace('/', '_')
+
+                      # Save document metadata to DynamoDB
+                      table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
+                      table.put_item(
+                          Item={
+                              'document_id': document_id,
+                              'kb_id': kb_id,
+                              'user_id': user_id,
+                              'filename': filename,
+                              's3_bucket': bucket,
+                              's3_key': key,
+                              'file_size': size,
+                              'uploaded_at': datetime.utcnow().isoformat(),
+                              'ingestion_status': 'PENDING',
+                              'metadata': user_metadata
+                          }
+                      )
+
+                      print(f"Saved document metadata: {document_id}")
+
+                      # Start ingestion job
+                      # Note: This ingests the entire data source
+                      # Filtering happens at query time via metadata
+                      response = bedrock_agent.start_ingestion_job(
+                          knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                          dataSourceId=DATA_SOURCE_ID,
+                          description=f"Auto-triggered by upload: {key}"
+                      )
+
+                      ingestion_job_id = response['ingestionJob']['ingestionJobId']
+                      print(f"Started ingestion job: {ingestion_job_id}")
+
+                      # Update document with ingestion job ID
+                      table.update_item(
+                          Key={'document_id': document_id},
+                          UpdateExpression='SET ingestion_job_id = :job_id, ingestion_status = :status',
+                          ExpressionAttributeValues={
+                              ':job_id': ingestion_job_id,
+                              ':status': 'IN_PROGRESS'
+                          }
+                      )
+
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps('Ingestion triggered successfully')
+                  }
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  raise
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # --------------------------------------------------------------------------
+  # Lambda Permission (allow S3 to invoke Lambda)
+  # --------------------------------------------------------------------------
+  IngestionTriggerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IngestionTriggerLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:aws:s3:::${ApplicationName}-${Environment}-docs-${AWS::AccountId}'
+
+  # --------------------------------------------------------------------------
+  # CloudWatch Log Group (for Lambda logs)
+  # --------------------------------------------------------------------------
+  IngestionTriggerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${IngestionTriggerLambda}'
+      RetentionInDays: 30
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
+Outputs:
+
+  # --------------------------------------------------------------------------
+  # Vector Storage Outputs
+  # --------------------------------------------------------------------------
+  VectorBucketName:
+    Description: Name of the S3 Vector Bucket
+    Value: !Ref VectorBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-VectorBucketName'
+
+  VectorBucketArn:
+    Description: ARN of the S3 Vector Bucket
+    Value: !GetAtt VectorBucket.VectorBucketArn
+    Export:
+      Name: !Sub '${AWS::StackName}-VectorBucketArn'
+
+  VectorIndexName:
+    Description: Name of the shared Vector Index
+    Value: !Ref SharedVectorIndex
+    Export:
+      Name: !Sub '${AWS::StackName}-VectorIndexName'
+
+  VectorIndexArn:
+    Description: ARN of the shared Vector Index
+    Value: !GetAtt SharedVectorIndex.IndexArn
+    Export:
+      Name: !Sub '${AWS::StackName}-VectorIndexArn'
+
+  # --------------------------------------------------------------------------
+  # Document Storage Outputs
+  # --------------------------------------------------------------------------
+  DocumentBucketName:
+    Description: Name of the S3 Document Bucket
+    Value: !Ref DocumentBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentBucketName'
+
+  DocumentBucketArn:
+    Description: ARN of the S3 Document Bucket
+    Value: !GetAtt DocumentBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentBucketArn'
+
+  # --------------------------------------------------------------------------
+  # DynamoDB Outputs
+  # --------------------------------------------------------------------------
+  KnowledgeBaseMetadataTableName:
+    Description: Name of the KB Metadata DynamoDB table
+    Value: !Ref KnowledgeBaseMetadataTable
+    Export:
+      Name: !Sub '${AWS::StackName}-KBMetadataTable'
+
+  DocumentMetadataTableName:
+    Description: Name of the Document Metadata DynamoDB table
+    Value: !Ref DocumentMetadataTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DocMetadataTable'
+
+  # --------------------------------------------------------------------------
+  # Knowledge Base Outputs
+  # --------------------------------------------------------------------------
+  KnowledgeBaseId:
+    Description: ID of the shared Bedrock Knowledge Base
+    Value: !Ref SharedKnowledgeBase
+    Export:
+      Name: !Sub '${AWS::StackName}-KnowledgeBaseId'
+
+  KnowledgeBaseArn:
+    Description: ARN of the shared Bedrock Knowledge Base
+    Value: !GetAtt SharedKnowledgeBase.KnowledgeBaseArn
+    Export:
+      Name: !Sub '${AWS::StackName}-KnowledgeBaseArn'
+
+  DataSourceId:
+    Description: ID of the shared Data Source
+    Value: !Ref SharedDataSource
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSourceId'
+
+  # --------------------------------------------------------------------------
+  # IAM Outputs
+  # --------------------------------------------------------------------------
+  KnowledgeBaseRoleArn:
+    Description: ARN of the Knowledge Base execution role
+    Value: !GetAtt KnowledgeBaseRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-KBRoleArn'
+
+  # --------------------------------------------------------------------------
+  # Lambda Outputs
+  # --------------------------------------------------------------------------
+  IngestionTriggerLambdaArn:
+    Description: ARN of the ingestion trigger Lambda function
+    Value: !GetAtt IngestionTriggerLambda.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IngestionLambdaArn'
+
+  # --------------------------------------------------------------------------
+  # Configuration Outputs (for Streamlit app)
+  # --------------------------------------------------------------------------
+  ConfigurationSummary:
+    Description: Configuration summary for application integration
+    Value: !Sub |
+      AWS Region: ${AWS::Region}
+      Vector Bucket: ${VectorBucket}
+      Vector Index: ${SharedVectorIndex}
+      Document Bucket: ${DocumentBucket}
+      Knowledge Base ID: ${SharedKnowledgeBase}
+      Data Source ID: ${SharedDataSource}
+      KB Metadata Table: ${KnowledgeBaseMetadataTable}
+      Doc Metadata Table: ${DocumentMetadataTable}
+      Embedding Model: ${EmbeddingModelId}
+      Dimension: ${Dimension}
+      Distance Metric: ${DistanceMetric}
+
+  # --------------------------------------------------------------------------
+  # S3 Path Structure
+  # --------------------------------------------------------------------------
+  S3PathStructure:
+    Description: S3 path structure for document uploads
+    Value: !Sub 's3://${DocumentBucket}/{user_id}/{kb_id}/{documents}'
+
+  # --------------------------------------------------------------------------
+  # Quick Start Guide
+  # --------------------------------------------------------------------------
+  QuickStartGuide:
+    Description: Quick start guide for using this infrastructure
+    Value: !Sub |
+      1. Upload documents to: s3://${DocumentBucket}/{user_id}/{kb_id}/
+      2. Lambda auto-triggers ingestion
+      3. Query with metadata filters: user_id={user_id}, kb_id={kb_id}
+      4. Use DynamoDB tables to track KBs and documents
+
+      Example boto3 query:
+      bedrock_agent.retrieve(
+          knowledgeBaseId='${SharedKnowledgeBase}',
+          retrievalQuery={'text': 'your query'},
+          retrievalConfiguration={
+              'vectorSearchConfiguration': {
+                  'filter': {
+                      'andAll': [
+                          {'equals': {'key': 'user_id', 'value': 'user-123'}},
+                          {'equals': {'key': 'kb_id', 'value': 'kb-abc'}}
+                      ]
+                  }
+              }
+          }
+      )
