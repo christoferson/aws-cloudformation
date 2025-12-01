@@ -513,11 +513,12 @@ Resources:
               Dimensions: !Ref Dimension
 
       # Storage Configuration (S3 Vectors)
+      # FIXED: Use IndexArn instead of IndexName
       StorageConfiguration:
         Type: S3_VECTORS
         S3VectorsConfiguration:
           VectorBucketArn: !GetAtt VectorBucket.VectorBucketArn
-          IndexName: !Ref SharedVectorIndex
+          IndexArn: !GetAtt SharedVectorIndex.IndexArn
 
       Tags:
         Application: !Ref ApplicationName
@@ -575,7 +576,7 @@ Resources:
       Environment:
         Variables:
           KNOWLEDGE_BASE_ID: !Ref SharedKnowledgeBase
-          DATA_SOURCE_ID: !Ref SharedDataSource
+          DATA_SOURCE_ID: !GetAtt SharedDataSource.DataSourceId
           DOCUMENT_METADATA_TABLE: !Ref DocumentMetadataTable
           APPLICATION_NAME: !Ref ApplicationName
           ENVIRONMENT: !Ref Environment
