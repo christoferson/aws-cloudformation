@@ -7,6 +7,7 @@ Description: |
   - Single S3 Document Bucket (with prefixes per user/KB)
   - Single Bedrock Knowledge Base
   - Single Data Source
+  - SQS Queue for ingestion management (NEW)
   - EventBridge rule to trigger Lambda on S3 uploads
   - DynamoDB table for KB metadata tracking
 
@@ -182,12 +183,14 @@ Resources:
       # These keys CANNOT be used for filtering (display only)
       MetadataConfiguration:
         NonFilterableMetadataKeys:
-          - document_title
-          - source_url
-          - created_timestamp
-          - file_name
-          - file_size
-          - content_preview
+          # Bedrock's system metadata (can be large)
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
+          # Bedrock's chunk metadata
+          - x-amz-bedrock-kb-source-uri
+          - x-amz-bedrock-kb-source-file-modality
+          - x-amz-bedrock-kb-chunk-id
+          - x-amz-bedrock-kb-data-source-id
 
       # All other metadata keys ARE filterable:
       # - user_id (CRITICAL for isolation)
@@ -247,6 +250,48 @@ Resources:
           Value: !Ref Environment
         - Key: ManagedBy
           Value: CloudFormation
+
+  # ==========================================================================
+  # SQS QUEUE FOR INGESTION MANAGEMENT (NEW)
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Ingestion Queue (FIFO)
+  # --------------------------------------------------------------------------
+  IngestionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ApplicationName}-${Environment}-ingestion.fifo'
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 900
+      MessageRetentionPeriod: 86400
+
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt IngestionDLQ.Arn
+        maxReceiveCount: 3
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # --------------------------------------------------------------------------
+  # Dead Letter Queue
+  # --------------------------------------------------------------------------
+  IngestionDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ApplicationName}-${Environment}-ingestion-dlq.fifo'
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
 
   # ==========================================================================
   # DYNAMODB - METADATA TRACKING
@@ -419,13 +464,13 @@ Resources:
           Value: !Ref Environment
 
   # --------------------------------------------------------------------------
-  # Lambda Execution Role (for Ingestion Trigger)
+  # Lambda Execution Role (UPDATED - now handles both queue operations)
   # --------------------------------------------------------------------------
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub '${ApplicationName}-${Environment}-lambda-role'
-      Description: Execution role for ingestion trigger Lambda
+      Description: Execution role for ingestion Lambda functions
 
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -439,6 +484,22 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
       Policies:
+        # SQS Access (NEW)
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource:
+                  - !GetAtt IngestionQueue.Arn
+                  - !GetAtt IngestionDLQ.Arn
+
         # Bedrock Agent Access (for triggering ingestion)
         - PolicyName: BedrockAgentAccess
           PolicyDocument:
@@ -496,7 +557,7 @@ Resources:
   SharedKnowledgeBase:
     Type: AWS::Bedrock::KnowledgeBase
     Properties:
-      Name: !Sub '${ApplicationName}-${Environment}-shared-kb'
+      Name: !Sub '${ApplicationName}-${Environment}-shared-kb-v2'
       Description: !Sub 'Shared multi-tenant knowledge base for ${ApplicationName}'
       RoleArn: !GetAtt KnowledgeBaseRole.Arn
 
@@ -513,7 +574,6 @@ Resources:
               Dimensions: !Ref Dimension
 
       # Storage Configuration (S3 Vectors)
-      # FIXED: Use IndexArn instead of IndexName
       StorageConfiguration:
         Type: S3_VECTORS
         S3VectorsConfiguration:
@@ -559,14 +619,13 @@ Resources:
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # Ingestion Trigger Lambda
-  # Triggered by EventBridge when documents are uploaded to S3
+  # Ingestion Trigger Lambda (UPDATED - now sends to queue)
   # --------------------------------------------------------------------------
   IngestionTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ApplicationName}-${Environment}-ingestion-trigger'
-      Description: Triggers KB ingestion when documents are uploaded to S3 via EventBridge
+      Description: Sends ingestion requests to SQS queue
       Runtime: python3.12
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -575,8 +634,7 @@ Resources:
 
       Environment:
         Variables:
-          KNOWLEDGE_BASE_ID: !Ref SharedKnowledgeBase
-          DATA_SOURCE_ID: !GetAtt SharedDataSource.DataSourceId
+          INGESTION_QUEUE_URL: !Ref IngestionQueue
           DOCUMENT_METADATA_TABLE: !Ref DocumentMetadataTable
           APPLICATION_NAME: !Ref ApplicationName
           ENVIRONMENT: !Ref Environment
@@ -589,62 +647,51 @@ Resources:
           from datetime import datetime
           from urllib.parse import unquote_plus
 
-          bedrock_agent = boto3.client('bedrock-agent')
+          sqs = boto3.client('sqs')
           dynamodb = boto3.resource('dynamodb')
           s3 = boto3.client('s3')
 
-          KNOWLEDGE_BASE_ID = os.environ['KNOWLEDGE_BASE_ID']
-          DATA_SOURCE_ID = os.environ['DATA_SOURCE_ID']
+          QUEUE_URL = os.environ['INGESTION_QUEUE_URL']
           DOCUMENT_METADATA_TABLE = os.environ['DOCUMENT_METADATA_TABLE']
 
           def lambda_handler(event, context):
-              """
-              Triggered by EventBridge on S3 ObjectCreated events.
-              Starts Bedrock KB ingestion job and tracks document metadata.
-              """
+              """Send ingestion request to queue"""
               print(f"Received event: {json.dumps(event)}")
 
               try:
-                  # Parse EventBridge event (different structure than S3 direct)
                   detail = event.get('detail', {})
                   bucket = detail.get('bucket', {}).get('name')
                   key = unquote_plus(detail.get('object', {}).get('key', ''))
                   size = detail.get('object', {}).get('size', 0)
 
                   if not bucket or not key:
-                      print("Invalid event structure - missing bucket or key")
-                      return {
-                          'statusCode': 400,
-                          'body': json.dumps('Invalid event structure')
-                      }
+                      return {'statusCode': 400, 'body': 'Invalid event'}
 
-                  print(f"Processing: s3://{bucket}/{key} (size: {size})")
+                  # Skip metadata.json files
+                  if key.endswith('.metadata.json'):
+                      print(f"Skipping metadata file: {key}")
+                      return {'statusCode': 200, 'body': 'Skipped metadata file'}
 
-                  # Parse S3 key structure: {user_id}/{kb_id}/{filename}
+                  print(f"Processing: s3://{bucket}/{key}")
+
                   parts = key.split('/')
                   if len(parts) < 3:
-                      print(f"Skipping invalid key structure: {key}")
-                      return {
-                          'statusCode': 200,
-                          'body': json.dumps('Skipped - invalid key structure')
-                      }
+                      print(f"Invalid key structure: {key}")
+                      return {'statusCode': 200, 'body': 'Invalid key structure'}
 
                   user_id = parts[0]
                   kb_id = parts[1]
                   filename = '/'.join(parts[2:])
 
-                  # Get object metadata
                   try:
                       obj_metadata = s3.head_object(Bucket=bucket, Key=key)
                       user_metadata = obj_metadata.get('Metadata', {})
                   except Exception as e:
-                      print(f"Error getting object metadata: {e}")
+                      print(f"Error getting metadata: {e}")
                       user_metadata = {}
 
-                  # Generate document ID
                   document_id = f"{user_id}_{kb_id}_{filename}".replace('/', '_')
 
-                  # Save document metadata to DynamoDB
                   table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
                   table.put_item(
                       Item={
@@ -656,41 +703,33 @@ Resources:
                           's3_key': key,
                           'file_size': size,
                           'uploaded_at': datetime.utcnow().isoformat(),
-                          'ingestion_status': 'PENDING',
+                          'ingestion_status': 'QUEUED',
                           'metadata': user_metadata
                       }
                   )
 
-                  print(f"Saved document metadata: {document_id}")
-
-                  # Start ingestion job
-                  # Note: This ingests the entire data source
-                  # Filtering happens at query time via metadata
-                  response = bedrock_agent.start_ingestion_job(
-                      knowledgeBaseId=KNOWLEDGE_BASE_ID,
-                      dataSourceId=DATA_SOURCE_ID,
-                      description=f"Auto-triggered by upload: {key}"
+                  response = sqs.send_message(
+                      QueueUrl=QUEUE_URL,
+                      MessageBody=json.dumps({
+                          'document_id': document_id,
+                          'bucket': bucket,
+                          'key': key,
+                          'user_id': user_id,
+                          'kb_id': kb_id,
+                          'timestamp': datetime.utcnow().isoformat()
+                      }),
+                      MessageGroupId='ingestion',
+                      MessageDeduplicationId=document_id
                   )
 
-                  ingestion_job_id = response['ingestionJob']['ingestionJobId']
-                  print(f"Started ingestion job: {ingestion_job_id}")
-
-                  # Update document with ingestion job ID
-                  table.update_item(
-                      Key={'document_id': document_id},
-                      UpdateExpression='SET ingestion_job_id = :job_id, ingestion_status = :status',
-                      ExpressionAttributeValues={
-                          ':job_id': ingestion_job_id,
-                          ':status': 'IN_PROGRESS'
-                      }
-                  )
+                  print(f"Queued: {document_id}, MessageId: {response['MessageId']}")
 
                   return {
                       'statusCode': 200,
                       'body': json.dumps({
-                          'message': 'Ingestion triggered successfully',
+                          'message': 'Queued for ingestion',
                           'document_id': document_id,
-                          'ingestion_job_id': ingestion_job_id
+                          'message_id': response['MessageId']
                       })
                   }
 
@@ -707,13 +746,130 @@ Resources:
           Value: !Ref Environment
 
   # --------------------------------------------------------------------------
-  # CloudWatch Log Group (for Lambda logs)
+  # Ingestion Processor Lambda (NEW)
+  # --------------------------------------------------------------------------
+  IngestionProcessorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ApplicationName}-${Environment}-ingestion-processor'
+      Description: Processes ingestion queue and starts Bedrock jobs
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 256
+
+      Environment:
+        Variables:
+          KNOWLEDGE_BASE_ID: !Ref SharedKnowledgeBase
+          DATA_SOURCE_ID: !GetAtt SharedDataSource.DataSourceId
+          DOCUMENT_METADATA_TABLE: !Ref DocumentMetadataTable
+
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+
+          bedrock_agent = boto3.client('bedrock-agent')
+          dynamodb = boto3.resource('dynamodb')
+
+          KNOWLEDGE_BASE_ID = os.environ['KNOWLEDGE_BASE_ID']
+          DATA_SOURCE_ID = os.environ['DATA_SOURCE_ID']
+          DOCUMENT_METADATA_TABLE = os.environ['DOCUMENT_METADATA_TABLE']
+
+          def lambda_handler(event, context):
+              """Process ingestion queue - one job at a time"""
+              print(f"Processing {len(event['Records'])} message(s)")
+
+              for record in event['Records']:
+                  try:
+                      body = json.loads(record['body'])
+                      document_id = body['document_id']
+
+                      print(f"Processing document: {document_id}")
+
+                      # Check if job is already running
+                      jobs = bedrock_agent.list_ingestion_jobs(
+                          knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                          dataSourceId=DATA_SOURCE_ID,
+                          maxResults=1
+                      )
+
+                      if jobs.get('ingestionJobSummaries'):
+                          latest_job = jobs['ingestionJobSummaries'][0]
+                          status = latest_job['status']
+
+                          if status in ['IN_PROGRESS', 'STARTING']:
+                              print(f"Job already running: {latest_job['ingestionJobId']}")
+                              raise Exception("Ingestion job already in progress")
+
+                      # Start new ingestion job
+                      response = bedrock_agent.start_ingestion_job(
+                          knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                          dataSourceId=DATA_SOURCE_ID,
+                          description=f"Triggered by: {document_id}"
+                      )
+
+                      job_id = response['ingestionJob']['ingestionJobId']
+                      print(f"Started job: {job_id}")
+
+                      # Update DynamoDB
+                      table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
+                      table.update_item(
+                          Key={'document_id': document_id},
+                          UpdateExpression='SET ingestion_job_id = :job_id, ingestion_status = :status, processed_at = :time',
+                          ExpressionAttributeValues={
+                              ':job_id': job_id,
+                              ':status': 'IN_PROGRESS',
+                              ':time': datetime.utcnow().isoformat()
+                          }
+                      )
+
+                      return {
+                          'statusCode': 200,
+                          'body': json.dumps({
+                              'message': 'Ingestion started',
+                              'job_id': job_id
+                          })
+                      }
+
+                  except Exception as e:
+                      print(f"Error processing message: {str(e)}")
+                      raise
+
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # --------------------------------------------------------------------------
+  # CloudWatch Log Groups
   # --------------------------------------------------------------------------
   IngestionTriggerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/lambda/${IngestionTriggerLambda}'
       RetentionInDays: 30
+
+  IngestionProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${IngestionProcessorLambda}'
+      RetentionInDays: 30
+
+  # --------------------------------------------------------------------------
+  # SQS Event Source Mapping (NEW)
+  # --------------------------------------------------------------------------
+  IngestionProcessorEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt IngestionQueue.Arn
+      FunctionName: !Ref IngestionProcessorLambda
+      BatchSize: 1
+      Enabled: true
 
   # ==========================================================================
   # EVENTBRIDGE
@@ -791,6 +947,21 @@ Outputs:
     Value: !GetAtt DocumentBucket.Arn
 
   # --------------------------------------------------------------------------
+  # Queue Outputs (NEW)
+  # --------------------------------------------------------------------------
+  IngestionQueueUrl:
+    Description: URL of the ingestion queue
+    Value: !Ref IngestionQueue
+
+  IngestionQueueArn:
+    Description: ARN of the ingestion queue
+    Value: !GetAtt IngestionQueue.Arn
+
+  IngestionDLQUrl:
+    Description: URL of the dead letter queue
+    Value: !Ref IngestionDLQ
+
+  # --------------------------------------------------------------------------
   # DynamoDB Outputs
   # --------------------------------------------------------------------------
   KnowledgeBaseMetadataTableName:
@@ -814,7 +985,7 @@ Outputs:
 
   DataSourceId:
     Description: ID of the shared Data Source
-    Value: !Ref SharedDataSource
+    Value: !GetAtt SharedDataSource.DataSourceId
 
   # --------------------------------------------------------------------------
   # IAM Outputs
@@ -829,6 +1000,10 @@ Outputs:
   IngestionTriggerLambdaArn:
     Description: ARN of the ingestion trigger Lambda function
     Value: !GetAtt IngestionTriggerLambda.Arn
+
+  IngestionProcessorLambdaArn:
+    Description: ARN of the ingestion processor Lambda function
+    Value: !GetAtt IngestionProcessorLambda.Arn
 
   # --------------------------------------------------------------------------
   # EventBridge Outputs
@@ -854,6 +1029,7 @@ Outputs:
       Embedding Model: ${EmbeddingModelId}
       Dimension: ${Dimension}
       Distance Metric: ${DistanceMetric}
+      Ingestion Queue: ${IngestionQueue}
 
   # --------------------------------------------------------------------------
   # S3 Path Structure
@@ -868,24 +1044,13 @@ Outputs:
   QuickStartGuide:
     Description: Quick start guide for using this infrastructure
     Value: !Sub |
-      1. Upload documents to: s3://${DocumentBucket}/{user_id}/{kb_id}/
-      2. EventBridge triggers Lambda automatically
-      3. Lambda starts Bedrock ingestion job
-      4. Query with metadata filters: user_id={user_id}, kb_id={kb_id}
-      5. Use DynamoDB tables to track KBs and documents
+      Queue-Based Ingestion System:
 
-      Example boto3 query:
-      bedrock_agent.retrieve(
-          knowledgeBaseId='${SharedKnowledgeBase}',
-          retrievalQuery={'text': 'your query'},
-          retrievalConfiguration={
-              'vectorSearchConfiguration': {
-                  'filter': {
-                      'andAll': [
-                          {'equals': {'key': 'user_id', 'value': 'user-123'}},
-                          {'equals': {'key': 'kb_id', 'value': 'kb-abc'}}
-                      ]
-                  }
-              }
-          }
-      )
+      1. Upload documents to: s3://${DocumentBucket}/{user_id}/{kb_id}/
+      2. EventBridge triggers queue sender Lambda
+      3. Lambda sends message to SQS FIFO queue
+      4. Queue processor Lambda starts ingestion (one at a time)
+      5. Query with metadata filters: user_id={user_id}, kb_id={kb_id}
+
+      Queue URL: ${IngestionQueue}
+      DLQ URL: ${IngestionDLQ}
