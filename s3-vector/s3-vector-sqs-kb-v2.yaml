@@ -655,7 +655,6 @@ Resources:
           DOCUMENT_METADATA_TABLE = os.environ['DOCUMENT_METADATA_TABLE']
 
           def lambda_handler(event, context):
-              """Send ingestion request to queue"""
               print(f"Received event: {json.dumps(event)}")
 
               try:
@@ -670,73 +669,61 @@ Resources:
                   # Skip metadata.json files
                   if key.endswith('.metadata.json'):
                       print(f"Skipping metadata file: {key}")
-                      return {'statusCode': 200, 'body': 'Skipped metadata file'}
-
-                  print(f"Processing: s3://{bucket}/{key}")
+                      return {'statusCode': 200, 'body': 'Skipped'}
 
                   parts = key.split('/')
                   if len(parts) < 3:
-                      print(f"Invalid key structure: {key}")
-                      return {'statusCode': 200, 'body': 'Invalid key structure'}
+                      return {'statusCode': 200, 'body': 'Invalid structure'}
 
                   user_id = parts[0]
                   kb_id = parts[1]
                   filename = '/'.join(parts[2:])
-
-                  try:
-                      obj_metadata = s3.head_object(Bucket=bucket, Key=key)
-                      user_metadata = obj_metadata.get('Metadata', {})
-                  except Exception as e:
-                      print(f"Error getting metadata: {e}")
-                      user_metadata = {}
-
                   document_id = f"{user_id}_{kb_id}_{filename}".replace('/', '_')
 
-                  table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
-                  table.put_item(
-                      Item={
-                          'document_id': document_id,
-                          'kb_id': kb_id,
-                          'user_id': user_id,
-                          'filename': filename,
-                          's3_bucket': bucket,
-                          's3_key': key,
-                          'file_size': size,
-                          'uploaded_at': datetime.utcnow().isoformat(),
-                          'ingestion_status': 'QUEUED',
-                          'metadata': user_metadata
-                      }
-                  )
+                  # Get custom metadata from S3 object (if any)
+                  try:
+                      obj_metadata = s3.head_object(Bucket=bucket, Key=key)
+                      custom_metadata = obj_metadata.get('Metadata', {})
+                  except:
+                      custom_metadata = {}
 
-                  response = sqs.send_message(
+                  # Save to DynamoDB - NO STATUS TRACKING
+                  table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
+                  item = {
+                      'document_id': document_id,
+                      'kb_id': kb_id,
+                      'user_id': user_id,
+                      'filename': filename,
+                      's3_key': key,
+                      'file_size': size,
+                      'uploaded_at': datetime.utcnow().isoformat()
+                  }
+
+                  # Add custom metadata if present
+                  if custom_metadata:
+                      item['custom_metadata'] = custom_metadata
+
+                  table.put_item(Item=item)
+
+                  # Queue for ingestion
+                  sqs.send_message(
                       QueueUrl=QUEUE_URL,
                       MessageBody=json.dumps({
                           'document_id': document_id,
                           'bucket': bucket,
                           'key': key,
                           'user_id': user_id,
-                          'kb_id': kb_id,
-                          'timestamp': datetime.utcnow().isoformat()
+                          'kb_id': kb_id
                       }),
                       MessageGroupId='ingestion',
                       MessageDeduplicationId=document_id
                   )
 
-                  print(f"Queued: {document_id}, MessageId: {response['MessageId']}")
-
-                  return {
-                      'statusCode': 200,
-                      'body': json.dumps({
-                          'message': 'Queued for ingestion',
-                          'document_id': document_id,
-                          'message_id': response['MessageId']
-                      })
-                  }
+                  print(f"Tracked and queued: {document_id}")
+                  return {'statusCode': 200}
 
               except Exception as e:
                   print(f"Error: {str(e)}")
-                  import traceback
-                  traceback.print_exc()
                   raise
 
       Tags:
@@ -770,25 +757,17 @@ Resources:
           import json
           import boto3
           import os
-          from datetime import datetime
 
           bedrock_agent = boto3.client('bedrock-agent')
-          dynamodb = boto3.resource('dynamodb')
 
           KNOWLEDGE_BASE_ID = os.environ['KNOWLEDGE_BASE_ID']
           DATA_SOURCE_ID = os.environ['DATA_SOURCE_ID']
-          DOCUMENT_METADATA_TABLE = os.environ['DOCUMENT_METADATA_TABLE']
 
           def lambda_handler(event, context):
-              """Process ingestion queue - one job at a time"""
-              print(f"Processing {len(event['Records'])} message(s)")
-
               for record in event['Records']:
                   try:
                       body = json.loads(record['body'])
                       document_id = body['document_id']
-
-                      print(f"Processing document: {document_id}")
 
                       # Check if job is already running
                       jobs = bedrock_agent.list_ingestion_jobs(
@@ -798,14 +777,11 @@ Resources:
                       )
 
                       if jobs.get('ingestionJobSummaries'):
-                          latest_job = jobs['ingestionJobSummaries'][0]
-                          status = latest_job['status']
+                          latest = jobs['ingestionJobSummaries'][0]
+                          if latest['status'] in ['IN_PROGRESS', 'STARTING']:
+                              raise Exception("Job in progress")
 
-                          if status in ['IN_PROGRESS', 'STARTING']:
-                              print(f"Job already running: {latest_job['ingestionJobId']}")
-                              raise Exception("Ingestion job already in progress")
-
-                      # Start new ingestion job
+                      # Start ingestion job
                       response = bedrock_agent.start_ingestion_job(
                           knowledgeBaseId=KNOWLEDGE_BASE_ID,
                           dataSourceId=DATA_SOURCE_ID,
@@ -815,28 +791,12 @@ Resources:
                       job_id = response['ingestionJob']['ingestionJobId']
                       print(f"Started job: {job_id}")
 
-                      # Update DynamoDB
-                      table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
-                      table.update_item(
-                          Key={'document_id': document_id},
-                          UpdateExpression='SET ingestion_job_id = :job_id, ingestion_status = :status, processed_at = :time',
-                          ExpressionAttributeValues={
-                              ':job_id': job_id,
-                              ':status': 'IN_PROGRESS',
-                              ':time': datetime.utcnow().isoformat()
-                          }
-                      )
+                      # NO DynamoDB update - we don't track status
 
-                      return {
-                          'statusCode': 200,
-                          'body': json.dumps({
-                              'message': 'Ingestion started',
-                              'job_id': job_id
-                          })
-                      }
+                      return {'statusCode': 200}
 
                   except Exception as e:
-                      print(f"Error processing message: {str(e)}")
+                      print(f"Error: {str(e)}")
                       raise
 
       Tags:
