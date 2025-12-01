@@ -7,7 +7,7 @@ Description: |
   - Single S3 Document Bucket (with prefixes per user/KB)
   - Single Bedrock Knowledge Base
   - Single Data Source
-  - Lambda for automatic ingestion triggers
+  - EventBridge rule to trigger Lambda on S3 uploads
   - DynamoDB table for KB metadata tracking
 
   Users create "logical" Knowledge Bases that are isolated via metadata filtering.
@@ -208,13 +208,13 @@ Resources:
   # --------------------------------------------------------------------------
   DocumentBucket:
     Type: AWS::S3::Bucket
-    DependsOn: IngestionTriggerLambdaPermission
     Properties:
       BucketName: !Sub '${ApplicationName}-${Environment}-docs-${AWS::AccountId}'
 
-      # Versioning for document history
-      VersioningConfiguration:
-        Status: Enabled
+      # EventBridge notifications enabled
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
 
       # Security: Block all public access
       PublicAccessBlockConfiguration:
@@ -232,32 +232,12 @@ Resources:
       # Lifecycle rules for cost optimization
       LifecycleConfiguration:
         Rules:
-          # Delete old versions after 90 days
-          - Id: DeleteOldVersions
-            Status: Enabled
-            NoncurrentVersionExpirationInDays: 90
-
           # Move to Intelligent-Tiering after 30 days
           - Id: MoveToIntelligentTiering
             Status: Enabled
             Transitions:
               - TransitionInDays: 30
                 StorageClass: INTELLIGENT_TIERING
-
-      # S3 Event Notifications → Lambda (for auto-ingestion)
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt IngestionTriggerLambda.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  # Only trigger for documents in user folders
-                  # Pattern: {user_id}/{kb_id}/*
-                  - Name: prefix
-                    Value: ''
-                  - Name: suffix
-                    Value: ''
 
       # Tags for cost tracking
       Tags:
@@ -579,13 +559,13 @@ Resources:
 
   # --------------------------------------------------------------------------
   # Ingestion Trigger Lambda
-  # Triggered by S3 events when documents are uploaded
+  # Triggered by EventBridge when documents are uploaded to S3
   # --------------------------------------------------------------------------
   IngestionTriggerLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ApplicationName}-${Environment}-ingestion-trigger'
-      Description: Triggers KB ingestion when documents are uploaded to S3
+      Description: Triggers KB ingestion when documents are uploaded to S3 via EventBridge
       Runtime: python3.12
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -618,89 +598,105 @@ Resources:
 
           def lambda_handler(event, context):
               """
-              Triggered by S3 ObjectCreated events.
+              Triggered by EventBridge on S3 ObjectCreated events.
               Starts Bedrock KB ingestion job and tracks document metadata.
               """
               print(f"Received event: {json.dumps(event)}")
 
               try:
-                  # Parse S3 event
-                  for record in event['Records']:
-                      bucket = record['s3']['bucket']['name']
-                      key = unquote_plus(record['s3']['object']['key'])
-                      size = record['s3']['object']['size']
+                  # Parse EventBridge event (different structure than S3 direct)
+                  detail = event.get('detail', {})
+                  bucket = detail.get('bucket', {}).get('name')
+                  key = unquote_plus(detail.get('object', {}).get('key', ''))
+                  size = detail.get('object', {}).get('size', 0)
 
-                      print(f"Processing: s3://{bucket}/{key} (size: {size})")
+                  if not bucket or not key:
+                      print("Invalid event structure - missing bucket or key")
+                      return {
+                          'statusCode': 400,
+                          'body': json.dumps('Invalid event structure')
+                      }
 
-                      # Parse S3 key structure: {user_id}/{kb_id}/{filename}
-                      parts = key.split('/')
-                      if len(parts) < 3:
-                          print(f"Skipping invalid key structure: {key}")
-                          continue
+                  print(f"Processing: s3://{bucket}/{key} (size: {size})")
 
-                      user_id = parts[0]
-                      kb_id = parts[1]
-                      filename = '/'.join(parts[2:])
+                  # Parse S3 key structure: {user_id}/{kb_id}/{filename}
+                  parts = key.split('/')
+                  if len(parts) < 3:
+                      print(f"Skipping invalid key structure: {key}")
+                      return {
+                          'statusCode': 200,
+                          'body': json.dumps('Skipped - invalid key structure')
+                      }
 
-                      # Get object metadata
-                      try:
-                          obj_metadata = s3.head_object(Bucket=bucket, Key=key)
-                          user_metadata = obj_metadata.get('Metadata', {})
-                      except Exception as e:
-                          print(f"Error getting object metadata: {e}")
-                          user_metadata = {}
+                  user_id = parts[0]
+                  kb_id = parts[1]
+                  filename = '/'.join(parts[2:])
 
-                      # Generate document ID
-                      document_id = f"{user_id}_{kb_id}_{filename}".replace('/', '_')
+                  # Get object metadata
+                  try:
+                      obj_metadata = s3.head_object(Bucket=bucket, Key=key)
+                      user_metadata = obj_metadata.get('Metadata', {})
+                  except Exception as e:
+                      print(f"Error getting object metadata: {e}")
+                      user_metadata = {}
 
-                      # Save document metadata to DynamoDB
-                      table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
-                      table.put_item(
-                          Item={
-                              'document_id': document_id,
-                              'kb_id': kb_id,
-                              'user_id': user_id,
-                              'filename': filename,
-                              's3_bucket': bucket,
-                              's3_key': key,
-                              'file_size': size,
-                              'uploaded_at': datetime.utcnow().isoformat(),
-                              'ingestion_status': 'PENDING',
-                              'metadata': user_metadata
-                          }
-                      )
+                  # Generate document ID
+                  document_id = f"{user_id}_{kb_id}_{filename}".replace('/', '_')
 
-                      print(f"Saved document metadata: {document_id}")
+                  # Save document metadata to DynamoDB
+                  table = dynamodb.Table(DOCUMENT_METADATA_TABLE)
+                  table.put_item(
+                      Item={
+                          'document_id': document_id,
+                          'kb_id': kb_id,
+                          'user_id': user_id,
+                          'filename': filename,
+                          's3_bucket': bucket,
+                          's3_key': key,
+                          'file_size': size,
+                          'uploaded_at': datetime.utcnow().isoformat(),
+                          'ingestion_status': 'PENDING',
+                          'metadata': user_metadata
+                      }
+                  )
 
-                      # Start ingestion job
-                      # Note: This ingests the entire data source
-                      # Filtering happens at query time via metadata
-                      response = bedrock_agent.start_ingestion_job(
-                          knowledgeBaseId=KNOWLEDGE_BASE_ID,
-                          dataSourceId=DATA_SOURCE_ID,
-                          description=f"Auto-triggered by upload: {key}"
-                      )
+                  print(f"Saved document metadata: {document_id}")
 
-                      ingestion_job_id = response['ingestionJob']['ingestionJobId']
-                      print(f"Started ingestion job: {ingestion_job_id}")
+                  # Start ingestion job
+                  # Note: This ingests the entire data source
+                  # Filtering happens at query time via metadata
+                  response = bedrock_agent.start_ingestion_job(
+                      knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                      dataSourceId=DATA_SOURCE_ID,
+                      description=f"Auto-triggered by upload: {key}"
+                  )
 
-                      # Update document with ingestion job ID
-                      table.update_item(
-                          Key={'document_id': document_id},
-                          UpdateExpression='SET ingestion_job_id = :job_id, ingestion_status = :status',
-                          ExpressionAttributeValues={
-                              ':job_id': ingestion_job_id,
-                              ':status': 'IN_PROGRESS'
-                          }
-                      )
+                  ingestion_job_id = response['ingestionJob']['ingestionJobId']
+                  print(f"Started ingestion job: {ingestion_job_id}")
+
+                  # Update document with ingestion job ID
+                  table.update_item(
+                      Key={'document_id': document_id},
+                      UpdateExpression='SET ingestion_job_id = :job_id, ingestion_status = :status',
+                      ExpressionAttributeValues={
+                          ':job_id': ingestion_job_id,
+                          ':status': 'IN_PROGRESS'
+                      }
+                  )
 
                   return {
                       'statusCode': 200,
-                      'body': json.dumps('Ingestion triggered successfully')
+                      'body': json.dumps({
+                          'message': 'Ingestion triggered successfully',
+                          'document_id': document_id,
+                          'ingestion_job_id': ingestion_job_id
+                      })
                   }
 
               except Exception as e:
                   print(f"Error: {str(e)}")
+                  import traceback
+                  traceback.print_exc()
                   raise
 
       Tags:
@@ -710,18 +706,6 @@ Resources:
           Value: !Ref Environment
 
   # --------------------------------------------------------------------------
-  # Lambda Permission (allow S3 to invoke Lambda)
-  # --------------------------------------------------------------------------
-  IngestionTriggerLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref IngestionTriggerLambda
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceAccount: !Ref AWS::AccountId
-      SourceArn: !Sub 'arn:aws:s3:::${ApplicationName}-${Environment}-docs-${AWS::AccountId}'
-
-  # --------------------------------------------------------------------------
   # CloudWatch Log Group (for Lambda logs)
   # --------------------------------------------------------------------------
   IngestionTriggerLogGroup:
@@ -729,6 +713,46 @@ Resources:
     Properties:
       LogGroupName: !Sub '/aws/lambda/${IngestionTriggerLambda}'
       RetentionInDays: 30
+
+  # ==========================================================================
+  # EVENTBRIDGE
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # EventBridge Rule - S3 Object Created
+  # Triggers Lambda when objects are created in DocumentBucket
+  # --------------------------------------------------------------------------
+  S3ObjectCreatedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ApplicationName}-${Environment}-s3-object-created'
+      Description: Trigger ingestion Lambda when documents are uploaded to S3
+      State: ENABLED
+
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref DocumentBucket
+
+      Targets:
+        - Arn: !GetAtt IngestionTriggerLambda.Arn
+          Id: IngestionTriggerLambdaTarget
+
+  # --------------------------------------------------------------------------
+  # Lambda Permission (allow EventBridge to invoke Lambda)
+  # --------------------------------------------------------------------------
+  IngestionTriggerLambdaEventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IngestionTriggerLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt S3ObjectCreatedRule.Arn
 
 # ============================================================================
 # OUTPUTS
@@ -741,26 +765,18 @@ Outputs:
   VectorBucketName:
     Description: Name of the S3 Vector Bucket
     Value: !Ref VectorBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-VectorBucketName'
 
   VectorBucketArn:
     Description: ARN of the S3 Vector Bucket
     Value: !GetAtt VectorBucket.VectorBucketArn
-    Export:
-      Name: !Sub '${AWS::StackName}-VectorBucketArn'
 
   VectorIndexName:
     Description: Name of the shared Vector Index
     Value: !Ref SharedVectorIndex
-    Export:
-      Name: !Sub '${AWS::StackName}-VectorIndexName'
 
   VectorIndexArn:
     Description: ARN of the shared Vector Index
     Value: !GetAtt SharedVectorIndex.IndexArn
-    Export:
-      Name: !Sub '${AWS::StackName}-VectorIndexArn'
 
   # --------------------------------------------------------------------------
   # Document Storage Outputs
@@ -768,14 +784,10 @@ Outputs:
   DocumentBucketName:
     Description: Name of the S3 Document Bucket
     Value: !Ref DocumentBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-DocumentBucketName'
 
   DocumentBucketArn:
     Description: ARN of the S3 Document Bucket
     Value: !GetAtt DocumentBucket.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-DocumentBucketArn'
 
   # --------------------------------------------------------------------------
   # DynamoDB Outputs
@@ -783,14 +795,10 @@ Outputs:
   KnowledgeBaseMetadataTableName:
     Description: Name of the KB Metadata DynamoDB table
     Value: !Ref KnowledgeBaseMetadataTable
-    Export:
-      Name: !Sub '${AWS::StackName}-KBMetadataTable'
 
   DocumentMetadataTableName:
     Description: Name of the Document Metadata DynamoDB table
     Value: !Ref DocumentMetadataTable
-    Export:
-      Name: !Sub '${AWS::StackName}-DocMetadataTable'
 
   # --------------------------------------------------------------------------
   # Knowledge Base Outputs
@@ -798,20 +806,14 @@ Outputs:
   KnowledgeBaseId:
     Description: ID of the shared Bedrock Knowledge Base
     Value: !Ref SharedKnowledgeBase
-    Export:
-      Name: !Sub '${AWS::StackName}-KnowledgeBaseId'
 
   KnowledgeBaseArn:
     Description: ARN of the shared Bedrock Knowledge Base
     Value: !GetAtt SharedKnowledgeBase.KnowledgeBaseArn
-    Export:
-      Name: !Sub '${AWS::StackName}-KnowledgeBaseArn'
 
   DataSourceId:
     Description: ID of the shared Data Source
     Value: !Ref SharedDataSource
-    Export:
-      Name: !Sub '${AWS::StackName}-DataSourceId'
 
   # --------------------------------------------------------------------------
   # IAM Outputs
@@ -819,8 +821,6 @@ Outputs:
   KnowledgeBaseRoleArn:
     Description: ARN of the Knowledge Base execution role
     Value: !GetAtt KnowledgeBaseRole.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-KBRoleArn'
 
   # --------------------------------------------------------------------------
   # Lambda Outputs
@@ -828,8 +828,13 @@ Outputs:
   IngestionTriggerLambdaArn:
     Description: ARN of the ingestion trigger Lambda function
     Value: !GetAtt IngestionTriggerLambda.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-IngestionLambdaArn'
+
+  # --------------------------------------------------------------------------
+  # EventBridge Outputs
+  # --------------------------------------------------------------------------
+  S3ObjectCreatedRuleArn:
+    Description: ARN of the EventBridge rule for S3 object creation
+    Value: !GetAtt S3ObjectCreatedRule.Arn
 
   # --------------------------------------------------------------------------
   # Configuration Outputs (for Streamlit app)
@@ -863,9 +868,10 @@ Outputs:
     Description: Quick start guide for using this infrastructure
     Value: !Sub |
       1. Upload documents to: s3://${DocumentBucket}/{user_id}/{kb_id}/
-      2. Lambda auto-triggers ingestion
-      3. Query with metadata filters: user_id={user_id}, kb_id={kb_id}
-      4. Use DynamoDB tables to track KBs and documents
+      2. EventBridge triggers Lambda automatically
+      3. Lambda starts Bedrock ingestion job
+      4. Query with metadata filters: user_id={user_id}, kb_id={kb_id}
+      5. Use DynamoDB tables to track KBs and documents
 
       Example boto3 query:
       bedrock_agent.retrieve(
