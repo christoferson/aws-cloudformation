@@ -1,0 +1,1000 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Amazon Bedrock Automated Reasoning Policy for HR Policy Validation
+
+  This CloudFormation template creates an Automated Reasoning policy to validate
+  HR-related AI responses against company HR policies. This ensures that your
+  HR chatbot or RAG application doesn't hallucinate incorrect information about:
+  - Leave policies (PTO, sick leave, parental leave)
+  - Benefits eligibility
+  - Performance review processes
+  - Compensation and promotion rules
+  - Termination procedures
+  - Employee classification rules
+
+  Use Case:
+  Employees ask HR questions via a chatbot powered by RAG (Retrieval Augmented Generation).
+  The Automated Reasoning policy validates that AI responses are factually correct
+  according to your HR policy documents, preventing hallucinations that could lead to:
+  - Legal liability
+  - Employee grievances
+  - Compliance violations
+  - Incorrect benefit claims
+
+  Prerequisites:
+  - HR policy documents in PDF format uploaded to S3
+  - Amazon Bedrock access enabled
+  - IAM permissions for Bedrock and S3
+  - KMS key for encryption (optional but recommended for sensitive HR data)
+
+  Architecture:
+  1. HR policy PDFs stored in S3
+  2. Automated Reasoning policy extracts rules from documents
+  3. Bedrock Guardrail uses policy to validate AI responses
+  4. Application receives validated responses with proof of correctness
+
+  Cost Considerations:
+  - Policy creation: One-time charge based on document size
+  - Validation checks: Per-request charge when applying guardrail
+  - S3 storage: Standard S3 pricing for policy documents
+  - KMS: If using customer-managed keys for encryption
+
+  Security:
+  - HR policies contain sensitive information (salaries, benefits, etc.)
+  - Use KMS encryption for data at rest
+  - Restrict IAM access to HR team only
+  - Enable CloudTrail logging for audit compliance
+
+  Author: AWS Solutions Architect
+  Version: 1.0
+  Last Updated: 2024
+
+Parameters:
+  CompanyName:
+    Type: String
+    Default: MyCompany
+    Description: Company name for resource naming
+    MinLength: 2
+    MaxLength: 32
+    AllowedPattern: ^[a-zA-Z0-9-]+$
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - development
+      - staging
+      - production
+    Description: Environment for deployment
+
+  HRPolicyDocumentBucket:
+    Type: String
+    Description: S3 bucket containing HR policy documents (must exist)
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*[a-z0-9]$
+    ConstraintDescription: Must be a valid S3 bucket name
+
+  HRPolicyDocumentKey:
+    Type: String
+    Default: hr-policies/employee-handbook.pdf
+    Description: S3 key (path) to the HR policy PDF document
+    AllowedPattern: ^.+\.pdf$
+    ConstraintDescription: Must be a PDF file
+
+  EnableEncryption:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable KMS encryption for sensitive HR data
+
+Conditions:
+  UseKMSEncryption: !Equals [!Ref EnableEncryption, 'true']
+
+Resources:
+
+  # ============================================================================
+  # KMS KEY FOR ENCRYPTING SENSITIVE HR DATA
+  # HR policies contain sensitive information (salaries, benefits, PII)
+  # ============================================================================
+
+  HRPolicyEncryptionKey:
+    Type: AWS::KMS::Key
+    Condition: UseKMSEncryption
+    Properties:
+      Description: !Sub 'KMS key for encrypting ${CompanyName} HR policy data in Bedrock Automated Reasoning'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Allow root account full access
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+
+          # Allow Bedrock service to use the key
+          - Sid: Allow Bedrock to use the key
+            Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey'
+              - 'kms:CreateGrant'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'bedrock.${AWS::Region}.amazonaws.com'
+
+          # Allow CloudFormation to describe the key
+          - Sid: Allow CloudFormation
+            Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action:
+              - 'kms:DescribeKey'
+            Resource: '*'
+
+      # Enable automatic key rotation for security best practices
+      EnableKeyRotation: true
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${CompanyName}-hr-policy-encryption-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: HRDataEncryption
+        - Key: Compliance
+          Value: SensitiveData
+
+  HRPolicyEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: UseKMSEncryption
+    Properties:
+      AliasName: !Sub 'alias/${CompanyName}-hr-policy-key'
+      TargetKeyId: !Ref HRPolicyEncryptionKey
+
+  # ============================================================================
+  # IAM ROLE FOR BEDROCK TO ACCESS S3 HR POLICY DOCUMENTS
+  # Bedrock needs permission to read HR policy PDFs from S3
+  # ============================================================================
+
+  BedrockS3AccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CompanyName}-bedrock-hr-policy-s3-access'
+      Description: Allows Bedrock to read HR policy documents from S3
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref AWS::AccountId
+
+      Policies:
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow reading HR policy documents from S3
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                Resource: !Sub 'arn:aws:s3:::${HRPolicyDocumentBucket}/${HRPolicyDocumentKey}'
+
+              # Allow listing bucket (needed for validation)
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${HRPolicyDocumentBucket}'
+
+        # If using KMS encryption, allow decryption
+        - !If
+          - UseKMSEncryption
+          - PolicyName: KMSDecryptAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - 'kms:Decrypt'
+                    - 'kms:DescribeKey'
+                  Resource: !GetAtt HRPolicyEncryptionKey.Arn
+          - !Ref AWS::NoValue
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${CompanyName}-bedrock-hr-s3-role'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # AUTOMATED REASONING POLICY - LEAVE POLICIES
+  # Validates responses about PTO, sick leave, parental leave, etc.
+  # ============================================================================
+
+  LeavePolicyAutomatedReasoning:
+    Type: AWS::Bedrock::AutomatedReasoningPolicy
+    Properties:
+      Name: !Sub '${CompanyName}-leave-policy-validation'
+
+      Description: |
+        Automated Reasoning policy for validating employee leave-related questions.
+        Covers: PTO accrual, sick leave, parental leave, bereavement, jury duty.
+        Ensures AI responses about leave policies are factually correct and compliant.
+
+      # Policy definition with source document and intent instructions
+      PolicyDefinition:
+        # Source document containing HR leave policies
+        SourceDocuments:
+          - S3Location:
+              Uri: !Sub 's3://${HRPolicyDocumentBucket}/${HRPolicyDocumentKey}'
+
+        # Instructions for how to extract rules from the document
+        IntentInstructions: |
+          Create a logical model for employee leave policies. Extract rules for:
+
+          1. PTO (Paid Time Off) Accrual:
+             - Accrual rates based on tenure (0-2 years, 2-5 years, 5+ years)
+             - Maximum PTO balance caps
+             - PTO carryover rules (year-end)
+             - PTO payout rules upon termination
+
+          2. Sick Leave:
+             - Annual sick leave allocation
+             - Sick leave accrual schedule
+             - Documentation requirements (doctor's note thresholds)
+             - Sick leave carryover limits
+
+          3. Parental Leave:
+             - Maternity leave duration and eligibility
+             - Paternity leave duration and eligibility
+             - Adoption leave policies
+             - Return-to-work requirements
+
+          4. Other Leave Types:
+             - Bereavement leave (days allowed, relationship requirements)
+             - Jury duty leave
+             - Military leave
+             - Unpaid leave eligibility
+
+          5. Leave Request Process:
+             - Advance notice requirements
+             - Approval workflow
+             - Blackout periods (if any)
+
+          Create variables for:
+          - employee_tenure_years (Integer)
+          - employee_type (full_time, part_time, contractor)
+          - pto_balance (Real number)
+          - leave_type (pto, sick, parental, bereavement, etc.)
+          - leave_duration_days (Integer)
+          - requires_documentation (Boolean)
+          - is_eligible (Boolean)
+          - accrual_rate_per_year (Real number)
+
+          Example validation:
+          Q: "I've been here 3 years. How much PTO do I get per year?"
+          A: "You accrue 15 days per year."
+
+          The model should verify:
+          - IF tenure is 2-5 years, THEN accrual_rate = 15 days (per policy)
+          - Validate the answer matches the rule
+
+          Example invalid response:
+          Q: "Can I take 30 days of PTO at once?"
+          A: "Yes, you can take 30 consecutive days."
+
+          The model should flag:
+          - Rule: Maximum consecutive PTO is 15 days without VP approval
+          - Violation: Response doesn't mention approval requirement
+
+      # KMS encryption for sensitive HR data
+      KmsKeyId: !If
+        - UseKMSEncryption
+        - !GetAtt HRPolicyEncryptionKey.Arn
+        - !Ref AWS::NoValue
+
+      # Tags for organization and cost tracking
+      Tags:
+        - Key: PolicyType
+          Value: LeavePolicy
+        - Key: Department
+          Value: HumanResources
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Company
+          Value: !Ref CompanyName
+        - Key: Compliance
+          Value: Required
+        - Key: DataClassification
+          Value: Confidential
+
+  # ============================================================================
+  # AUTOMATED REASONING POLICY - BENEFITS ELIGIBILITY
+  # Validates responses about health insurance, 401k, stock options, etc.
+  # ============================================================================
+
+  BenefitsPolicyAutomatedReasoning:
+    Type: AWS::Bedrock::AutomatedReasoningPolicy
+    Properties:
+      Name: !Sub '${CompanyName}-benefits-eligibility-validation'
+
+      Description: |
+        Automated Reasoning policy for validating employee benefits questions.
+        Covers: Health insurance, dental, vision, 401k, life insurance, stock options.
+        Prevents hallucinations about eligibility, coverage amounts, and enrollment periods.
+
+      PolicyDefinition:
+        SourceDocuments:
+          - S3Location:
+              Uri: !Sub 's3://${HRPolicyDocumentBucket}/benefits-guide.pdf'
+
+        IntentInstructions: |
+          Create a logical model for employee benefits eligibility and coverage.
+
+          1. Health Insurance:
+             - Eligibility: Full-time employees working 30+ hours/week
+             - Waiting period: 60 days from hire date
+             - Coverage tiers: Employee only, Employee+Spouse, Employee+Children, Family
+             - Premium cost-sharing percentages
+             - Annual deductibles and out-of-pocket maximums
+
+          2. Dental and Vision:
+             - Eligibility requirements
+             - Coverage limits (annual maximums)
+             - Dependent coverage rules
+
+          3. 401(k) Retirement Plan:
+             - Eligibility: 6 months of service
+             - Company match: 50% up to 6% of salary
+             - Vesting schedule (0-4 years)
+             - Contribution limits (IRS limits)
+
+          4. Life Insurance:
+             - Basic coverage: 1x annual salary (company-paid)
+             - Supplemental coverage options
+             - Beneficiary designation requirements
+
+          5. Stock Options/RSUs:
+             - Eligibility: Based on level and tenure
+             - Vesting schedule (typically 4 years)
+             - Exercise windows
+
+          6. Other Benefits:
+             - Commuter benefits
+             - Gym membership reimbursement
+             - Professional development budget
+
+          Create variables for:
+          - employee_type (full_time, part_time, contractor)
+          - hours_per_week (Integer)
+          - tenure_months (Integer)
+          - annual_salary (Real number)
+          - employee_level (junior, mid, senior, executive)
+          - is_benefits_eligible (Boolean)
+          - waiting_period_completed (Boolean)
+          - company_match_percentage (Real number)
+          - vesting_percentage (Real number)
+
+          Example validation:
+          Q: "I'm a part-time employee working 25 hours/week. Am I eligible for health insurance?"
+          A: "Yes, you're eligible for health insurance."
+
+          The model should flag as INVALID:
+          - Rule: Health insurance requires 30+ hours/week
+          - Employee works 25 hours/week
+          - Therefore: NOT eligible
+
+          Example with unstated assumptions:
+          Q: "How much does the company match for 401k?"
+          A: "The company matches 50% up to 6% of your salary."
+
+          The model should note:
+          - VALID response
+          - Unstated assumption: Employee has completed 6-month waiting period
+          - Unstated assumption: Employee is contributing to 401k
+
+      KmsKeyId: !If
+        - UseKMSEncryption
+        - !GetAtt HRPolicyEncryptionKey.Arn
+        - !Ref AWS::NoValue
+
+      Tags:
+        - Key: PolicyType
+          Value: BenefitsEligibility
+        - Key: Department
+          Value: HumanResources
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Company
+          Value: !Ref CompanyName
+        - Key: DataClassification
+          Value: HighlyConfidential
+
+  # ============================================================================
+  # AUTOMATED REASONING POLICY - COMPENSATION & PROMOTION
+  # Validates responses about salary bands, raises, bonuses, promotions
+  # ============================================================================
+
+  CompensationPolicyAutomatedReasoning:
+    Type: AWS::Bedrock::AutomatedReasoningPolicy
+    Properties:
+      Name: !Sub '${CompanyName}-compensation-policy-validation'
+
+      Description: |
+        Automated Reasoning policy for compensation and promotion questions.
+        Covers: Salary bands, merit increases, bonuses, promotion criteria.
+        HIGHLY SENSITIVE - Contains confidential compensation data.
+
+      PolicyDefinition:
+        SourceDocuments:
+          - S3Location:
+              Uri: !Sub 's3://${HRPolicyDocumentBucket}/compensation-framework.pdf'
+
+        IntentInstructions: |
+          Create a logical model for compensation and promotion policies.
+
+          1. Salary Bands:
+             - Define salary ranges for each level (Junior, Mid, Senior, Staff, Principal)
+             - Geographic adjustments (if applicable)
+             - Market rate adjustments
+
+          2. Merit Increases:
+             - Annual review cycle timing
+             - Typical merit increase ranges (2-5% based on performance)
+             - Performance rating requirements
+             - Budget constraints
+
+          3. Bonuses:
+             - Eligibility criteria (tenure, performance rating)
+             - Target bonus percentages by level
+             - Payment timing
+             - Pro-rating rules for new hires
+
+          4. Promotions:
+             - Time-in-role requirements (minimum 12-18 months)
+             - Performance requirements (must be "Exceeds" or higher)
+             - Skill demonstration requirements
+             - Approval process (manager → director → VP)
+
+          5. Equity Compensation:
+             - Initial grant amounts by level
+             - Refresh grant eligibility
+             - Vesting schedules
+
+          Create variables for:
+          - employee_level (junior, mid, senior, staff, principal)
+          - performance_rating (needs_improvement, meets, exceeds, outstanding)
+          - time_in_role_months (Integer)
+          - current_salary (Real number - SENSITIVE)
+          - salary_band_min (Real number - SENSITIVE)
+          - salary_band_max (Real number - SENSITIVE)
+          - is_promotion_eligible (Boolean)
+          - merit_increase_percentage (Real number)
+          - bonus_target_percentage (Real number)
+
+          IMPORTANT SECURITY RULES:
+          - NEVER reveal specific salary amounts in responses
+          - NEVER reveal salary band ranges
+          - Only confirm eligibility and process, not amounts
+
+          Example validation:
+          Q: "I've been a Senior Engineer for 8 months. Can I be promoted to Staff?"
+          A: "Yes, you can be promoted now."
+
+          The model should flag as INVALID:
+          - Rule: Minimum time-in-role for promotion is 12 months
+          - Employee has been in role for 8 months
+          - Therefore: NOT eligible yet
+          - Correction: "You need 12 months in role; you're eligible in 4 more months"
+
+          Example of proper response:
+          Q: "What's the salary range for a Senior Engineer?"
+          A: "I cannot disclose specific salary ranges. Please contact HR directly."
+
+          The model should validate as VALID:
+          - Correctly refuses to disclose confidential compensation data
+
+      KmsKeyId: !If
+        - UseKMSEncryption
+        - !GetAtt HRPolicyEncryptionKey.Arn
+        - !Ref AWS::NoValue
+
+      Tags:
+        - Key: PolicyType
+          Value: Compensation
+        - Key: Department
+          Value: HumanResources
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Company
+          Value: !Ref CompanyName
+        - Key: DataClassification
+          Value: HighlyConfidential
+        - Key: AccessRestriction
+          Value: HROnly
+
+  # ============================================================================
+  # AUTOMATED REASONING POLICY - PERFORMANCE REVIEWS
+  # Validates responses about review cycles, ratings, feedback processes
+  # ============================================================================
+
+  PerformanceReviewPolicyAutomatedReasoning:
+    Type: AWS::Bedrock::AutomatedReasoningPolicy
+    Properties:
+      Name: !Sub '${CompanyName}-performance-review-validation'
+
+      Description: |
+        Automated Reasoning policy for performance review process questions.
+        Covers: Review cycles, rating scales, feedback requirements, PIPs.
+
+      PolicyDefinition:
+        SourceDocuments:
+          - S3Location:
+              Uri: !Sub 's3://${HRPolicyDocumentBucket}/performance-management.pdf'
+
+        IntentInstructions: |
+          Create a logical model for performance review processes.
+
+          1. Review Cycles:
+             - Annual review timing (typically Q1)
+             - Mid-year check-in requirements
+             - Probationary period reviews (30, 60, 90 days for new hires)
+
+          2. Rating Scale:
+             - Needs Improvement (1)
+             - Meets Expectations (2)
+             - Exceeds Expectations (3)
+             - Outstanding (4)
+             - Rating distribution guidelines (forced curve if applicable)
+
+          3. Review Process:
+             - Self-assessment deadline
+             - Peer feedback requirements (number of peers)
+             - Manager review deadline
+             - Calibration meetings
+             - Feedback delivery timeline
+
+          4. Performance Improvement Plans (PIPs):
+             - Triggers: "Needs Improvement" rating or specific issues
+             - Duration: Typically 30-90 days
+             - Check-in frequency: Weekly or bi-weekly
+             - Success criteria definition
+             - Consequences of not meeting PIP goals
+
+          5. Goal Setting:
+             - SMART goal requirements
+             - Number of goals (typically 3-5)
+             - Alignment with team/company objectives
+             - Mid-year goal adjustment process
+
+          Create variables for:
+          - review_type (annual, mid_year, probationary, pip)
+          - employee_tenure_months (Integer)
+          - current_rating (needs_improvement, meets, exceeds, outstanding)
+          - is_on_pip (Boolean)
+          - pip_duration_days (Integer)
+          - peer_feedback_count (Integer)
+          - goals_count (Integer)
+          - review_overdue (Boolean)
+
+          Example validation:
+          Q: "I just started 2 weeks ago. When is my first performance review?"
+          A: "Your first review will be in 12 months during the annual review cycle."
+
+          The model should flag as INVALID:
+          - Rule: New hires have probationary reviews at 30, 60, and 90 days
+          - First review should be at 30 days, not 12 months
+          - Correction: "Your first review is at 30 days, with follow-ups at 60 and 90 days"
+
+          Example of PIP validation:
+          Q: "I received a 'Needs Improvement' rating. What happens next?"
+          A: "You'll continue with regular check-ins with your manager."
+
+          The model should flag as INCOMPLETE:
+          - Rule: "Needs Improvement" rating triggers a formal PIP
+          - Missing information: PIP duration, success criteria, consequences
+          - Correction: "You'll be placed on a Performance Improvement Plan (PIP) 
+            for 60-90 days with weekly check-ins and specific success criteria."
+
+      KmsKeyId: !If
+        - UseKMSEncryption
+        - !GetAtt HRPolicyEncryptionKey.Arn
+        - !Ref AWS::NoValue
+
+      Tags:
+        - Key: PolicyType
+          Value: PerformanceManagement
+        - Key: Department
+          Value: HumanResources
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Company
+          Value: !Ref CompanyName
+
+  # ============================================================================
+  # AUTOMATED REASONING POLICY - TERMINATION & OFFBOARDING
+  # Validates responses about resignation, termination, exit procedures
+  # ============================================================================
+
+  TerminationPolicyAutomatedReasoning:
+    Type: AWS::Bedrock::AutomatedReasoningPolicy
+    Properties:
+      Name: !Sub '${CompanyName}-termination-policy-validation'
+
+      Description: |
+        Automated Reasoning policy for termination and offboarding questions.
+        Covers: Notice periods, final pay, COBRA, exit procedures.
+        SENSITIVE - Legal implications if incorrect information is provided.
+
+      PolicyDefinition:
+        SourceDocuments:
+          - S3Location:
+              Uri: !Sub 's3://${HRPolicyDocumentBucket}/termination-procedures.pdf'
+
+        IntentInstructions: |
+          Create a logical model for termination and offboarding policies.
+
+          1. Resignation (Voluntary Termination):
+             - Notice period requirements (typically 2 weeks)
+             - Notice period for senior roles (4 weeks)
+             - PTO payout rules (state-dependent)
+             - Return of company property
+
+          2. Termination (Involuntary):
+             - With cause vs. without cause
+             - Severance eligibility and calculation
+             - Notice requirements (or pay in lieu)
+             - Non-compete/non-solicitation enforcement
+
+          3. Final Paycheck:
+             - Timing requirements (state-specific laws)
+             - Components: Final salary, accrued PTO, bonuses
+             - Deductions: Unreturned equipment, loans
+
+          4. Benefits Continuation:
+             - COBRA eligibility and duration (18 months typically)
+             - COBRA cost (102% of premium)
+             - Life insurance conversion options
+             - 401k rollover procedures
+
+          5. Exit Process:
+             - Exit interview (optional vs. required)
+             - Equipment return checklist
+             - Access revocation timeline
+             - Final expense report submission
+             - Reference policy
+
+          Create variables for:
+          - termination_type (resignation, termination_with_cause, termination_without_cause, layoff)
+          - employee_level (individual_contributor, manager, director, vp, executive)
+          - notice_period_days (Integer)
+          - tenure_years (Real number)
+          - pto_balance_days (Real number)
+          - is_pto_paid_out (Boolean)
+          - severance_weeks (Integer)
+          - is_cobra_eligible (Boolean)
+          - cobra_duration_months (Integer)
+          - state (String - for state-specific laws)
+
+          CRITICAL LEGAL RULES:
+          - Final pay timing varies by state (California: immediately, others: next pay period)
+          - PTO payout varies by state (California: required, others: policy-dependent)
+          - COBRA is federally mandated for companies with 20+ employees
+          - Severance is NOT required by law (unless contractual)
+
+          Example validation:
+          Q: "I'm resigning. Do I get paid for my unused PTO?"
+          A: "Yes, all unused PTO is paid out upon resignation."
+
+          The model should flag as POTENTIALLY INVALID:
+          - Rule: PTO payout depends on state law and company policy
+          - Missing information: Employee's state
+          - Correction: "PTO payout depends on your state. In California, yes. 
+            In other states, it depends on company policy. Please check with HR."
+
+          Example of severance validation:
+          Q: "I was laid off. How much severance do I get?"
+          A: "You'll receive 2 weeks of severance pay."
+
+          The model should validate against rules:
+          - Rule: Severance = 1 week per year of service (minimum 2 weeks)
+          - Need to know: tenure_years
+          - If tenure is 5 years, severance should be 5 weeks, not 2
+          - Flag as INVALID if tenure doesn't match severance amount
+
+      KmsKeyId: !If
+        - UseKMSEncryption
+        - !GetAtt HRPolicyEncryptionKey.Arn
+        - !Ref AWS::NoValue
+
+      Tags:
+        - Key: PolicyType
+          Value: Termination
+        - Key: Department
+          Value: HumanResources
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Company
+          Value: !Ref CompanyName
+        - Key: LegalReview
+          Value: Required
+        - Key: DataClassification
+          Value: Confidential
+
+  # ============================================================================
+  # BEDROCK GUARDRAIL - COMBINES ALL AUTOMATED REASONING POLICIES
+  # This guardrail can be used with your HR chatbot/RAG application
+  # ============================================================================
+
+  HRPolicyGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub '${CompanyName}-hr-policy-guardrail'
+      Description: |
+        Comprehensive guardrail for HR chatbot using Automated Reasoning checks.
+        Validates all HR-related responses against company policies to prevent hallucinations.
+
+      # Block harmful content
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: HATE
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: VIOLENCE
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: SEXUAL
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: MISCONDUCT
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+
+      # Block PII from being exposed
+      SensitiveInformationPolicyConfig:
+        PiiEntitiesConfig:
+          - Type: EMAIL
+            Action: BLOCK
+          - Type: PHONE
+            Action: BLOCK
+          - Type: SSN
+            Action: BLOCK
+          - Type: CREDIT_DEBIT_CARD_NUMBER
+            Action: BLOCK
+          - Type: US_BANK_ACCOUNT_NUMBER
+            Action: BLOCK
+          - Type: ADDRESS
+            Action: ANONYMIZE
+          - Type: NAME
+            Action: ANONYMIZE
+
+      # Block topics that HR chatbot shouldn't discuss
+      TopicPolicyConfig:
+        TopicsConfig:
+          - Name: PoliticalDiscussions
+            Definition: Political opinions, elections, political parties
+            Examples:
+              - Who should I vote for?
+              - What's the company's political stance?
+            Type: DENY
+
+          - Name: ReligiousDiscussions
+            Definition: Religious beliefs, practices, or affiliations
+            Examples:
+              - What religion should I follow?
+              - Does the company prefer certain religions?
+            Type: DENY
+
+          - Name: MedicalAdvice
+            Definition: Specific medical diagnoses or treatment recommendations
+            Examples:
+              - Should I take this medication?
+              - Do I have a medical condition?
+            Type: DENY
+
+          - Name: LegalAdvice
+            Definition: Specific legal advice or interpretation of laws
+            Examples:
+              - Should I sue the company?
+              - Can I legally do this?
+            Type: DENY
+
+      # Word filters for inappropriate language
+      WordPolicyConfig:
+        WordsConfig:
+          - Text: discriminate
+          - Text: harassment
+          - Text: retaliation
+        ManagedWordListsConfig:
+          - Type: PROFANITY
+
+      # Automated Reasoning checks - the key feature!
+      AutomatedReasoningPolicyConfig:
+        AutomatedReasoningPolicies:
+          # Leave policy validation
+          - PolicyArn: !GetAtt LeavePolicyAutomatedReasoning.PolicyArn
+            PolicyVersion: !GetAtt LeavePolicyAutomatedReasoning.Version
+
+          # Benefits eligibility validation
+          - PolicyArn: !GetAtt BenefitsPolicyAutomatedReasoning.PolicyArn
+            PolicyVersion: !GetAtt BenefitsPolicyAutomatedReasoning.Version
+
+          # Compensation policy validation
+          - PolicyArn: !GetAtt CompensationPolicyAutomatedReasoning.PolicyArn
+            PolicyVersion: !GetAtt CompensationPolicyAutomatedReasoning.Version
+
+          # Performance review validation
+          - PolicyArn: !GetAtt PerformanceReviewPolicyAutomatedReasoning.PolicyArn
+            PolicyVersion: !GetAtt PerformanceReviewPolicyAutomatedReasoning.Version
+
+          # Termination policy validation
+          - PolicyArn: !GetAtt TerminationPolicyAutomatedReasoning.PolicyArn
+            PolicyVersion: !GetAtt TerminationPolicyAutomatedReasoning.Version
+
+      # What to do when guardrail is triggered
+      BlockedInputMessaging: |
+        I apologize, but I cannot provide information on that topic. 
+        Please contact HR directly at hr@company.com or call (555) 123-4567.
+
+      BlockedOutputsMessaging: |
+        I apologize, but I cannot provide that information as it may not be accurate 
+        according to company policy. Please contact HR directly for verified information.
+
+      KmsKeyId: !If
+        - UseKMSEncryption
+        - !GetAtt HRPolicyEncryptionKey.Arn
+        - !Ref AWS::NoValue
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${CompanyName}-hr-guardrail'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Department
+          Value: HumanResources
+        - Key: Purpose
+          Value: HallucinationPrevention
+
+  # Create a version of the guardrail for production use
+  HRPolicyGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !GetAtt HRPolicyGuardrail.GuardrailId
+      Description: !Sub 'Production version of HR policy guardrail - ${Environment}'
+
+# ============================================================================
+# OUTPUTS
+# Export ARNs and IDs for use in your application
+# ============================================================================
+
+Outputs:
+  # Automated Reasoning Policy Outputs
+  LeavePolicyArn:
+    Description: ARN of the Leave Policy Automated Reasoning policy
+    Value: !GetAtt LeavePolicyAutomatedReasoning.PolicyArn
+    Export:
+      Name: !Sub '${AWS::StackName}-LeavePolicyArn'
+
+  LeavePolicyId:
+    Description: ID of the Leave Policy Automated Reasoning policy
+    Value: !GetAtt LeavePolicyAutomatedReasoning.PolicyId
+    Export:
+      Name: !Sub '${AWS::StackName}-LeavePolicyId'
+
+  BenefitsPolicyArn:
+    Description: ARN of the Benefits Eligibility Automated Reasoning policy
+    Value: !GetAtt BenefitsPolicyAutomatedReasoning.PolicyArn
+    Export:
+      Name: !Sub '${AWS::StackName}-BenefitsPolicyArn'
+
+  CompensationPolicyArn:
+    Description: ARN of the Compensation Policy Automated Reasoning policy
+    Value: !GetAtt CompensationPolicyAutomatedReasoning.PolicyArn
+    Export:
+      Name: !Sub '${AWS::StackName}-CompensationPolicyArn'
+
+  PerformanceReviewPolicyArn:
+    Description: ARN of the Performance Review Automated Reasoning policy
+    Value: !GetAtt PerformanceReviewPolicyAutomatedReasoning.PolicyArn
+    Export:
+      Name: !Sub '${AWS::StackName}-PerformanceReviewPolicyArn'
+
+  TerminationPolicyArn:
+    Description: ARN of the Termination Policy Automated Reasoning policy
+    Value: !GetAtt TerminationPolicyAutomatedReasoning.PolicyArn
+    Export:
+      Name: !Sub '${AWS::StackName}-TerminationPolicyArn'
+
+  # Guardrail Outputs
+  HRGuardrailId:
+    Description: ID of the HR Policy Guardrail
+    Value: !GetAtt HRPolicyGuardrail.GuardrailId
+    Export:
+      Name: !Sub '${AWS::StackName}-GuardrailId'
+
+  HRGuardrailArn:
+    Description: ARN of the HR Policy Guardrail
+    Value: !GetAtt HRPolicyGuardrail.GuardrailArn
+    Export:
+      Name: !Sub '${AWS::StackName}-GuardrailArn'
+
+  HRGuardrailVersion:
+    Description: Version of the HR Policy Guardrail
+    Value: !GetAtt HRPolicyGuardrailVersion.Version
+    Export:
+      Name: !Sub '${AWS::StackName}-GuardrailVersion'
+
+  # KMS Key Output
+  EncryptionKeyArn:
+    Condition: UseKMSEncryption
+    Description: ARN of the KMS key used for encrypting HR policy data
+    Value: !GetAtt HRPolicyEncryptionKey.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyArn'
+
+  # Usage Instructions
+  UsageInstructions:
+    Description: How to use this guardrail in your HR chatbot application
+    Value: |
+      Python Example:
+
+      import boto3
+      import json
+
+      bedrock = boto3.client('bedrock-runtime')
+
+      # Your HR RAG application generates a response
+      user_question = "How much PTO do I get after 3 years?"
+      rag_response = "You get 20 days of PTO per year."
+
+      # Validate with Automated Reasoning
+      result = bedrock.apply_guardrail(
+          guardrailIdentifier='<HRGuardrailId>',
+          guardrailVersion='<HRGuardrailVersion>',
+          source='OUTPUT',
+          content=[{
+              'text': {
+                  'text': rag_response,
+                  'qualifiers': ['query']
+              }
+          }]
+      )
+
+      # Check if response is valid
+      if result['action'] == 'GUARDRAIL_INTERVENED':
+          # Response violated policy - use corrected version
+          automated_reasoning = result['outputs'][0]['automatedReasoning']
+
+          if automated_reasoning['validation'] == 'INVALID':
+              print("AI Response was INCORRECT!")
+              print(f"Rules violated: {automated_reasoning['rulesViolated']}")
+              print(f"Correct answer: {automated_reasoning['suggestedCorrection']}")
+
+              # Return corrected response to user
+              return automated_reasoning['suggestedCorrection']
+      else:
+          # Response is valid, return original
+          return rag_response
+
+      For more examples, see: https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-automated-reasoning.html
+
+  DeploymentNotes:
+    Description: Important notes about this deployment
+    Value: |
+      1. Upload your HR policy PDFs to S3 before deploying this stack
+      2. Policy creation takes 10-30 minutes depending on document size
+      3. Review and edit generated rules in Bedrock console after creation
+      4. Test thoroughly before using in production
+      5. Update policies when HR policies change
+      6. Monitor CloudWatch for guardrail interventions
+      7. Set up alerts for high intervention rates (may indicate policy drift)
