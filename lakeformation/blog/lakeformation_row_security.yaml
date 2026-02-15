@@ -1,0 +1,558 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Lake Formation tutorial for a simple governed table
+
+Parameters:
+  DatalakeAdminUserName:
+    Type: String
+    Description: IAM user name to be created for data lake admin.
+    Default: DatalakeAdmin
+    AllowedPattern: '[\w+=,.@-]+'
+    MinLength: '1'
+    MaxLength: '64'
+    ConstraintDescription: the user name must be between 1 and 64 characters
+  DatalakeAdminUserPassword:
+    Type: String
+    Description: IAM user console password for data lake admin.
+    NoEcho: 'true'
+    AllowedPattern: '[\u0009\u000A\u000D\u0020-\u00FF]+'
+    MinLength: '1'
+    MaxLength: '128'
+    ConstraintDescription: the password must be between 1 and 128 characters
+  DataAnalystUsUserName:
+    Type: String
+    Description: IAM user name to be created for data analyst for US marketplace.
+    Default: DataAnalystUS
+    AllowedPattern: '[\w+=,.@-]+'
+    MinLength: '1'
+    MaxLength: '64'
+    ConstraintDescription: the user name must be between 1 and 64 characters
+  DataAnalystUsUserPassword:
+    Type: String
+    Description: IAM user console password for data analyst US.
+    NoEcho: 'true'
+    AllowedPattern: '[\u0009\u000A\u000D\u0020-\u00FF]+'
+    MinLength: '1'
+    MaxLength: '128'
+    ConstraintDescription: the password must be between 1 and 128 characters
+  DataAnalystMxUserName:
+    Type: String
+    Description: IAM user name to be created for data analyst for MX marketplace.
+    Default: DataAnalystMX
+    AllowedPattern: '[\w+=,.@-]+'
+    MinLength: '1'
+    MaxLength: '64'
+    ConstraintDescription: the user name must be between 1 and 64 characters
+  DataAnalystMxUserPassword:
+    Type: String
+    Description: IAM user console password for data analyst MX.
+    NoEcho: 'true'
+    AllowedPattern: '[\u0009\u000A\u000D\u0020-\u00FF]+'
+    MinLength: '1'
+    MaxLength: '128'
+    ConstraintDescription: the password must be between 1 and 128 characters
+  DataLakeBucketName:
+    Type: String
+    Description: S3 bucket name to be created to store data for data lake. The name needs to be globally unique.
+  DatabaseName:
+    Type: String
+    Description: Lake Formation database name to be created to store a table.
+    Default: lakeformation_tutorial_row_security
+  TableName:
+    Type: String
+    Description: Lake Formation table name to be created to point Synthetic Reviews Dataset.
+    Default: reviews
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: IAM User Configuration
+        Parameters:
+          - DatalakeAdminUserName
+          - DatalakeAdminUserPassword
+          - DataAnalystUsUserName
+          - DataAnalystUsUserPassword
+          - DataAnalystMxUserName
+          - DataAnalystMxUserPassword
+      -
+        Label:
+          default: Data Lake Configuration
+        Parameters:
+          - DataLakeBucketName
+          - DatabaseName
+          - TableName
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${DataLakeBucketName}
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  S3CustomResource:
+    DependsOn: S3Bucket
+    Type: Custom::S3CustomResource
+    Properties:
+      ServiceToken: !GetAtt AWSLambdaFunction.Arn
+      the_data_bucket: !Sub ${DataLakeBucketName}
+      the_data_key_prefix: 'data/product_category=Jewelry/'
+      the_origin_data_bucket: 'aws-bigdata-blog'
+      the_origin_data_key_prefix: 'generated_synthetic_reviews/data/product_category=Jewelry/'
+
+  AWSLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "Custom resource for S3"
+      FunctionName: !Sub 'lambda-custom-resource-${AWS::StackName}'
+      Handler: index.handler
+      Role: !GetAtt AWSLambdaExecutionRole.Arn
+      Timeout: 360
+      Runtime: python3.12
+      Code:
+        ZipFile: !Sub
+          - |
+            import boto3
+            from botocore.client import ClientError
+            import cfnresponse
+            def handler(event, context):
+                # Init
+                the_event = event['RequestType'].strip()
+                print("The event is: ", the_event)
+                response_data = {}
+                s3 = boto3.client('s3')
+                # Retrieve parameters
+                the_data_bucket = event['ResourceProperties']['the_data_bucket'].strip()
+                the_data_key_prefix = event['ResourceProperties']['the_data_key_prefix'].strip()
+                the_origin_data_bucket = event['ResourceProperties']['the_origin_data_bucket'].strip()
+                the_origin_data_key_prefix = event['ResourceProperties']['the_origin_data_key_prefix'].strip()
+                try:
+                    if the_event in ('Create', 'Update'):
+                        try:
+                          response= s3.list_objects_v2(Bucket=the_origin_data_bucket, Prefix=the_origin_data_key_prefix, Delimiter="/")
+                          for source in response["Contents"]:
+                            raw_name = source["Key"].split("/")[-1]
+                            copy_source = {'Bucket': the_origin_data_bucket, 'Key': source["Key"]}
+                            s3.copy_object(CopySource=copy_source, Bucket=the_data_bucket, Key=the_data_key_prefix + raw_name)
+                        except ClientError as ce:
+                            print("Failed to copy the source code file.")
+                            print(ce)
+                            print(ce.response['ResponseMetadata'])
+                    elif the_event == 'Delete':
+                        try:
+                          response= s3.list_objects_v2(Bucket=the_data_bucket, Prefix='data/')
+                          for source in response["Contents"]:
+                            s3.delete_object(Bucket=the_data_bucket,Key=source["Key"])
+                        except ClientError as ce:
+                            print(f"Failed to delete the files: {ce}")
+
+                    # Everything OK... send the signal back
+                    print("Completed.")
+                    cfnresponse.send(event,
+                                      context,
+                                      cfnresponse.SUCCESS,
+                                      response_data)
+                except Exception as e:
+                    print("Failed...")
+                    print(str(e))
+                    response_data['Data'] = str(e)
+                    cfnresponse.send(event,
+                                      context,
+                                      cfnresponse.FAILED,
+                                      response_data)
+          - Region: !Ref AWS::Region
+
+  AWSLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub AWSLambdaExecutionRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Path: "/"
+      Policies:
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+          PolicyName: !Sub AWSLambda-CW-${AWS::StackName}
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - s3:GetObject
+                Resource: !Sub arn:aws:s3:::aws-bigdata-blog/generated_synthetic_reviews/*
+              -
+                Effect: "Allow"
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:aws:s3:::${DataLakeBucketName}/*
+              -
+                Effect: "Allow"
+                Action:
+                  - s3:CreateBucket
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${DataLakeBucketName}
+                  - !Sub arn:aws:s3:::aws-bigdata-blog
+          PolicyName: !Sub AWSLambda-S3-${AWS::StackName}
+
+  LFRegisterLocationServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lakeformation.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      RoleName: !Sub LFRegisterLocationServiceRole-${AWS::StackName}
+      Path: /
+
+  S3DataLakePolicy:
+    DependsOn: LFRegisterLocationServiceRole
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub S3DataLakePolicy-${AWS::StackName}
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Sub arn:aws:s3:::${DataLakeBucketName}/*
+          -
+            Effect: "Allow"
+            Action:
+              - s3:ListBucket
+            Resource: !Sub arn:aws:s3:::${DataLakeBucketName}
+      Roles: 
+        - !Ref LFRegisterLocationServiceRole
+
+  LFQueryPolicy:
+    DependsOn:
+      - DatalakeAdminUser
+      - DataAnalystUsUser
+      - DataAnalystMxUser
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub LFQueryPolicy-${AWS::StackName}
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action:
+              - lakeformation:StartTransaction
+              - lakeformation:CommitTransaction
+              - lakeformation:CancelTransaction
+              - lakeformation:ExtendTransaction
+              - lakeformation:PlanQuery
+              - lakeformation:StartQueryPlanning
+              - lakeformation:GetTableObjects
+              - lakeformation:GetQueryState
+              - lakeformation:GetWorkUnits
+              - lakeformation:Execute
+              - lakeformation:GetWorkUnitResults
+            Resource: "*"
+          -
+            Effect: "Allow"
+            Action:
+              - execute-api:Invoke
+            Resource: arn:aws:execute-api:*:*:*/*/POST/reportStatus
+      Users:
+        - !Ref DataAnalystUsUser
+        - !Ref DataAnalystMxUser
+
+  LFLocationPolicy:
+    DependsOn: LFRegisterLocationServiceRole
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub LFLocationPolicy-${AWS::StackName}
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action:
+              - execute-api:Invoke
+            Resource: arn:aws:execute-api:*:*:*/*/POST/reportStatus
+          -
+            Effect: "Allow"
+            Action:
+              - lakeformation:StartTransaction
+              - lakeformation:CommitTransaction
+              - lakeformation:CancelTransaction
+              - lakeformation:GetTableObjects
+              - lakeformation:UpdateTableObjects
+            Resource: "*"
+          -
+            Effect: "Allow"
+            Action:
+              - glue:GetDatabase
+              - glue:GetDatabases
+              - glue:GetTableVersions
+              - glue:GetPartitions
+              - glue:GetTable
+              - glue:GetTables
+              - glue:UpdateTable
+            Resource: "*"
+      Roles:
+        - !Ref LFRegisterLocationServiceRole
+
+  DatalakeAdminUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref DatalakeAdminUserName
+      LoginProfile:
+        Password: !Ref DatalakeAdminUserPassword
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLakeFormationDataAdmin
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+        - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+
+  DataAnalystUsUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref DataAnalystUsUserName
+      LoginProfile:
+        Password: !Ref DataAnalystUsUserPassword
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+
+  DataAnalystMxUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref DataAnalystMxUserName
+      LoginProfile:
+        Password: !Ref DataAnalystMxUserPassword
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+
+  LFDataLakeSettings:
+    Type: AWS::LakeFormation::DataLakeSettings
+    Properties:
+      Admins:
+        - DataLakePrincipalIdentifier: !GetAtt 'DatalakeAdminUser.Arn'
+
+  LFDataLakeLocation:
+    Type: AWS::LakeFormation::Resource
+    Properties:
+      ResourceArn: !Sub arn:aws:s3:::${DataLakeBucketName}
+      RoleArn: !GetAtt 'LFRegisterLocationServiceRole.Arn'
+      UseServiceLinkedRole: false
+
+  LFDatabasePermissionForLFRegisterLocationServiceRole:
+    DependsOn: LakeFormationDatabase
+    Type: AWS::LakeFormation::Permissions
+    Properties:
+      DataLakePrincipal:
+        DataLakePrincipalIdentifier: !GetAtt 'LFRegisterLocationServiceRole.Arn'
+      Permissions:
+        - ALTER
+        - CREATE_TABLE
+        - DESCRIBE
+        - DROP
+      Resource:
+        DatabaseResource:
+          Name: !Ref DatabaseName
+
+  LFDatabasePermissionForDataLakeAdminUser:
+    DependsOn: LakeFormationDatabase
+    Type: AWS::LakeFormation::Permissions
+    Properties:
+      DataLakePrincipal:
+        DataLakePrincipalIdentifier: !GetAtt 'DatalakeAdminUser.Arn'
+      Permissions:
+        - ALL
+        - ALTER
+        - CREATE_TABLE
+        - DESCRIBE
+        - DROP
+      PermissionsWithGrantOption:
+        - ALL
+        - ALTER
+        - CREATE_TABLE
+        - DESCRIBE
+        - DROP
+      Resource:
+        DatabaseResource:
+          Name: !Ref DatabaseName
+
+  LFDatabasePermissionForDataAnalystUsUser:
+    DependsOn: LakeFormationDatabase
+    Type: AWS::LakeFormation::Permissions
+    Properties:
+      DataLakePrincipal:
+        DataLakePrincipalIdentifier: !GetAtt 'DataAnalystUsUser.Arn'
+      Permissions:
+        - ALTER
+        - CREATE_TABLE
+        - DESCRIBE
+        - DROP
+      Resource:
+        DatabaseResource:
+          Name: !Ref DatabaseName
+
+  LFDatabasePermissionForDataAnalystMxUser:
+    DependsOn: LakeFormationDatabase
+    Type: AWS::LakeFormation::Permissions
+    Properties:
+      DataLakePrincipal:
+        DataLakePrincipalIdentifier: !GetAtt 'DataAnalystMxUser.Arn'
+      Permissions:
+        - ALTER
+        - CREATE_TABLE
+        - DESCRIBE
+        - DROP
+      Resource:
+        DatabaseResource:
+          Name: !Ref DatabaseName
+
+  LakeFormationDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput: 
+        Name: !Ref DatabaseName
+
+  LFTablePermissionForDatalakeAdmin:
+    DependsOn: LakeFormationTable
+    Type: AWS::LakeFormation::Permissions
+    Properties:
+      DataLakePrincipal:
+        DataLakePrincipalIdentifier: !GetAtt 'DatalakeAdminUser.Arn'
+      Permissions:
+        - SELECT
+        - INSERT
+        - DELETE
+        - DESCRIBE
+        - ALTER
+        - DROP
+      Resource:
+        TableResource:
+          DatabaseName: !Ref DatabaseName
+          Name: !Ref TableName
+
+  LakeFormationTable:
+    DependsOn: LakeFormationDatabase
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: !Ref TableName
+        TableType: EXTERNAL_TABLE
+        Parameters: {
+          "classification": "parquet"
+        }
+        StorageDescriptor:
+          Location: !Sub 's3://${DataLakeBucketName}/data/'
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          Columns:
+            - Name: marketplace
+              Type: string
+            - Name: customer_id
+              Type: string
+            - Name: review_id
+              Type: string
+            - Name: product_id
+              Type: string
+            - Name: product_title
+              Type: string
+            - Name: star_rating
+              Type: int
+            - Name: helpful_votes
+              Type: int
+            - Name: total_votes
+              Type: int
+            - Name: review_headline
+              Type: string
+            - Name: review_body
+              Type: string
+            - Name: review_date
+              Type: timestamp
+            - Name: review_year
+              Type: int
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+            Parameters: {}
+          Parameters:
+            serialization.format: 1
+        PartitionKeys:
+          - Name: product_category
+            Type: string
+
+  LakeFormationTablePartitionJewelry:
+    DependsOn: LakeFormationTable
+    Type: AWS::Glue::Partition
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref DatabaseName
+      TableName: !Ref TableName
+      PartitionInput:
+        Parameters: {}
+        Values:
+          - Jewelry
+        StorageDescriptor:
+          Location: !Sub 's3://${DataLakeBucketName}/data/product_category=Jewelry/'
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          Columns:
+            - Name: marketplace
+              Type: string
+            - Name: customer_id
+              Type: string
+            - Name: review_id
+              Type: string
+            - Name: product_id
+              Type: string
+            - Name: product_title
+              Type: string
+            - Name: star_rating
+              Type: int
+            - Name: helpful_votes
+              Type: int
+            - Name: total_votes
+              Type: int
+            - Name: review_headline
+              Type: string
+            - Name: review_body
+              Type: string
+            - Name: review_date
+              Type: timestamp
+            - Name: review_year
+              Type: int
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+            Parameters: {}
+          Parameters:
+            serialization.format: 1
+
+
