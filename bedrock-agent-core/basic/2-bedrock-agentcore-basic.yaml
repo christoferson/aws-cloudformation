@@ -5,6 +5,13 @@ Description: "Basic AgentCore deployment - Simple agent runtime without memory, 
 # PARAMETERS SECTION
 # ============================================================================
 Parameters:
+
+  # CodeCommit Configuration
+  CodeCommitRepositoryName:
+    Type: String
+    Default: "basic-agent-code"
+    Description: "Name of the CodeCommit repository"
+
   # Agent Configuration
   AgentName:
     Type: String
@@ -64,6 +71,20 @@ Metadata:
 # RESOURCES SECTION
 # ============================================================================
 Resources:
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-${CodeCommitRepositoryName}"
+      RepositoryDescription: !Sub "Source code for ${AWS::StackName} basic agent"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-codecommit-repository"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: CodeCommit
+
   # ========================================================================
   # ECR MODULE - Container Registry
   # ========================================================================
