@@ -1,0 +1,232 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AgentCore Runtime - Deploy agent using container image from ECR"
+
+# ============================================================================
+# PARAMETERS SECTION
+# ============================================================================
+Parameters:
+
+  # Agent Configuration
+  AgentName:
+    Type: String
+    Default: "BasicAgent"
+    Description: "Name for the agent runtime"
+    AllowedPattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+    ConstraintDescription: "Must start with a letter, max 48 characters, alphanumeric and underscores only"
+
+  # Container Image Configuration
+  ContainerImageUri:
+    Type: String
+    Description: "Full container image URI (e.g., account.dkr.ecr.region.amazonaws.com/repo:tag or repo@sha256:digest)"
+    AllowedPattern: "^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com\\/[a-zA-Z0-9-_]+[:|@].*$"
+    ConstraintDescription: "Must be a valid ECR image URI with tag or digest"
+
+  # Network Configuration
+  NetworkMode:
+    Type: String
+    Default: "PUBLIC"
+    Description: "Network mode for AgentCore runtime"
+    AllowedValues:
+      - PUBLIC
+      - PRIVATE
+
+# ============================================================================
+# METADATA SECTION
+# ============================================================================
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Agent Configuration"
+        Parameters:
+          - AgentName
+          - NetworkMode
+      - Label:
+          default: "Container Image Configuration"
+        Parameters:
+          - ContainerImageUri
+    ParameterLabels:
+      AgentName:
+        default: "Agent Name"
+      NetworkMode:
+        default: "Network Mode"
+      ContainerImageUri:
+        default: "Container Image URI"
+
+# ============================================================================
+# RESOURCES SECTION
+# ============================================================================
+Resources:
+
+  # ========================================================================
+  # IAM MODULE - Agent Execution Role
+  # ========================================================================
+
+  AgentExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-agent-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AssumeRolePolicy
+            Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
+      Policies:
+        - PolicyName: AgentCoreExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ECRImageAccess
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                Resource: !Sub 
+                  - "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${RepositoryName}"
+                  - RepositoryName: !Select [1, !Split ["/", !Select [0, !Split [":", !Select [0, !Split ["@", !Ref ContainerImageUri]]]]]]
+              - Sid: ECRTokenAccess
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogStreams
+                  - logs:CreateLogGroup
+                  - logs:DescribeLogGroups
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Sid: XRayTracing
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Resource: "*"
+                Action: cloudwatch:PutMetricData
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+              - Sid: GetAgentAccessToken
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                Resource:
+                  - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default"
+                  - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/*"
+              - Sid: BedrockModelInvocation
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-agent-execution-role"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: IAM
+
+  # ========================================================================
+  # AGENTCORE MODULE - Runtime
+  # ========================================================================
+
+  AgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Sub
+        - "${StackNameUnderscore}_${AgentName}"
+        - StackNameUnderscore: !Join ["_", !Split ["-", !Ref "AWS::StackName"]]
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref ContainerImageUri
+      RoleArn: !GetAtt AgentExecutionRole.Arn
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+      Description: !Sub "AgentCore runtime for ${AWS::StackName} - ${AgentName}"
+      Tags:
+        AgentName: !Ref AgentName
+        StackName: !Ref AWS::StackName
+        Module: AgentCore
+
+# ============================================================================
+# OUTPUTS SECTION
+# ============================================================================
+Outputs:
+
+  # Agent Runtime Outputs
+  AgentRuntimeId:
+    Description: "ID of the created agent runtime"
+    Value: !GetAtt AgentRuntime.AgentRuntimeId
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentRuntimeId"
+
+  AgentRuntimeArn:
+    Description: "ARN of the agent runtime"
+    Value: !GetAtt AgentRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentRuntimeArn"
+
+  AgentRuntimeVersion:
+    Description: "Version of the agent runtime"
+    Value: !GetAtt AgentRuntime.AgentRuntimeVersion
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentRuntimeVersion"
+
+  AgentRuntimeStatus:
+    Description: "Status of the agent runtime"
+    Value: !GetAtt AgentRuntime.Status
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentRuntimeStatus"
+
+  AgentExecutionRoleArn:
+    Description: "ARN of the agent execution role"
+    Value: !GetAtt AgentExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentExecutionRoleArn"
+
+  # Container Image Information
+  ContainerImageUsed:
+    Description: "Container image URI used for this deployment"
+    Value: !Ref ContainerImageUri
+
+  # Usage Information
+  InvokeAgentCommand:
+    Description: "AWS CLI command to invoke the agent"
+    Value: !Sub |
+      aws bedrock-agentcore invoke-agent \
+        --agent-runtime-id ${AgentRuntime.AgentRuntimeId} \
+        --input-text "Hello, how are you?" \
+        --region ${AWS::Region}
+
+  UpdateAgentCommand:
+    Description: "Command to update agent with new image"
+    Value: !Sub |
+      aws cloudformation update-stack \
+        --stack-name ${AWS::StackName} \
+        --use-previous-template \
+        --parameters \
+          ParameterKey=AgentName,UsePreviousValue=true \
+          ParameterKey=NetworkMode,UsePreviousValue=true \
+          ParameterKey=ContainerImageUri,ParameterValue=<NEW_IMAGE_URI> \
+        --capabilities CAPABILITY_NAMED_IAM
