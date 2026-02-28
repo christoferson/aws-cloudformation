@@ -1,0 +1,705 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CI/CD Infrastructure for AgentCore - CodeCommit, Container Registry, CodeBuild, and EventBridge automation"
+
+# ============================================================================
+# PARAMETERS SECTION
+# ============================================================================
+Parameters:
+
+  # CodeCommit Configuration
+  CodeRepositoryName:
+    Type: String
+    Default: "basic-agent-code"
+    Description: "Name of the CodeCommit repository"
+
+  # Container Configuration
+  ContainerRepositoryName:
+    Type: String
+    Default: "basic-agent-container"
+    Description: "Name of the container repository"
+
+  # CodeCommit Branch to Monitor
+  CodeBranchName:
+    Type: String
+    Default: "main"
+    Description: "Branch name to monitor for changes"
+
+# ============================================================================
+# METADATA SECTION
+# ============================================================================
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Source Control Configuration"
+        Parameters:
+          - CodeRepositoryName
+          - CodeBranchName
+      - Label:
+          default: "Container Configuration"
+        Parameters:
+          - ContainerRepositoryName
+    ParameterLabels:
+      CodeRepositoryName:
+        default: "Code Repository Name"
+      CodeBranchName:
+        default: "Code Branch Name"
+      ContainerRepositoryName:
+        default: "Container Repository Name"
+
+# ============================================================================
+# RESOURCES SECTION
+# ============================================================================
+Resources:
+
+  # ========================================================================
+  # CODECOMMIT MODULE - Source Control
+  # ========================================================================
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-${CodeRepositoryName}"
+      RepositoryDescription: !Sub "Source code for ${AWS::StackName} basic agent"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-codecommit-repository"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: CodeCommit
+
+  # ========================================================================
+  # CONTAINER REGISTRY MODULE - ECR
+  # ========================================================================
+
+  ContainerRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-${ContainerRepositoryName}"
+      ImageTagMutability: MUTABLE
+      EmptyOnDelete: false
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      RepositoryPolicyText:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowPullFromAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchCheckLayerAvailability
+          - Sid: AllowPushFromCodeBuild
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:PutImage
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-container-repository"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: ContainerRegistry
+
+  # ========================================================================
+  # IAM MODULE - Security and Permissions
+  # ========================================================================
+
+  # CodeBuild Service Role
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+              - Sid: ContainerRegistryAccess
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:ListImages
+                Resource: !GetAtt ContainerRepository.Arn
+              - Sid: ContainerRegistryTokenAccess
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: CodeCommitAccess
+                Effect: Allow
+                Action:
+                  - codecommit:GitPull
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                Resource: !GetAtt CodeCommitRepository.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-codebuild-role"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: IAM
+
+  # EventBridge Role for triggering CodeBuild
+  EventBridgeCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-eventbridge-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartCodeBuildPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                Resource: !GetAtt AgentImageBuildProject.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-eventbridge-role"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: IAM
+
+  # Lambda Custom Resource Role
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-custom-resource-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CustomResourcePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitAccess
+                Effect: Allow
+                Action:
+                  - codecommit:GetRepository
+                  - codecommit:GetBranch
+                  - codecommit:GetFile
+                  - codecommit:PutFile
+                  - codecommit:CreateCommit
+                Resource: !GetAtt CodeCommitRepository.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-custom-resource-role"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: IAM
+
+  # ========================================================================
+  # LAMBDA MODULE - Custom Resources
+  # ========================================================================
+
+  InitializeCodeCommitFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-init-codecommit"
+      Description: "Initializes CodeCommit repository with sample files"
+      Handler: index.handler
+      Role: !GetAtt CustomResourceRole.Arn
+      Runtime: python3.9
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info('Received event: %s', json.dumps(event))
+
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  repository_name = event['ResourceProperties']['RepositoryName']
+                  branch_name = event['ResourceProperties']['BranchName']
+
+                  codecommit = boto3.client('codecommit')
+
+                  # Create initial files
+                  requirements_txt = """strands-agents
+          boto3
+          bedrock-agentcore
+          """
+
+                  my_agent_py = """from strands import Agent
+          import os
+          from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
+          app = BedrockAgentCoreApp()
+
+          def create_basic_agent() -> Agent:
+              \"\"\"Create a basic agent with simple functionality\"\"\"
+              system_prompt = \"\"\"You are a helpful assistant. Answer questions clearly and concisely.\"\"\"
+
+              return Agent(
+                  system_prompt=system_prompt,
+                  name="BasicAgent"
+              )
+
+          @app.entrypoint
+          async def invoke(payload=None):
+              \"\"\"Main entrypoint for the agent\"\"\"
+              try:
+                  # Get the query from payload
+                  query = payload.get("prompt", "Hello, how are you?") if payload else "Hello, how are you?"
+
+                  # Create and use the agent
+                  agent = create_basic_agent()
+                  response = agent(query)
+
+                  return {
+                      "status": "success",
+                      "response": response.message['content'][0]['text']
+                  }
+
+              except Exception as e:
+                  return {
+                      "status": "error",
+                      "error": str(e)
+                  }
+
+          if __name__ == "__main__":
+              app.run()
+          """
+
+                  dockerfile = """FROM public.ecr.aws/docker/library/python:3.11-slim
+          WORKDIR /app
+
+          COPY requirements.txt requirements.txt
+          RUN pip install -r requirements.txt
+          RUN pip install aws-opentelemetry-distro>=0.10.1
+
+          ENV AWS_REGION=us-west-2
+          ENV AWS_DEFAULT_REGION=us-west-2
+
+          # Create non-root user
+          RUN useradd -m -u 1000 bedrock_agentcore
+          USER bedrock_agentcore
+
+          EXPOSE 8080
+          EXPOSE 8000
+
+          COPY . .
+
+          CMD ["opentelemetry-instrument", "python", "-m", "my_agent"]
+          """
+
+                  readme = """# Basic Agent
+
+          This repository contains the source code for a basic Bedrock AgentCore agent.
+
+          ## Files
+
+          - `my_agent.py`: Main agent code
+          - `requirements.txt`: Python dependencies
+          - `Dockerfile`: Container configuration
+          - `buildspec.yml`: CodeBuild build specification
+
+          ## Deployment
+
+          Changes to this repository will automatically trigger a CodeBuild build and push a new image to the container registry.
+
+          ## Image Tags
+
+          Each build creates an image with:
+          - Tag: `latest` (always points to most recent build)
+          - Tag: `<commit-id>` (specific version - first 7 characters of commit hash)
+          - Digest: SHA256 hash (immutable reference)
+
+          ## Manual Build
+
+          To manually trigger a build:
+          ```bash
+          aws codebuild start-build --project-name <project-name>
+          ```
+
+          ## Getting Image References
+
+          To get the latest image digest:
+          ```bash
+          aws ecr describe-images \\
+            --repository-name <repository-name> \\
+            --image-ids imageTag=latest \\
+            --query 'imageDetails[0].imageDigest' \\
+            --output text
+          ```
+          """
+
+                  buildspec = """version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+                - echo Checking repository contents...
+                - ls -la
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                - echo "Commit hash is $COMMIT_HASH"
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building the Docker image for basic agent ARM64...
+                - docker build -t $IMAGE_REPO_NAME:latest .
+                - docker tag $IMAGE_REPO_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+                - docker tag $IMAGE_REPO_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker images...
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH
+                - echo Getting image digest...
+                - IMAGE_DIGEST=$(aws ecr describe-images --repository-name $IMAGE_REPO_NAME --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text)
+                - echo "Image digest is $IMAGE_DIGEST"
+                - echo "Full image URI with digest - $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME@$IMAGE_DIGEST"
+                - echo ARM64 Docker images pushed successfully
+                - echo "IMAGE_TAG=latest" >> build_info.txt
+                - echo "COMMIT_HASH=$COMMIT_HASH" >> build_info.txt
+                - echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> build_info.txt
+                - echo "IMAGE_URI_LATEST=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest" >> build_info.txt
+                - echo "IMAGE_URI_COMMIT=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH" >> build_info.txt
+                - echo "IMAGE_URI_DIGEST=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME@$IMAGE_DIGEST" >> build_info.txt
+          artifacts:
+            files:
+              - build_info.txt
+          """
+
+                  # Create commit with all files
+                  try:
+                      response = codecommit.create_commit(
+                          repositoryName=repository_name,
+                          branchName=branch_name,
+                          commitMessage='Initial commit with agent files',
+                          putFiles=[
+                              {
+                                  'filePath': 'requirements.txt',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': requirements_txt.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'my_agent.py',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': my_agent_py.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'Dockerfile',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': dockerfile.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'README.md',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': readme.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'buildspec.yml',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': buildspec.encode('utf-8')
+                              }
+                          ]
+                      )
+                      logger.info(f"Successfully created initial commit: {response['commitId']}")
+                  except codecommit.exceptions.BranchDoesNotExistException:
+                      logger.info(f"Branch {branch_name} doesn't exist, creating it with initial commit")
+                      # If branch doesn't exist, create it with the initial commit
+                      response = codecommit.create_commit(
+                          repositoryName=repository_name,
+                          branchName=branch_name,
+                          commitMessage='Initial commit with agent files',
+                          putFiles=[
+                              {
+                                  'filePath': 'requirements.txt',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': requirements_txt.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'my_agent.py',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': my_agent_py.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'Dockerfile',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': dockerfile.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'README.md',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': readme.encode('utf-8')
+                              },
+                              {
+                                  'filePath': 'buildspec.yml',
+                                  'fileMode': 'NORMAL',
+                                  'fileContent': buildspec.encode('utf-8')
+                              }
+                          ]
+                      )
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'CommitId': response['commitId']
+                  })
+
+              except Exception as e:
+                  logger.error('Error: %s', str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {
+                      'Error': str(e)
+                  })
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-init-codecommit"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: Lambda
+
+  # ========================================================================
+  # CODEBUILD MODULE - Container Image Building
+  # ========================================================================
+
+  AgentImageBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-agent-build"
+      Description: !Sub "Build agent Docker image for ${AWS::StackName}"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Value: !Ref ContainerRepository
+          - Name: STACK_NAME
+            Value: !Ref AWS::StackName
+      Source:
+        Type: CODECOMMIT
+        Location: !GetAtt CodeCommitRepository.CloneUrlHttp
+        BuildSpec: buildspec.yml
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-agent-build"
+        - Key: StackName
+          Value: !Ref AWS::StackName
+        - Key: Module
+          Value: CodeBuild
+
+  # ========================================================================
+  # EVENTBRIDGE MODULE - Automated Build Triggers
+  # ========================================================================
+
+  CodeCommitEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${AWS::StackName}-codecommit-trigger"
+      Description: !Sub "Trigger CodeBuild when ${CodeBranchName} branch is updated in CodeCommit"
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt CodeCommitRepository.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref CodeBranchName
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AgentImageBuildProject.Arn
+          RoleArn: !GetAtt EventBridgeCodeBuildRole.Arn
+          Id: CodeBuildTarget
+
+  # ========================================================================
+  # CUSTOM RESOURCES - Initialization
+  # ========================================================================
+
+  # Initialize CodeCommit with sample files
+  InitializeCodeCommit:
+    Type: Custom::InitializeCodeCommit
+    DependsOn:
+      - CodeCommitRepository
+      - InitializeCodeCommitFunction
+    Properties:
+      ServiceToken: !GetAtt InitializeCodeCommitFunction.Arn
+      RepositoryName: !Sub "${AWS::StackName}-${CodeRepositoryName}"
+      BranchName: !Ref CodeBranchName
+
+# ============================================================================
+# OUTPUTS SECTION
+# ============================================================================
+Outputs:
+
+  # Container Registry Outputs
+  ContainerRepositoryUri:
+    Description: "URI of the container repository (use with :latest, :commit-hash, or @sha256:digest)"
+    Value: !GetAtt ContainerRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-ContainerRepositoryUri"
+
+  ContainerRepositoryArn:
+    Description: "ARN of the container repository"
+    Value: !GetAtt ContainerRepository.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ContainerRepositoryArn"
+
+  ContainerRepositoryName:
+    Description: "Name of the container repository"
+    Value: !Ref ContainerRepository
+    Export:
+      Name: !Sub "${AWS::StackName}-ContainerRepositoryName"
+
+  # CodeCommit Outputs
+  CodeRepositoryCloneUrlHttp:
+    Description: "HTTP clone URL for the CodeCommit repository"
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeRepositoryCloneUrlHttp"
+
+  CodeRepositoryCloneUrlSsh:
+    Description: "SSH clone URL for the CodeCommit repository"
+    Value: !GetAtt CodeCommitRepository.CloneUrlSsh
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeRepositoryCloneUrlSsh"
+
+  CodeRepositoryName:
+    Description: "Name of the CodeCommit repository"
+    Value: !Sub "${AWS::StackName}-${CodeRepositoryName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeRepositoryName"
+
+  CodeRepositoryArn:
+    Description: "ARN of the CodeCommit repository"
+    Value: !GetAtt CodeCommitRepository.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeRepositoryArn"
+
+  # CodeBuild Outputs
+  CodeBuildProjectName:
+    Description: "Name of the CodeBuild project"
+    Value: !Ref AgentImageBuildProject
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuildProjectName"
+
+  CodeBuildProjectArn:
+    Description: "ARN of the CodeBuild project"
+    Value: !GetAtt AgentImageBuildProject.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuildProjectArn"
+
+  # EventBridge Outputs
+  EventBridgeRuleName:
+    Description: "Name of the EventBridge rule for automated builds"
+    Value: !Ref CodeCommitEventRule
+    Export:
+      Name: !Sub "${AWS::StackName}-EventBridgeRuleName"
+
+  # Usage Instructions
+  ManualBuildCommand:
+    Description: "Command to manually trigger a build"
+    Value: !Sub "aws codebuild start-build --project-name ${AgentImageBuildProject}"
+
+  GetImageDigestCommand:
+    Description: "Command to get the latest image digest"
+    Value: !Sub "aws ecr describe-images --repository-name ${ContainerRepository} --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text"
+
+  UsageInstructions:
+    Description: "How to use the container repository in Template 2"
+    Value: !Sub |
+      1. Manually trigger first build: aws codebuild start-build --project-name ${AgentImageBuildProject}
+      2. Wait for build to complete (check in CodeBuild console)
+      3. Use one of these image references in Template 2:
+         - Tag-based (mutable): ${ContainerRepository.RepositoryUri}:latest
+         - Tag-based (commit): ${ContainerRepository.RepositoryUri}:<commit-hash>
+         - Digest-based (immutable): ${ContainerRepository.RepositoryUri}@sha256:<digest>
+      4. Get digest: aws ecr describe-images --repository-name ${ContainerRepository} --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text
