@@ -1,5 +1,125 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Route53 + Application Load Balancer + Lambda
+Description: Application Load Balancer - Path-Based Routing to Lambda Functions
+
+# ================================================================================================
+# ALB PATH-BASED ROUTING STUDY GUIDE
+# ================================================================================================
+#
+# OVERVIEW:
+# This template demonstrates path-based routing using Application Load Balancer (ALB).
+# Traffic is routed to different Lambda functions based on the URL path.
+#
+# ARCHITECTURE:
+#   Internet → ALB (Port 80) → Listener → Rules → Target Groups → Lambda Functions
+#                                  ↓
+#                           /v1/lambda1 → Lambda 1
+#                           /v1/lambda2 → Lambda 2
+#                           Other paths → 404 Fixed Response
+#
+# KEY CONCEPTS:
+#
+# 1. Application Load Balancer (ALB)
+#    - Operates at Layer 7 (HTTP/HTTPS)
+#    - Content-based routing (path, host, headers, query strings)
+#    - Supports Lambda, EC2 instances, IP addresses, and containers as targets
+#
+# 2. Listeners
+#    - Process that checks for connection requests on specified protocol:port
+#    - Each ALB needs at least one listener (this template: HTTP on port 80)
+#    - Evaluates rules in priority order and executes default action if no match
+#
+# 3. Listener Rules
+#    - Define routing logic based on conditions
+#    - Priority: Lower number = evaluated first (Priority 1 before Priority 2)
+#    - Conditions: path-pattern, host-header, http-header, query-string, etc.
+#    - Actions: forward, redirect, fixed-response, authenticate-cognito/oidc
+#
+# 4. Path-Based Routing
+#    - Routes traffic based on URL path pattern
+#    - Wildcards supported: /api/*, /images/*.jpg
+#    - Use cases: Microservices, API versioning, content type routing
+#
+# 5. Target Groups
+#    - Logical grouping of targets (Lambda, instances, IPs)
+#    - One protocol:port per target group
+#    - Performs health checks on targets
+#    - Target Types:
+#      * lambda: Lambda function ARN (used in this template)
+#      * instance: EC2 instance IDs
+#      * ip: IP addresses (VPC or on-premises)
+#
+# 6. Lambda as Target
+#    - ALB invokes Lambda synchronously
+#    - Must grant elasticloadbalancing.amazonaws.com permission via AWS::Lambda::Permission
+#    - Lambda receives ALB-specific event format with request details
+#    - Response must include: statusCode, statusDescription, headers, body
+#    - Use AvailabilityZone: "all" when registering Lambda
+#
+# 7. Multi-Value Headers
+#    - Enabled via TargetGroupAttributes: lambda.multi_value_headers.enabled
+#    - Allows Lambda to return multiple values for same header name
+#    - Example: Set-Cookie with multiple values
+#
+# ROUTING LOGIC:
+#   Request: http://alb-domain/v1/lambda1
+#     → ListenerRule1 (Priority 1, path-pattern: /v1/lambda1)
+#     → TargetGroup1 → Lambda Function 1
+#
+#   Request: http://alb-domain/v1/lambda2
+#     → ListenerRule2 (Priority 2, path-pattern: /v1/lambda2)
+#     → TargetGroup2 → Lambda Function 2
+#
+#   Request: http://alb-domain/other
+#     → No rule matches
+#     → Default action: 404 Fixed Response
+#
+# SECURITY:
+#   - Security Group: Allows HTTP (port 80) from 0.0.0.0/0
+#   - Lambda Permissions: elasticloadbalancing.amazonaws.com can invoke
+#   - Production: Use HTTPS (port 443) with ACM certificate
+#
+# PREREQUISITES:
+#   - VPC with at least 2 public subnets in different Availability Zones
+#   - Internet Gateway attached to VPC
+#   - Route table for public subnets
+#
+# TESTING:
+#   # Get ALB DNS name from stack outputs
+#   ALB_DNS=$(aws cloudformation describe-stacks --stack-name alb-path-pattern \
+#     --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDomainName`].OutputValue' \
+#     --output text)
+#
+#   # Test Lambda 1
+#   curl http://$ALB_DNS/v1/lambda1
+#   # Expected: "Greetings Lambda 1: <timestamp>"
+#
+#   # Test Lambda 2
+#   curl http://$ALB_DNS/v1/lambda2
+#   # Expected: "Greetings Lambda 2: <timestamp>"
+#
+#   # Test 404 response
+#   curl http://$ALB_DNS/unknown
+#   # Expected: "Not Found." (404)
+#
+# COST:
+#   - ALB: ~$16-$23/month + LCU charges based on traffic
+#   - Lambda: First 1M requests free, then $0.20 per 1M requests
+#   - CloudWatch Logs: Minimal for low traffic
+#
+# COMMON ERRORS:
+#   1. "Target health check failed"
+#      - Lambda permission not granted (check AWS::Lambda::Permission)
+#      - Wrong SourceArn in permission
+#
+#   2. "No targets available"
+#      - TargetGroup created before LambdaPermission
+#      - Use DependsOn: LambdaPermission
+#
+#   3. "503 Service Unavailable"
+#      - All targets unhealthy
+#      - Check CloudWatch logs for Lambda errors
+#
+# ================================================================================================
 
 Metadata:
   "AWS::CloudFormation::Interface":
