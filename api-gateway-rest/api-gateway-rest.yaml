@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "API Gateway - REST - Non-Proxy Integration with Lambda Function"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Api Configuration"
+        Parameters:
+          - ApiGatewayName
+          - ResourceName
+      -
+        Label:
+          default: "Api Key & Usage Plan Configuration"
+        Parameters:
+          - UsagePlanName
+          - ApiKeyName
+
+Parameters:
+
+  ApiGatewayName:
+    Type: "String"
+    Default: "rest-non-proxy-lambda"
+    Description: "HTTP Api Gateway Name"
+
+  ResourceName:
+    Description: Resource Name
+    Type: String
+    Default: "greeting"
+
+  UsagePlanName:
+    Description: Usage Plan Name
+    Type: String
+    Default: "rest-non-proxy-lambda-usage-plan"
+
+  ApiKeyName:
+    Description: Api Key Name
+    Type: String
+    Default: "rest-non-proxy-lambda-api-key"
+
+Resources:
+
+# Lambda Resources
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "Lambda Service Role - REST"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Tags:
+        - Key: "Name"
+          Value: "lambda-service-role"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Greeting Lambda with Random Messages"
+      Runtime: nodejs18.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 3
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('Received event:', JSON.stringify(event, null, 2));
+
+              const name = event.name || "stranger";
+
+              // Random greetings array
+              const greetings = [
+                  `Hello ${name}! How wonderful to see you today!`,
+                  `Greetings ${name}! What a pleasure!`,
+                  `Welcome ${name}! Hope you're having a great day!`,
+                  `Good day ${name}! Delighted to meet you!`,
+                  `Hey there ${name}! Nice to have you here!`,
+                  `Salutations ${name}! You're looking fantastic!`
+              ];
+
+              // Select random greeting
+              const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+
+              const response = {
+                  message: randomGreeting,
+                  timestamp: new Date().toISOString(),
+                  name: name
+              };
+
+              return response;
+          };
+      TracingConfig:
+        Mode: "Active"
+      Tags:
+        - Key: "name"
+          Value: "lambda-greeting"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 1
+
+# API Gateway Resources
+
+  ApiGatewayRestApi:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name: !Sub "${ApiGatewayName}"
+      Description: !Sub "REST API ${ApiGatewayName} with Non-Proxy Integration"
+      DisableExecuteApiEndpoint: false
+      Tags:
+        - Key: "Environment"
+          Value: "dev"
+
+  # Request Validator
+  RequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      Name: "validate-query-params"
+      RestApiId: !Ref ApiGatewayRestApi
+      ValidateRequestBody: false
+      ValidateRequestParameters: true
+
+  # Request Model for validation
+  GreetingRequestModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ContentType: application/json
+      Name: GreetingRequest
+      Schema:
+        $schema: "http://json-schema.org/draft-04/schema#"
+        title: Greeting Request
+        type: object
+        properties:
+          name:
+            type: string
+            minLength: 1
+        required:
+          - name
+
+  # Response Model
+  GreetingResponseModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ContentType: application/json
+      Name: GreetingResponse
+      Schema:
+        $schema: "http://json-schema.org/draft-04/schema#"
+        title: Greeting Response
+        type: object
+        properties:
+          message:
+            type: string
+          timestamp:
+            type: string
+          name:
+            type: string
+
+  ApiGatewayResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: !Ref ResourceName
+
+  ApiGatewayMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayResource
+      ApiKeyRequired: True
+      HttpMethod: "GET"
+      AuthorizationType: "NONE"
+      RequestValidatorId: !Ref RequestValidator
+      RequestParameters:
+        method.request.querystring.name: true
+      Integration:
+        Type: "AWS"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}/invocations"
+        IntegrationHttpMethod: "POST"
+        PassthroughBehavior: NEVER
+        RequestTemplates:
+          application/json: |
+            {
+              "name": "Mr. $input.params('name')"
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: |
+                #set($inputRoot = $input.path('$'))
+                {
+                  "message": "$inputRoot.message",
+                  "timestamp": "$inputRoot.timestamp",
+                  "name": "$inputRoot.name"
+                }
+          - StatusCode: 400
+            SelectionPattern: ".*[Bad Request].*"
+            ResponseTemplates:
+              application/json: |
+                {
+                  "error": "Bad Request",
+                  "message": "Invalid input parameters"
+                }
+          - StatusCode: 500
+            SelectionPattern: ".*[Error].*"
+            ResponseTemplates:
+              application/json: |
+                {
+                  "error": "Internal Server Error",
+                  "message": "An error occurred processing your request"
+                }
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: !Ref GreetingResponseModel
+        - StatusCode: 400
+          ResponseModels:
+            application/json: Error
+        - StatusCode: 500
+          ResponseModels:
+            application/json: Error
+
+  ApiGatewayDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    DependsOn: 
+      - ApiGatewayMethod
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      Description: "Deployment for non-proxy integration"
+
+  ApiGatewayStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      StageName: "stg"
+      Description: "Staging Environment"
+      RestApiId: !Ref ApiGatewayRestApi
+      DeploymentId: !Ref ApiGatewayDeployment
+      CacheClusterEnabled: true
+      CacheClusterSize: "0.5"
+      MethodSettings:
+        - HttpMethod: "GET"
+          ResourcePath: !Sub "/${ResourceName}"
+          CachingEnabled: true
+          CacheTtlInSeconds: 300
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+
+  ApiGatewayKey:
+    Type: "AWS::ApiGateway::ApiKey"
+    DependsOn: ApiGatewayDeployment
+    Properties:
+      Name: !Sub "${ApiKeyName}"
+      Enabled: True
+      StageKeys:
+        - RestApiId: !Ref ApiGatewayRestApi
+          StageName: !Ref ApiGatewayStage
+
+  ApiGatewayUsagePlan:
+    Type: "AWS::ApiGateway::UsagePlan"
+    Properties:
+      UsagePlanName: !Sub "${UsagePlanName}"
+      ApiStages:
+        - ApiId: !Ref ApiGatewayRestApi
+          Stage: !Ref ApiGatewayStage
+      Quota:
+        Limit: 1000
+        Period: DAY
+      Throttle:
+        BurstLimit: 20
+        RateLimit: 10
+
+  ApiGatewayUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties: 
+      KeyId: !Ref ApiGatewayKey
+      KeyType: "API_KEY"
+      UsagePlanId: !Ref ApiGatewayUsagePlan
+
+  ApiInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/*/*"
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${ApiGatewayRestApi}-access-logs"
+      RetentionInDays: 1
+      Tags:
+        - Key: Environment
+          Value: dev
+        - Key: Application
+          Value: greeting-api
+
+Outputs:
+
+  InvokeURL:
+    Description: "API Gateway Invoke URL"
+    Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/stg/${ResourceName}?name=John"
+
+  ApiKey:
+    Description: "API Key ID (retrieve value from console)"
+    Value: !Ref ApiGatewayKey
+
+  TestCommand:
+    Description: "Test command (replace YOUR_API_KEY with actual key)"
+    Value: !Sub |
+      curl -X GET "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/stg/${ResourceName}?name=John" -H "x-api-key: YOUR_API_KEY"
