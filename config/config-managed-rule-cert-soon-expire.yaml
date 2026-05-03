@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  ACM Certificate Expiration Monitoring Solution
+  This template provisions:
+  - AWS Config Rule to check ACM certificate expiration
+  - EventBridge Rule to capture Config compliance changes
+  - EventBridge publishes directly to an existing SNS Topic
+  - EventBridge uses Input Transformer to format the notification message
+
+  Note: The SNS Topic must have a policy that allows EventBridge to publish.
+  Example policy:
+    {
+      "Sid": "AllowEventBridgePublish",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "events.amazonaws.com"
+      },
+      "Action": "SNS:Publish",
+      "Resource": "<SNS_TOPIC_ARN>"
+    }
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: 'Certificate Expiration Configuration'
+        Parameters:
+          - CertificateExpirationNotifyDaysBefore
+          - CertificateExpirationEvaluationFrequency
+      - Label:
+          default: 'Notification Configuration'
+        Parameters:
+          - CertificateExpirationSnsTopicArn
+    ParameterLabels:
+      CertificateExpirationNotifyDaysBefore:
+        default: 'Days Before Expiration'
+      CertificateExpirationEvaluationFrequency:
+        default: 'Evaluation Frequency'
+      CertificateExpirationSnsTopicArn:
+        default: 'SNS Topic ARN'
+
+Parameters:
+  CertificateExpirationNotifyDaysBefore:
+    Type: Number
+    Default: 14
+    Description: 'Number of days before certificate expiration to trigger non-compliant status and notification'
+    MinValue: 1
+    MaxValue: 365
+
+  CertificateExpirationSnsTopicArn:
+    Type: String
+    Description: 'ARN of the existing SNS Topic for certificate expiration notifications (must allow events.amazonaws.com to publish)'
+    AllowedPattern: '^arn:aws:sns:[a-z0-9-]+:\d{12}:[a-zA-Z0-9_-]+$'
+
+  CertificateExpirationEvaluationFrequency:
+    Type: String
+    Default: 'TwentyFour_Hours'
+    Description: 'The frequency with which AWS Config evaluates ACM certificates for expiration'
+    AllowedValues:
+      - One_Hour
+      - Three_Hours
+      - Six_Hours
+      - Twelve_Hours
+      - TwentyFour_Hours
+
+Resources:
+  # AWS Config Rule to check ACM certificate expiration
+  AcmCertificateExpirationCheckRule:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      ConfigRuleName: 'acm-certificate-expiration-check'
+      Description: 'Checks if AWS Certificate Manager Certificates are marked for expiration within the specified number of days'
+      Source:
+        Owner: 'AWS'
+        SourceIdentifier: 'ACM_CERTIFICATE_EXPIRATION_CHECK'
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::ACM::Certificate'
+      InputParameters:
+        daysToExpiration: !Ref CertificateExpirationNotifyDaysBefore
+      MaximumExecutionFrequency: !Ref CertificateExpirationEvaluationFrequency
+
+  # EventBridge Rule to capture Config compliance changes and publish directly to SNS
+  # Note: The SNS Topic must have a policy allowing events.amazonaws.com to publish
+  CertificateExpirationEventRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: 'acm-certificate-expiration-event-rule'
+      Description: 'Captures AWS Config compliance changes for ACM certificate expiration and sends to SNS'
+      State: 'ENABLED'
+      EventPattern:
+        source:
+          - 'aws.config'
+        detail-type:
+          - 'Config Rules Compliance Change'
+        detail:
+          configRuleName:
+            - !Ref AcmCertificateExpirationCheckRule
+          newEvaluationResult:
+            complianceType:
+              - 'NON_COMPLIANT'
+          resourceType:
+            - 'AWS::ACM::Certificate'
+      Targets:
+        - Arn: !Ref CertificateExpirationSnsTopicArn
+          Id: 'CertificateExpirationSNSTarget'
+          InputTransformer:
+            InputPathsMap:
+              configRuleName: '$.detail.configRuleName'
+              complianceType: '$.detail.newEvaluationResult.complianceType'
+              resourceType: '$.detail.resourceType'
+              resourceId: '$.detail.resourceId'
+              awsRegion: '$.detail.awsRegion'
+              awsAccountId: '$.detail.awsAccountId'
+              configRuleInvokedTime: '$.detail.configRuleInvokedTime'
+              annotation: '$.detail.newEvaluationResult.annotation'
+            InputTemplate: |
+              "ACM Certificate Expiration Alert"
+              ""
+              "Certificate Details:"
+              "- Certificate ARN: <resourceId>"
+              "- AWS Account: <awsAccountId>"
+              "- Region: <awsRegion>"
+              ""
+              "Compliance Information:"
+              "- Status: <complianceType>"
+              "- Config Rule: <configRuleName>"
+              "- Resource Type: <resourceType>"
+              "- Evaluation Time: <configRuleInvokedTime>"
+              "- Details: <annotation>"
+              ""
+              "Action Required:"
+              "This certificate is approaching expiration. If this is an IMPORTED certificate, it requires manual renewal."
+              "ACM-managed certificates are automatically renewed."
+              ""
+              "Please review the certificate in the AWS ACM Console:"
+              "https://console.aws.amazon.com/acm/home?region=<awsRegion>#/certificates/<resourceId>"
+
+Outputs:
+  ConfigRuleName:
+    Description: 'Name of the AWS Config Rule'
+    Value: !Ref AcmCertificateExpirationCheckRule
+
+  ConfigRuleArn:
+    Description: 'ARN of the AWS Config Rule'
+    Value: !GetAtt AcmCertificateExpirationCheckRule.Arn
+
+  EventBridgeRuleName:
+    Description: 'Name of the EventBridge Rule'
+    Value: !Ref CertificateExpirationEventRule
+
+  EventBridgeRuleArn:
+    Description: 'ARN of the EventBridge Rule'
+    Value: !GetAtt CertificateExpirationEventRule.Arn
