@@ -1,0 +1,353 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Stack 1/3 - Network Stack for CloudFront VPC Origins architecture.
+  Fully private dual-stack (IPv4 + IPv6) VPC. No public subnets, no NAT.
+  Outbound AWS access via Interface/Gateway VPC Endpoints.
+  IPv6 outbound via Egress-Only Internet Gateway.
+
+# ---------------------------------------------------------------------------
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: cf-vpco
+    Description: Short name used as a prefix for all resources.
+    AllowedPattern: '^[a-z0-9-]+$'
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})$'
+    Description: IPv4 CIDR block for the VPC.
+
+  # Load Balancer tier (internal ALB + CloudFront VPC Origin attaches here)
+  LoadBalancerSubnet1Cidr:
+    Type: String
+    Default: 10.0.10.0/24
+  LoadBalancerSubnet2Cidr:
+    Type: String
+    Default: 10.0.11.0/24
+
+  # Application tier (ASG instances)
+  ApplicationSubnet1Cidr:
+    Type: String
+    Default: 10.0.20.0/24
+  ApplicationSubnet2Cidr:
+    Type: String
+    Default: 10.0.21.0/24
+
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ======================= VPC =======================
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Amazon-provided /56 IPv6 block for the VPC
+  VpcIpv6CidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref Vpc
+      AmazonProvidedIpv6CidrBlock: true
+
+  # IPv6 outbound-only gateway (no inbound possible)
+  EgressOnlyInternetGateway:
+    Type: AWS::EC2::EgressOnlyInternetGateway
+    Properties:
+      VpcId: !Ref Vpc
+
+  # ======================= Load Balancer Subnets (private, internal) =======================
+  LoadBalancerSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref LoadBalancerSubnet1Cidr
+      Ipv6CidrBlock: !Select [0, !Cidr [!Select [0, !GetAtt Vpc.Ipv6CidrBlocks], 8, 64]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-loadbalancer-1'
+        - Key: Tier
+          Value: loadbalancer
+
+  LoadBalancerSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref LoadBalancerSubnet2Cidr
+      Ipv6CidrBlock: !Select [1, !Cidr [!Select [0, !GetAtt Vpc.Ipv6CidrBlocks], 8, 64]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-loadbalancer-2'
+        - Key: Tier
+          Value: loadbalancer
+
+  # ======================= Application Subnets (private) =======================
+  ApplicationSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref ApplicationSubnet1Cidr
+      Ipv6CidrBlock: !Select [2, !Cidr [!Select [0, !GetAtt Vpc.Ipv6CidrBlocks], 8, 64]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-application-1'
+        - Key: Tier
+          Value: application
+
+  ApplicationSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: VpcIpv6CidrBlock
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref ApplicationSubnet2Cidr
+      Ipv6CidrBlock: !Select [3, !Cidr [!Select [0, !GetAtt Vpc.Ipv6CidrBlocks], 8, 64]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      AssignIpv6AddressOnCreation: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-application-2'
+        - Key: Tier
+          Value: application
+
+  # ======================= Route Tables =======================
+  # Load Balancer route table (local only - no internet egress needed)
+  LoadBalancerRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-loadbalancer-routetable'
+
+  LoadBalancerSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref LoadBalancerRouteTable
+      SubnetId: !Ref LoadBalancerSubnet1
+
+  LoadBalancerSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref LoadBalancerRouteTable
+      SubnetId: !Ref LoadBalancerSubnet2
+
+  # Application route table (IPv6 outbound via Egress-Only IGW; IPv4 stays local)
+  ApplicationRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-application-routetable'
+
+  ApplicationIpv6EgressRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ApplicationRouteTable
+      DestinationIpv6CidrBlock: ::/0
+      EgressOnlyInternetGatewayId: !Ref EgressOnlyInternetGateway
+
+  ApplicationSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ApplicationRouteTable
+      SubnetId: !Ref ApplicationSubnet1
+
+  ApplicationSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ApplicationRouteTable
+      SubnetId: !Ref ApplicationSubnet2
+
+  # ======================= VPC Endpoint Security Group =======================
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows HTTPS from within the VPC to interface endpoints.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: HTTPS from VPC (IPv4)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCidr
+        - Description: HTTPS from VPC (IPv6)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: !Select [0, !GetAtt Vpc.Ipv6CidrBlocks]
+      SecurityGroupEgress:
+        - Description: Deny all egress (endpoints do not initiate connections)
+          IpProtocol: '-1'
+          CidrIp: 127.0.0.1/32
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-vpcendpoint-securitygroup'
+
+  # ======================= Gateway Endpoints =======================
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref ApplicationRouteTable
+        - !Ref LoadBalancerRouteTable
+
+  DynamoDbGatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref ApplicationRouteTable
+
+  # ======================= Interface Endpoints =======================
+  # SSM core (Session Manager / patching without a bastion)
+  SsmInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  SsmMessagesInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  Ec2MessagesInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2messages'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  # CloudWatch Logs (application + agent log shipping)
+  CloudWatchLogsInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  # CloudWatch Monitoring (metrics)
+  CloudWatchMonitoringInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.monitoring'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  # ECR (container image pulls, if used)
+  EcrApiInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  EcrDockerInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref ApplicationSubnet1
+        - !Ref ApplicationSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+# ---------------------------------------------------------------------------
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref Vpc
+
+  VpcCidr:
+    Description: VPC IPv4 CIDR
+    Value: !Ref VpcCidr
+
+  VpcIpv6Cidr:
+    Description: VPC IPv6 CIDR
+    Value: !Select [0, !GetAtt Vpc.Ipv6CidrBlocks]
+
+  LoadBalancerSubnetIds:
+    Description: Load Balancer (internal) subnet IDs (comma-separated)
+    Value: !Join [',', [!Ref LoadBalancerSubnet1, !Ref LoadBalancerSubnet2]]
+
+  ApplicationSubnetIds:
+    Description: Application subnet IDs (comma-separated)
+    Value: !Join [',', [!Ref ApplicationSubnet1, !Ref ApplicationSubnet2]]
+
+  VpcEndpointSecurityGroupId:
+    Description: Security group ID used by the interface VPC endpoints
+    Value: !Ref VpcEndpointSecurityGroup
