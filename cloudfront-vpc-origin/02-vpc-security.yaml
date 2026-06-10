@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Stack 2/4 - Security Stack for CloudFront VPC Origins architecture.
+  Security groups for the internal load balancer and application tiers.
+  No public ingress anywhere; the ALB accepts traffic only from within the
+  VPC (i.e. the CloudFront VPC Origin ENIs), and instances accept traffic
+  only from the ALB.
+
+# ---------------------------------------------------------------------------
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: cf-vpco
+    Description: Short name used as a prefix for all resources (match Stack 1).
+    AllowedPattern: '^[a-z0-9-]+$'
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+
+  # ---- Values from Stack 1 outputs ----
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID (Stack 1 output VpcId).
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: VPC IPv4 CIDR (Stack 1 output VpcCidr).
+    AllowedPattern: '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})$'
+
+  VpcIpv6Cidr:
+    Type: String
+    Description: >
+      VPC IPv6 CIDR (Stack 1 output VpcIpv6Cidr),
+      e.g. 2600:1f18:1234:5600::/56.
+
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ======================= Load Balancer Security Group =======================
+  # CloudFront VPC Origins create ENIs inside this VPC. The AWS-managed
+  # security group 'CloudFront-VPCOrigins-Service-SG' is created in the VPC
+  # only AFTER the first VPC origin exists, so it cannot be referenced here
+  # at create time (chicken-and-egg). Allowing the VPC CIDR is the standard
+  # workaround and is safe in this fully private VPC (no IGW, no public
+  # subnets, so nothing else can reach the ALB anyway).
+  #
+  # Hardening option (post-deploy, after Stack 4 creates the VPC origin):
+  # replace the CIDR ingress rules with a SourceSecurityGroupId rule
+  # referencing CloudFront-VPCOrigins-Service-SG.
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internal ALB - HTTP from within the VPC (CloudFront VPC Origin ENIs).
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - Description: HTTP from VPC (IPv4) - CloudFront VPC Origin ENIs
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref VpcCidr
+        - Description: HTTP from VPC (IPv6) - CloudFront VPC Origin ENIs
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: !Ref VpcIpv6Cidr
+      SecurityGroupEgress:
+        # CIDR-based (rather than referencing ApplicationSecurityGroup) to
+        # avoid a circular dependency between the two groups. Covers target
+        # forwarding and health checks; instances still only ACCEPT from
+        # this group (see ApplicationSecurityGroup ingress).
+        - Description: HTTP to application tier (forwarding + health checks)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref VpcCidr
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-loadbalancer-securitygroup'
+        - Key: Tier
+          Value: loadbalancer
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ======================= Application Security Group =======================
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web tier - HTTP from the internal ALB only.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - Description: HTTP from internal ALB only
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      SecurityGroupEgress:
+        # IPv4: no IGW/NAT exists in this VPC, so despite 0.0.0.0/0 the only
+        # reachable destinations are the interface endpoints and the S3 /
+        # DynamoDB gateway endpoints. Required for SSM Session Manager,
+        # CloudWatch, and AL2023 dnf repos (served from S3 via the gateway
+        # endpoint, which requires a CIDR rule - prefix-list scoping could
+        # tighten this further if desired).
+        - Description: HTTPS (VPC interface endpoints + S3 gateway endpoint)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        # IPv6: genuine outbound internet via the Egress-Only IGW
+        # (outbound-only by design; no inbound is possible).
+        - Description: HTTPS outbound (IPv6 via Egress-Only IGW)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+        - Description: HTTP outbound (IPv6 via Egress-Only IGW)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-${Environment}-application-securitygroup'
+        - Key: Tier
+          Value: application
+        - Key: Environment
+          Value: !Ref Environment
+
+# ---------------------------------------------------------------------------
+Outputs:
+  LoadBalancerSecurityGroupId:
+    Description: Security group ID for the internal ALB (pass to Stack 3).
+    Value: !Ref LoadBalancerSecurityGroup
+
+  ApplicationSecurityGroupId:
+    Description: Security group ID for the application tier (pass to Stack 3).
+    Value: !Ref ApplicationSecurityGroup
