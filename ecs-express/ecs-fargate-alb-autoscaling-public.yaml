@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Express — internet-facing ALB + auto scaling — custom public subnets
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Deploys a containerised web service using AWS::ECS::ExpressGatewayService
+#   into explicitly provided public subnets. ECS derives the VPC from the subnets
+#   automatically — no VpcId needed. All other infra (ALB, security groups,
+#   target groups, auto scaling, log groups) is managed by ECS.
+#
+# Resources created
+#   - IAM Task Execution Role (pull images, write logs)
+#   - IAM Infrastructure Role (ECS manages ALB, SGs, scaling on your behalf)
+#   - AWS::ECS::ExpressGatewayService (networking infra auto-managed by ECS)
+#
+# Pre-requisites
+#   - A VPC with at least 2 public subnets (route table has 0.0.0.0/0 -> IGW)
+#   - A publicly accessible container image, or ECR reachable from the subnets
+#
+# Assumptions
+#   - Subnets are provided explicitly; ECS derives the VPC from them automatically
+#   - ALB scheme is internet-facing (Express Mode default)
+#   - ALB, security groups, log groups and auto scaling are fully managed by ECS
+#   - To use the default VPC without any subnet input, use the -default variant
+#   - To use private subnets fronted by CloudFront, use the -private variant
+# -----------------------------------------------------------------------------
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network — provide public subnets (min 2 AZs)"
+        Parameters:
+          - VpcSubnetList
+      - Label:
+          default: "Container"
+        Parameters:
+          - ContainerImageName
+          - ContainerPort
+          - TaskCpu
+          - TaskMemory
+      - Label:
+          default: "Scaling"
+        Parameters:
+          - ScalingMinTaskCount
+          - ScalingMaxTaskCount
+          - ScalingTargetCpuPercent
+
+# ---------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >
+      Public subnet IDs (min 2 AZs). VPC is derived automatically from the subnets —
+      no VpcId parameter needed.
+
+  ContainerImageName:
+    Type: String
+    Default: "public.ecr.aws/nginx/nginx:latest"
+    Description: Docker image URI
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port the container listens on
+
+  TaskCpu:
+    Type: String
+    Default: "0.25"
+    AllowedValues: ["0.25", "0.5", "1", "2", "4"]
+    Description: Task vCPU allocation
+
+  TaskMemory:
+    Type: String
+    Default: "0.5"
+    AllowedValues: ["0.5", "1", "2", "4", "8"]
+    Description: Task memory allocation (GB)
+
+  ScalingMinTaskCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Minimum number of running tasks
+
+  ScalingMaxTaskCount:
+    Type: Number
+    Default: 4
+    MinValue: 1
+    Description: Maximum number of running tasks
+
+  ScalingTargetCpuPercent:
+    Type: Number
+    Default: 60
+    MinValue: 10
+    MaxValue: 100
+    Description: Target average CPU utilization (%) for auto scaling
+
+# ---------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  # Allows ECS to pull container images and write logs on behalf of the task
+  ContainerTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-task-execution-role"
+
+  # Allows ECS Express Mode to create and manage the ALB, security groups,
+  # target groups, auto scaling policies, log groups, and CloudWatch alarms
+  ExpressInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForServiceConnectTransportLayerSecurity
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-express-infrastructure-role"
+
+  # ---------------------------------------------------------------
+  # ECS Express Service
+  # ---------------------------------------------------------------
+
+  # Subnets are provided explicitly; ECS derives the VPC automatically.
+  # No VpcId is needed — Express Mode resolves it from the subnet IDs.
+  ExpressService:
+    Type: AWS::ECS::ExpressGatewayService
+    Properties:
+      ServiceName: !Sub "${Application}-${Environment}"
+      ExecutionRoleArn: !GetAtt ContainerTaskExecutionRole.Arn
+      InfrastructureRoleArn: !GetAtt ExpressInfrastructureRole.Arn
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      HealthCheckPath: /
+      NetworkConfiguration:
+        Subnets: !Ref VpcSubnetList
+        # SecurityGroups intentionally omitted — ECS creates and manages them
+      PrimaryContainer:
+        Image: !Ref ContainerImageName
+        ContainerPort: !Ref ContainerPort
+        # Uncomment to inject environment variables:
+        # Environment:
+        #   - Name: ENV
+        #     Value: production
+        # Uncomment to inject secrets from SSM / Secrets Manager:
+        # Secrets:
+        #   - Name: DB_PASSWORD
+        #     ValueFrom: arn:aws:ssm:us-east-1:123456789012:parameter/myapp/db-password
+      ScalingTarget:
+        AutoScalingMetric: AVERAGE_CPU
+        AutoScalingTargetValue: !Ref ScalingTargetCpuPercent
+        MinTaskCount: !Ref ScalingMinTaskCount
+        MaxTaskCount: !Ref ScalingMaxTaskCount
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-express-service"
+
+# ---------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------
+Outputs:
+
+  ServiceEndpoint:
+    Description: Public endpoint provisioned and managed by ECS Express
+    Value: !GetAtt ExpressService.Endpoint
+
+  ServiceArn:
+    Value: !GetAtt ExpressService.ServiceArn
+
+  LoadBalancerArn:
+    Description: ARN of the ALB auto-provisioned by ECS Express
+    Value: !GetAtt ExpressService.ECSManagedResourceArns.IngressPath.LoadBalancerArn
