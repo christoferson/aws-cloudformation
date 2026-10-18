@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 - CodeConnections (GitHub) source + Git tag / branch / file path / pull request triggers
+
+# -----------------------------------------------------------------------------
+# Summary
+#   V2 pipeline started by filtered Git events instead of "any push to one
+#   branch". One trigger on the source action with three filters (OR'ed):
+#     1. Push of a Git tag matching TriggerTagIncludeList       (e.g. v1.2.0)
+#     2. Push to TriggerBranchIncludeList, AND at least one changed file
+#        not matching TriggerFilePathExcludeList                (skip docs-only commits)
+#     3. Pull request OPEN / UPDATED targeting TriggerBranchIncludeList
+#   Source (CodeStarSourceConnection) -> Build (Commands action)
+#
+#   V2-only features demonstrated (marked "[V2]" inline below):
+#     - Triggers with GitConfiguration Push (Tags | Branches + FilePaths) and PullRequest
+#     - ExecutionMode: PARALLEL       independent runs per PR / branch
+#     - Source revision override       start-pipeline-execution --source-revisions
+#     - Commands action                no CodeBuild project
+#
+# Resources created
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role                  (pipeline service role)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name> for Commands action)
+#   - AWS::CodePipeline::Pipeline
+#
+# Pre-requisites
+#   - An AVAILABLE CodeConnections connection (GitHub / GitLab / Bitbucket).
+#     Connections created by CLI/CloudFormation start PENDING and must be
+#     completed once in the console; a PENDING connection never triggers
+#   - A repository the connection can access (FullRepositoryId owner/repo, case-sensitive)
+#
+# Assumptions
+#   - Defining Triggers disables the source action's default change detection;
+#     only events matching a filter start the pipeline
+#   - SourceBranchName is only used for manual starts ("Release change")
+#   - Push filters: Tags cannot be combined with Branches/FilePaths in the same
+#     filter, so tags are a separate filter. Max 3 push + 3 pull request filters
+#   - Merging a PR into main can start two executions (PR CLOSED + push) if both
+#     match; this template filters PR events to OPEN / UPDATED only
+#   - Branch + file path filters do not fire on the first push of a new branch
+#   - Not available in some Regions (see docs/codepipeline/ug-action-reference-CodestarConnectionSource.md)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - ConnectionArn
+          - FullRepositoryId
+          - SourceBranchName
+      - Label:
+          default: Triggers
+        Parameters:
+          - TriggerTagIncludeList
+          - TriggerBranchIncludeList
+          - TriggerFilePathExcludeList
+      - Label:
+          default: Pipeline
+        Parameters:
+          - PipelineExecutionMode
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  ConnectionArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-z-]*:(codestar-connections|codeconnections):[a-z0-9-]+:[0-9]{12}:connection/.+"
+    Description: ARN of an AVAILABLE CodeConnections connection (codeconnections or codestar-connections prefix)
+
+  FullRepositoryId:
+    Type: String
+    Default: my-org/my-repo
+    Description: Repository as owner/name (case-sensitive)
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch used when the pipeline is started manually (triggers ignore it)
+
+  TriggerTagIncludeList:
+    Type: CommaDelimitedList
+    Default: "v*"
+    Description: "[V2] Glob patterns of Git tags that start the pipeline (max 8)"
+
+  TriggerBranchIncludeList:
+    Type: CommaDelimitedList
+    Default: "main"
+    Description: "[V2] Glob patterns of branches for push and pull request (destination) triggers (max 8)"
+
+  TriggerFilePathExcludeList:
+    Type: CommaDelimitedList
+    Default: "*.md,**/*.md,docs/**"
+    Description: "[V2] Glob patterns of files that alone do not start a branch push (max 8)"
+
+  PipelineExecutionMode:
+    Type: String
+    Default: PARALLEL
+    AllowedValues: [PARALLEL, QUEUED, SUPERSEDED]
+    Description: "[V2] PARALLEL runs each PR / branch execution independently (no rollback support)"
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # S3 Buckets
+  # ---------------------------------------------------------------
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30 # One artifact per PR update / push adds up quickly
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 service role (CodeConnections source + Commands action)
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Both actions are required regardless of the ARN prefix
+              - Sid: UseConnection
+                Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codestar-connections:UseConnection
+                Resource: !Ref ConnectionArn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-github-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-github-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-github-pipeline-service-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  PipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-github-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-github-pipeline" # Fixed so the log group name is known
+      RoleArn: !GetAtt PipelineServiceRole.Arn
+      PipelineType: V2
+      ExecutionMode: !Ref PipelineExecutionMode # [V2]
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      # [V2] Triggers. One trigger per source action; filters inside it are OR'ed.
+      # Within one filter, Branches AND FilePaths must both match.
+      # Within one criteria, Excludes win over Includes.
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitSource # Must equal the source action Name below
+            Push:
+              # 1. Release tags. Tags can't be combined with Branches/FilePaths.
+              - Tags:
+                  Includes: !Ref TriggerTagIncludeList
+              # 2. Branch push, unless only excluded paths (docs) changed
+              - Branches:
+                  Includes: !Ref TriggerBranchIncludeList
+                FilePaths:
+                  Includes:
+                    - "**"
+                  Excludes: !Ref TriggerFilePathExcludeList
+            PullRequest:
+              # 3. PRs *into* the included branches. Execution uses the PR's
+              #    source-branch commit. CLOSED omitted to avoid a double run on merge.
+              - Branches:
+                  Includes: !Ref TriggerBranchIncludeList
+                Events:
+                  - OPEN
+                  - UPDATED
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: GitSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Namespace: SourceVariables # BranchName, CommitId, CommitMessage, AuthorDate, FullRepositoryName, ConnectionArn
+              Configuration:
+                ConnectionArn: !Ref ConnectionArn
+                FullRepositoryId: !Ref FullRepositoryId
+                BranchName: !Ref SourceBranchName # Manual starts only
+                OutputArtifactFormat: CODE_ZIP    # CODEBUILD_CLONE_REF works only with CodeBuild actions
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildCommands
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands
+                Version: "1"
+              Configuration:
+                EnvironmentType: LINUX_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL
+              # Pass source variables as env vars rather than inlining them into
+              # commands (commit messages etc. can contain shell metacharacters)
+              EnvironmentVariables:
+                - Name: GIT_BRANCH
+                  Value: "#{SourceVariables.BranchName}"
+                - Name: GIT_COMMIT
+                  Value: "#{SourceVariables.CommitId}"
+                - Name: GIT_REPOSITORY
+                  Value: "#{SourceVariables.FullRepositoryName}"
+              Commands:
+                - "echo Execution #{codepipeline.PipelineExecutionId}"
+                - "echo Repository $GIT_REPOSITORY branch $GIT_BRANCH commit $GIT_COMMIT"
+                - "ls -la"
+                - "if [ -f ci.sh ]; then sh ci.sh; else echo 'No ci.sh in repository root - nothing to run'; fi"
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-github-pipeline"
+
+Outputs:
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  PipelineArn:
+    Value: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+
+  PipelineCommandsLogGroupName:
+    Description: Commands action compute logs
+    Value: !Ref PipelineCommandsLogGroup

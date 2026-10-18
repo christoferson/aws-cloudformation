@@ -155,12 +155,54 @@ Possible results: `FAIL` or `SKIP` (entry), `ROLLBACK` (on failure), `FAIL` / `R
 For example, "skip Deploy outside business hours" or "roll back if this alarm fires within 10 minutes".
 See [docs/codepipeline/ug-stage-conditions.md](../docs/codepipeline/ug-stage-conditions.md).
 
-### 6. Triggers and filters — `Triggers` *(next template)*
+### 6. Triggers and filters — `Triggers`
 
 Start the pipeline on Git **tags**, **branches**, **file paths** or **pull request** events (`OPEN`, `UPDATED`, `CLOSED`), with include/exclude globs.
+In V1, a connection source can only start on "any push to the one `BranchName`".
+
+```yaml
+Triggers:
+  - ProviderType: CodeStarSourceConnection
+    GitConfiguration:
+      SourceActionName: GitSource          # must match the source action's Name
+      Push:                                # up to 3 push filters
+        - Tags:     { Includes: ["v*"] }   # tags alone, never with Branches/FilePaths
+        - Branches: { Includes: [main] }
+          FilePaths: { Includes: ["**"], Excludes: ["*.md", "**/*.md", "docs/**"] }
+      PullRequest:                         # up to 3 PR filters
+        - Branches: { Includes: [main] }   # destination branch of the PR
+          Events: [OPEN, UPDATED]
+```
+
+How filters combine:
+
+| Level | Logic |
+|---|---|
+| Between filters (each `Push[]` / `PullRequest[]` entry) | **OR**: any match starts the pipeline |
+| Inside one filter (`Branches` + `FilePaths`) | **AND**: both must match |
+| Inside one criteria (`Includes` / `Excludes`) | **Excludes win** |
+| File paths in one commit | Each file is checked separately. One included file is enough |
+
+Valid push filters are `Tags`, `Branches`, or `Branches` + `FilePaths`. Valid PR filters are `Branches`, or `Branches` + `FilePaths`. Each criteria list holds up to 8 glob patterns ([docs/codepipeline/ug-syntax-glob.md](../docs/codepipeline/ug-syntax-glob.md)).
+
 - Only for `CodeStarSourceConnection` sources (GitHub, GitLab, Bitbucket via CodeConnections).
-- Once you define `Triggers`, the source action's default change detection is **turned off**.
-- See the example in [docs/codepipeline/aws-resource-codepipeline-pipeline.md](../docs/codepipeline/aws-resource-codepipeline-pipeline.md) and [docs/codepipeline/ug-pipelines-filter.md](../docs/codepipeline/ug-pipelines-filter.md).
+- One trigger per source action.
+- Once you define `Triggers`, the source action's default change detection is **turned off**. `BranchName` is then used only for manual starts.
+- A push trigger runs the pushed (destination) branch's commit. A PR trigger runs the PR's **source**-branch commit.
+- Merging a PR can start **two** executions if a `CLOSED` PR filter and a branch push filter both match.
+- A `Branches` + `FilePaths` filter doesn't fire on the first push of a new branch, because there's no list of changed files yet.
+- See [docs/codepipeline/ug-pipelines-triggers.md](../docs/codepipeline/ug-pipelines-triggers.md) (examples and considerations) and [docs/codepipeline/ug-pipelines-filter.md](../docs/codepipeline/ug-pipelines-filter.md).
+
+### 7. Source revision override
+
+Start a run on a specific commit instead of the head of `BranchName`:
+
+```bash
+aws codepipeline start-pipeline-execution --name <pipeline> \
+  --source-revisions actionName=GitSource,revisionType=COMMIT_ID,revisionValue=<sha>
+```
+
+Revision types are `COMMIT_ID`, `IMAGE_DIGEST` (ECR), `S3_OBJECT_VERSION_ID` and `S3_OBJECT_KEY` (S3 needs `AllowOverrideForS3ObjectKey: true`). See [docs/codepipeline/ug-pipelines-trigger-source-overrides.md](../docs/codepipeline/ug-pipelines-trigger-source-overrides.md).
 
 ----------------------------------------------------------------------------------
 
@@ -251,6 +293,97 @@ aws s3 rm s3://<artifact-bucket> --recursive
 aws cloudformation delete-stack --stack-name myapp-dev-pipeline-v2
 ```
 
+### CodePipeline V2 - GitHub Triggers (tags / branch + paths / pull requests)
+
+[codepipeline-v2-github-triggers.yaml](codepipeline-v2-github-triggers.yaml)
+
+A GitHub (or GitLab / Bitbucket) source through CodeConnections. The pipeline starts **only** on filtered Git events:
+
+```
+ GitHub ──(CodeConnections webhook)──► Trigger on GitSource   (filters OR'ed)
+   1. push tag            v*                                  e.g. git push origin v1.2.0
+   2. push branch         main  AND  any file not in *.md, **/*.md, docs/**
+   3. pull request        into main, OPEN | UPDATED
+ Pipeline (V2, PARALLEL)
+   Source : CodeStarSourceConnection   namespace SourceVariables → BranchName, CommitId, ...
+   Build  : Commands                   prints branch/commit, runs ci.sh if the repo has one
+```
+
+V2 features covered (marked `[V2]` in the template):
+- `Triggers` with a tag push filter, a branch + file path push filter, and a pull request filter
+- `ExecutionMode: PARALLEL`. Runs for different PRs and branches don't queue or supersede each other.
+- Source revision override (see below)
+
+Parameters you'll normally set: `ConnectionArn`, `FullRepositoryId`. The trigger patterns are `CommaDelimitedList` parameters (`TriggerTagIncludeList`, `TriggerBranchIncludeList`, `TriggerFilePathExcludeList`), so you can change them without editing the template.
+
+Differences from a V1 GitHub pipeline (for example [../codepipeline/code-codepipeline-github-ecs.yaml](../codepipeline/code-codepipeline-github-ecs.yaml)):
+
+| V1 | V2 triggers |
+|---|---|
+| Starts on any push to the one `BranchName` | Starts on tag / branch / path / PR filters. `BranchName` is only for manual starts |
+| Docs-only commits still start a full run | Excluded file paths alone don't start a run |
+| No PR builds | PR OPEN / UPDATED builds the PR's source branch |
+| SUPERSEDED: a newer commit replaces a waiting run | PARALLEL: each PR and branch gets its own run |
+
+#### Pre-requisite: an AVAILABLE connection
+
+A connection created from the CLI or CloudFormation starts as `PENDING`. It must be completed once in the console (installing the AWS Connector GitHub App). A `PENDING` connection never triggers the pipeline.
+
+```bash
+aws codeconnections create-connection --provider-type GitHub --connection-name myapp-github
+# Console: Developer Tools > Settings > Connections > myapp-github > Update pending connection
+aws codeconnections get-connection --connection-arn <arn> --query Connection.ConnectionStatus   # AVAILABLE
+```
+
+You need to be the repository owner, or the organization owner if the repository is in an organization.
+
+#### Deploy
+
+```bash
+aws cloudformation create-stack --stack-name myapp-dev-github-pipeline \
+  --template-body file://codepipeline-v2-github-triggers.yaml \
+  --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ConnectionArn,ParameterValue=<connection-arn> \
+               ParameterKey=FullRepositoryId,ParameterValue=<owner>/<repo>
+```
+
+Creating the stack starts one run on `SourceBranchName` (main).
+
+#### Try each trigger
+
+```bash
+git commit --allow-empty -m "docs only?" && git push          # no changed files -> no run
+echo "x" >> README.md && git commit -am "docs" && git push    # only *.md changed -> no run
+echo "echo running ci" > ci.sh && git add ci.sh && git commit -m "ci" && git push   # -> run (branch filter)
+git tag v1.0.0 && git push origin v1.0.0                      # -> run (tag filter)
+git switch -c feature/x && echo 1 > a.txt && git add a.txt && git commit -m f && git push -u origin feature/x
+gh pr create --base main --fill                               # -> run on feature/x commit (PR OPEN)
+git commit --allow-empty -m "update" && git push              # -> run (PR UPDATED)
+```
+
+See which trigger started each run:
+
+```bash
+aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-github-pipeline \
+  --query "pipelineExecutionSummaries[].{id:pipelineExecutionId,status:status,trigger:trigger.triggerType,detail:trigger.triggerDetail,rev:sourceRevisions[0].revisionId}"
+```
+
+Rebuild a specific commit (source revision override):
+
+```bash
+aws codepipeline start-pipeline-execution --name myapp-dev-github-pipeline \
+  --source-revisions actionName=GitSource,revisionType=COMMIT_ID,revisionValue=<sha>
+```
+
+#### Delete
+
+```bash
+aws s3 rm s3://<artifact-bucket> --recursive
+aws cloudformation delete-stack --stack-name myapp-dev-github-pipeline
+```
+
+The connection isn't part of the stack, so it remains.
+
 ----------------------------------------------------------------------------------
 
 ## Migrating a V1 template to V2
@@ -268,7 +401,23 @@ aws cloudformation delete-stack --stack-name myapp-dev-pipeline-v2
 
 ##### cfn-lint: `Invalid Property ... ExecutionMode / Commands / OnFailure`, `Category (Compute)` not valid
 
-Your cfn-lint is older than these V2 properties (seen with 0.85.x). Upgrade to cfn-lint v1. cfn-lint 1.26.1 still flags `EnvironmentVariables` on actions, but the current CloudFormation registry schema includes it.
+Your cfn-lint is older than these V2 properties (seen with 0.85.x). Upgrade to cfn-lint v1. cfn-lint 1.26.1 still flags `EnvironmentVariables` on actions until you refresh its schemas with `cfn-lint --update-specs`. Both templates lint clean after that.
+
+##### Pipeline doesn't start on push / tag / PR
+
+- The connection is `PENDING`. Complete it in the console (see the GitHub Triggers pre-requisite).
+- The push matched no filter. Remember that defining `Triggers` turns off "any push to `BranchName`".
+- The commit changed only excluded paths, or it was the first push of a new branch (file path filters can't be evaluated yet).
+- `SourceActionName` in the trigger doesn't match the source action's `Name`.
+- The Region doesn't support connection triggers (see [docs/codepipeline/ug-action-reference-CodestarConnectionSource.md](../docs/codepipeline/ug-action-reference-CodestarConnectionSource.md)).
+
+##### Insufficient permissions: Unable to use Connection
+
+Grant **both** `codeconnections:UseConnection` and `codestar-connections:UseConnection` on the connection ARN. Which one is checked depends on the code path, not on the ARN prefix.
+
+##### Source: Upload to S3 failed / `CODEBUILD_CLONE_REF` with a Commands action
+
+`CODEBUILD_CLONE_REF` (full clone) only works with downstream **CodeBuild** actions. Use `CODE_ZIP` with the Commands action.
 
 ##### Commands action: multi-line command rejected
 
@@ -286,9 +435,8 @@ Rollback needs a previous successful execution in the **current pipeline structu
 
 ## Roadmap (next V2 templates)
 
-- `codepipeline-v2-github-triggers.yaml`: CodeConnections source with `Triggers` (tags, branches, file paths, PRs)
 - `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow / CloudWatchAlarm, `OnSuccess` rollback
-- `codepipeline-v2-parallel.yaml`: PARALLEL mode for feature-branch pipelines
+- ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
 
 ## Resources
 
@@ -298,3 +446,6 @@ Rollback needs a previous successful execution in the **current pipeline structu
 - https://docs.aws.amazon.com/codepipeline/latest/userguide/reference-variables.html
 - https://docs.aws.amazon.com/codepipeline/latest/userguide/stage-conditions.html
 - https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-filter.html
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-triggers.html
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-CodestarConnectionSource.html
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-trigger-source-overrides.html
