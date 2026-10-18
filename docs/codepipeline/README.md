@@ -27,6 +27,12 @@ Tables and lists were converted automatically, so some formatting is rough (nota
 | [ug-connections-github.md](ug-connections-github.md) | Creating a GitHub connection |
 | [ug-tutorials-github-gitclone.md](ug-tutorials-github-gitclone.md) | Tutorial: full clone (`CODEBUILD_CLONE_REF`) |
 | [ug-pipeline-requirements.md](ug-pipeline-requirements.md) | Pipeline structure reference (field definitions) |
+| [ug-action-reference-PipelineInvoke.md](ug-action-reference-PipelineInvoke.md) | Invoke action: start another pipeline with source revisions + variables (V2) |
+| [ug-action-reference-CodeCommit.md](ug-action-reference-CodeCommit.md) | CodeCommit source action, output variables, permissions |
+| [ug-action-reference-ECRBuildAndPublish.md](ug-action-reference-ECRBuildAndPublish.md) | ECRBuildAndPublish build action (V2) |
+| [ug-action-reference-EC2Deploy.md](ug-action-reference-EC2Deploy.md) | EC2 deploy action (V2) |
+| [ug-action-reference-LambdaDeploy.md](ug-action-reference-LambdaDeploy.md) | Lambda deploy action (V2) |
+| [ug-action-reference-EKS.md](ug-action-reference-EKS.md) | EKS deploy action (V2) |
 
 ### CloudFormation Template Reference — `AWS::CodePipeline::Pipeline`
 

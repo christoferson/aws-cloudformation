@@ -26,6 +26,8 @@ Switching is one property: `PipelineType: V2`. It updates in place ("Update requ
 | **Entry condition with Skip result** | – | **Yes** | `BeforeEntry.Conditions[].Result: SKIP` |
 | **Triggers + filters** (Git tags, branches, file paths, PRs) | – | **Yes** | `Triggers` |
 | **Source revision overrides** at start | – | **Yes** | CLI `start-pipeline-execution --source-revisions` |
+| **Invoke another pipeline** (pass revisions + variables) | – | **Yes** | `ActionTypeId: { Category: Invoke, Provider: CodePipeline }` |
+| **New action types**: ECRBuildAndPublish, EC2 deploy, Lambda deploy, EKS deploy | – | **Yes** | See "Other V2-only actions" below |
 
 Source: [docs/codepipeline/pipeline-types-planning.md](../docs/codepipeline/pipeline-types-planning.md)
 
@@ -203,6 +205,41 @@ aws codepipeline start-pipeline-execution --name <pipeline> \
 ```
 
 Revision types are `COMMIT_ID`, `IMAGE_DIGEST` (ECR), `S3_OBJECT_VERSION_ID` and `S3_OBJECT_KEY` (S3 needs `AllowOverrideForS3ObjectKey: true`). See [docs/codepipeline/ug-pipelines-trigger-source-overrides.md](../docs/codepipeline/ug-pipelines-trigger-source-overrides.md).
+
+### 8. Invoke another pipeline — `Category: Invoke`, `Provider: CodePipeline`
+
+One pipeline starts another and hands it **source revisions** and **pipeline variables**.
+This is the V2 way to chain "build once → deploy" or "service → shared release pipeline".
+In V1 you needed a Lambda, EventBridge glue or a custom action, and the downstream pipeline would just fetch the branch head.
+
+```yaml
+- Name: InvokeDeployPipeline
+  ActionTypeId: { Category: Invoke, Owner: AWS, Provider: CodePipeline, Version: "1" }
+  Configuration:
+    PipelineName: !Ref DeployPipeline          # the TARGET pipeline
+    # JSON strings, not YAML lists
+    SourceRevisions: '[{"actionName":"Source","revisionType":"COMMIT_ID","revisionValue":"#{SourceVariables.CommitId}"}]'
+    Variables: '[{"name":"ReleaseVersion","value":"#{BuildVariables.RELEASE_VERSION}"}]'
+```
+
+- No input or output artifacts. Only the revision and the variables cross over; the target fetches its own source at the pinned revision.
+- `SourceRevisions[].actionName` = the **target's** source action `Name`. `revisionType` is one of the four types in section 7.
+- Every name in `Variables` must be **declared** in the target's `Variables`. Values must match `[A-Za-z0-9@\-_]+`, so no dots: use `20261018-ab12cd3`, not `1.2.3`.
+- The invoking pipeline's role needs `codepipeline:StartPipelineExecution` on the target pipeline ARN.
+- Both pipelines must be V2.
+
+See [docs/codepipeline/ug-action-reference-PipelineInvoke.md](../docs/codepipeline/ug-action-reference-PipelineInvoke.md).
+
+### Other V2-only actions (candidates for future templates)
+
+| Action | Category / Provider | What it replaces |
+|---|---|---|
+| ECR build and publish | `Build` / `ECRBuildAndPublish` | CodeBuild project + buildspec that only runs `docker build && docker push` |
+| EC2 deploy | `Deploy` / `EC2` | CodeDeploy agent + AppSpec. Uses the **SSM agent** instead. Linux only, up to 500 instances |
+| Lambda deploy | `Deploy` / `Lambda` | CodeDeploy for Lambda. Supports canary, linear and all-at-once traffic shifting |
+| EKS deploy | `Deploy` / `EKS` | CodeBuild running `kubectl` / `helm`. Takes a manifest or Helm chart, works with public and private clusters |
+
+Docs: [ECRBuildAndPublish](../docs/codepipeline/ug-action-reference-ECRBuildAndPublish.md), [EC2Deploy](../docs/codepipeline/ug-action-reference-EC2Deploy.md), [LambdaDeploy](../docs/codepipeline/ug-action-reference-LambdaDeploy.md), [EKS](../docs/codepipeline/ug-action-reference-EKS.md).
 
 ----------------------------------------------------------------------------------
 
@@ -384,6 +421,90 @@ aws cloudformation delete-stack --stack-name myapp-dev-github-pipeline
 
 The connection isn't part of the stack, so it remains.
 
+### CodePipeline V2 - Invoke Pipeline (build → deploy, CodeCommit)
+
+[codepipeline-v2-invoke-pipeline.yaml](codepipeline-v2-invoke-pipeline.yaml)
+
+Two pipelines in one stack, chained with the invoke action. The deploy pipeline deploys **exactly the commit** the build pipeline built, along with the version the build produced.
+
+```
+ git push main ──(EventBridge)──► BUILD pipeline (V2, QUEUED)
+   Source  : CodeCommit          namespace SourceVariables → CommitId
+   Build   : Commands            exports RELEASE_VERSION = <utc timestamp>-<short sha>
+   Release : Invoke (CodePipeline) ──────────────────────────────────────┐
+               SourceRevisions  Source = COMMIT_ID #{SourceVariables.CommitId}
+               Variables        ReleaseVersion, UpstreamExecutionId      │
+                                                                         ▼
+                                  DEPLOY pipeline (V2, QUEUED, no trigger of its own)
+   Variables : ReleaseVersion (default "manual"), UpstreamExecutionId (default "none")
+   Source    : CodeCommit  "Source"  ← pinned to the passed commit
+   Deploy    : Commands    prints release + commit + upstream execution
+```
+
+V2 features covered (marked `[V2]` in the template):
+- Invoke action (`Category: Invoke`, `Provider: CodePipeline`)
+- Passing `SourceRevisions` (`COMMIT_ID`) and `Variables` to the target
+- Target pipeline-level `Variables` with defaults for manual runs
+- A Commands `OutputVariables` value (`RELEASE_VERSION`) feeding the invoke action
+- `QUEUED` on deploy, so invoked releases deploy in order and none is superseded
+
+Why pin the commit? If two pushes land close together, a deploy pipeline without the override would fetch the **branch head**. It could then deploy a commit the build pipeline never built or tested. The override makes "what was built" and "what is deployed" the same commit.
+
+| V1 approach | V2 invoke action |
+|---|---|
+| Single long pipeline, or a Lambda / EventBridge glue step calling `StartPipelineExecution` | Built-in `Invoke` action, no code |
+| Downstream fetches the branch head | Downstream pinned to the upstream `CommitId` |
+| Data passed through artifacts or SSM parameters | `Variables` passed directly into the target's pipeline variables |
+
+**Source.** CodeCommit, created by the stack (`CreateCodeCommitRepository=true`, the default), or an existing repository (`false` + `CodeCommitRepositoryName`). The repository has `DeletionPolicy: Retain`, so deleting the stack keeps your code. For GitHub, swap both source actions for `CodeStarSourceConnection`, as in the triggers template. The invoke action is the same.
+
+#### Deploy
+
+```bash
+aws cloudformation create-stack --stack-name myapp-dev-invoke-pipeline \
+  --template-body file://codepipeline-v2-invoke-pipeline.yaml \
+  --capabilities CAPABILITY_IAM
+```
+
+Both pipelines run once at creation and **fail at Source**, because the new repository is empty. This is expected.
+
+#### Run
+
+```bash
+pip install git-remote-codecommit                       # or use the HTTPS URL with Git credentials
+git clone codecommit::<region>://myapp-dev-invoke-demo && cd myapp-dev-invoke-demo
+git switch -c main
+echo "hello invoke" > index.html && git add . && git commit -m "first" && git push -u origin main
+# -> build pipeline starts -> Release stage invokes the deploy pipeline
+```
+
+Check that deploy received the same commit and the variables:
+
+```bash
+aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-deploy-pipeline \
+  --query "pipelineExecutionSummaries[0].{trigger:trigger,rev:sourceRevisions[0].revisionId}"
+aws codepipeline get-pipeline-execution --pipeline-name myapp-dev-deploy-pipeline \
+  --pipeline-execution-id <id> --query "pipelineExecution.variables"
+```
+
+The deploy pipeline's trigger should show the build pipeline as the starter, and `rev` should equal the build run's `CommitId`.
+
+Run deploy manually, for example to redeploy an old commit with a label:
+
+```bash
+aws codepipeline start-pipeline-execution --name myapp-dev-deploy-pipeline \
+  --source-revisions actionName=Source,revisionType=COMMIT_ID,revisionValue=<sha> \
+  --variables name=ReleaseVersion,value=hotfix-1
+```
+
+#### Delete
+
+```bash
+aws s3 rm s3://<artifact-bucket> --recursive
+aws cloudformation delete-stack --stack-name myapp-dev-invoke-pipeline
+aws codecommit delete-repository --repository-name myapp-dev-invoke-demo   # only if you want the code gone
+```
+
 ----------------------------------------------------------------------------------
 
 ## Migrating a V1 template to V2
@@ -394,6 +515,7 @@ The connection isn't part of the stack, so it remains.
 4. Replace small CodeBuild projects with the Commands action, and add the `/aws/codepipeline/<name>` logs permission to the pipeline role.
 5. Add `OnFailure` (RETRY or ROLLBACK) to deploy stages.
 6. For GitHub sources, add `Triggers` with tag, branch or path filters. Remember that this turns off default change detection.
+7. Replace Lambda or EventBridge "start the next pipeline" glue with the invoke action, and pin the commit with `SourceRevisions`.
 
 ----------------------------------------------------------------------------------
 
@@ -431,12 +553,26 @@ An unquoted `#{...}` in YAML is read as a comment from ` #` onward. Wrap the who
 
 Rollback needs a previous successful execution in the **current pipeline structure version**. It isn't supported with `ExecutionMode: PARALLEL`.
 
+##### Invoke action fails, or the target starts without the commit or variables
+
+- The invoking role lacks `codepipeline:StartPipelineExecution` on the **target** pipeline ARN.
+- `SourceRevisions[].actionName` doesn't match the target's source action `Name` (this template uses `Source` in both).
+- A passed variable isn't declared in the target's `Variables`, or its value has characters outside `[A-Za-z0-9@\-_]` (for example a dot in `1.2.3`).
+- `SourceRevisions` or `Variables` was written as a YAML list. Both must be **JSON strings**.
+
+##### CodeCommit push doesn't start the build pipeline
+
+Check the EventBridge rule. It must match `referenceName` = your branch and `resources` = the repository ARN. Also keep `PollForSourceChanges: false`, or you'll get duplicate runs.
+
 ----------------------------------------------------------------------------------
 
 ## Roadmap (next V2 templates)
 
 - `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow / CloudWatchAlarm, `OnSuccess` rollback
+- `codepipeline-v2-ecr-build-publish.yaml`: `ECRBuildAndPublish`, then the ECS deploy action. Build and push an image with no CodeBuild project.
+- `codepipeline-v2-lambda-deploy.yaml`: Lambda deploy action with traffic shifting and no CodeDeploy
 - ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
+- ~~`codepipeline-v2-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.
 
 ## Resources
 
@@ -449,3 +585,5 @@ Rollback needs a previous successful execution in the **current pipeline structu
 - https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-triggers.html
 - https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-CodestarConnectionSource.html
 - https://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-trigger-source-overrides.html
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-PipelineInvoke.html
+- https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-CodeCommit.html

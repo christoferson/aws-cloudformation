@@ -1,0 +1,497 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 - build pipeline invokes deploy pipeline, passing source revision + variables (CodeCommit)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Two V2 pipelines chained with the CodePipeline invoke action
+#   (Category Invoke / Provider CodePipeline, V2 only):
+#
+#     git push -> [Build pipeline]  Source (CodeCommit) -> Build (Commands) -> Invoke
+#                                                                   |
+#        SourceRevisions: COMMIT_ID = #{SourceVariables.CommitId}  |
+#        Variables: ReleaseVersion, UpstreamExecutionId            v
+#                 [Deploy pipeline] Source (CodeCommit, pinned commit) -> Deploy (Commands)
+#
+#   The deploy pipeline has no trigger of its own; it only runs when invoked
+#   (or started manually). It deploys exactly the commit the build pipeline
+#   built, even if newer commits landed on the branch meanwhile.
+#
+#   V2-only features demonstrated (marked "[V2]" inline below):
+#     - Invoke action (Provider CodePipeline): start another pipeline
+#     - Passing SourceRevisions (COMMIT_ID) and pipeline Variables downstream
+#     - Pipeline-level Variables declared on the target pipeline
+#     - Commands action + OutputVariables feeding the invoke action
+#     - ExecutionMode QUEUED on the deploy pipeline (releases deploy in order)
+#
+# Resources created
+#   - AWS::CodeCommit::Repository     (optional, CreateCodeCommitRepository=true)
+#   - AWS::S3::Bucket                 (shared artifact store)
+#   - AWS::IAM::Role x3               (build pipeline, deploy pipeline, EventBridge)
+#   - AWS::Logs::LogGroup x2          (Commands action logs per pipeline)
+#   - AWS::CodePipeline::Pipeline x2  (build, deploy)
+#   - AWS::Events::Rule               (CodeCommit push to branch -> build pipeline)
+#
+# Pre-requisites
+#   - None when CreateCodeCommitRepository=true. Otherwise an existing
+#     CodeCommit repository named CodeCommitRepositoryName
+#
+# Assumptions
+#   - Both pipelines run once at stack creation; with a new empty repository
+#     their Source stage fails until the first push. This is expected
+#   - Build pipeline uses EventBridge (PollForSourceChanges false); the deploy
+#     pipeline has no rule, so pushes do not start it directly
+#   - The invoke action starts the target pipeline. The docs do not describe it
+#     waiting for the target's result; check the deploy pipeline's history
+#   - SourceRevisions actionName must equal the target's source action Name;
+#     passed variable names must be declared in the target's Variables
+#   - Pipeline variable values must match [A-Za-z0-9@\-_]+ (no dots / spaces)
+#   - Artifact bucket is not emptied on stack delete; empty it first
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - CreateCodeCommitRepository
+          - CodeCommitRepositoryName
+          - SourceBranchName
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  CreateCodeCommitRepository:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Create the CodeCommit repository (true) or use an existing one (false)
+
+  CodeCommitRepositoryName:
+    Type: String
+    Default: myapp-dev-invoke-demo
+    AllowedPattern: "[\\w.-]+"
+    Description: CodeCommit repository name (created or existing)
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch that starts the build pipeline and is used by both pipelines
+
+Conditions:
+
+  IsCreateCodeCommitRepository: !Equals [!Ref CreateCodeCommitRepository, "true"]
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Source Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    Condition: IsCreateCodeCommitRepository
+    DeletionPolicy: Retain # Keep code if the stack is deleted
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Ref CodeCommitRepositoryName
+      RepositoryDescription: CodePipeline V2 invoke action demo
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-codecommit-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  BuildPipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Build pipeline role - CodeCommit, artifacts, Commands logs, invoke deploy pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: build-pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !Sub "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-build-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-build-pipeline:*"
+              # [V2] Invoke action: the invoking pipeline's role starts the target
+              - Sid: InvokeDeployPipeline
+                Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Application}-${Environment}-deploy-pipeline"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-build-pipeline-service-role"
+
+  DeployPipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Deploy pipeline role - CodeCommit, artifacts, Commands logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: deploy-pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !Sub "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-deploy-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-deploy-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-deploy-pipeline-service-role"
+
+  BuildPipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the build pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-build-pipeline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${BuildPipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-build-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  BuildPipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-build-pipeline"
+      RetentionInDays: 7
+
+  DeployPipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-deploy-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Deploy Pipeline (target)
+  # ---------------------------------------------------------------
+
+  DeployPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: DeployPipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-deploy-pipeline" # Fixed: referenced by the build role + log group
+      RoleArn: !GetAtt DeployPipelineServiceRole.Arn
+      PipelineType: V2
+      ExecutionMode: QUEUED # [V2] Invoked releases deploy one at a time, in order
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      # [V2] Every variable the invoke action passes must be declared here.
+      # Defaults apply when this pipeline is started manually.
+      Variables:
+        - Name: ReleaseVersion
+          DefaultValue: manual
+          Description: Version built by the build pipeline
+        - Name: UpstreamExecutionId
+          DefaultValue: none
+          Description: Build pipeline execution that invoked this run
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            # Name must equal SourceRevisions[].actionName in the invoke action
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"
+              Namespace: SourceVariables
+              Configuration:
+                RepositoryName: !If [IsCreateCodeCommitRepository, !GetAtt CodeCommitRepository.Name, !Ref CodeCommitRepositoryName]
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Started only by the invoke action (or manually)
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployCommands
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands
+                Version: "1"
+              EnvironmentVariables:
+                - Name: RELEASE_VERSION
+                  Value: "#{variables.ReleaseVersion}"
+                - Name: UPSTREAM_EXECUTION_ID
+                  Value: "#{variables.UpstreamExecutionId}"
+                - Name: GIT_COMMIT
+                  Value: "#{SourceVariables.CommitId}" # The pinned commit, not the branch head
+              Commands:
+                - "echo Deploy execution #{codepipeline.PipelineExecutionId}"
+                - "echo Deploying release $RELEASE_VERSION from commit $GIT_COMMIT"
+                - "echo Invoked by build execution $UPSTREAM_EXECUTION_ID"
+                - "ls -la"
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-deploy-pipeline"
+
+  # ---------------------------------------------------------------
+  # Build Pipeline (invoking)
+  # ---------------------------------------------------------------
+
+  BuildPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: BuildPipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-build-pipeline"
+      RoleArn: !GetAtt BuildPipelineServiceRole.Arn
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"
+              Namespace: SourceVariables # CommitId, BranchName, RepositoryName, CommitMessage, AuthorDate, CommitterDate
+              Configuration:
+                RepositoryName: !If [IsCreateCodeCommitRepository, !GetAtt CodeCommitRepository.Name, !Ref CodeCommitRepositoryName]
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Started by the EventBridge rule
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildCommands
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands
+                Version: "1"
+              Namespace: BuildVariables
+              EnvironmentVariables:
+                - Name: GIT_COMMIT
+                  Value: "#{SourceVariables.CommitId}"
+              Commands:
+                - "echo Building commit $GIT_COMMIT"
+                - "ls -la"
+                # Pipeline variable values allow only [A-Za-z0-9@-_]: timestamp-shortsha
+                - "export RELEASE_VERSION=$(date -u +%Y%m%d%H%M%S)-$(echo $GIT_COMMIT | cut -c1-7)"
+                - "echo Release version $RELEASE_VERSION"
+              OutputVariables:
+                - RELEASE_VERSION # -> #{BuildVariables.RELEASE_VERSION}
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Release
+          Actions:
+            # [V2] CodePipeline invoke action - starts the deploy pipeline.
+            # SourceRevisions / Variables are JSON *strings* (serialized arrays).
+            - Name: InvokeDeployPipeline
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: CodePipeline
+                Version: "1"
+              Configuration:
+                PipelineName: !Ref DeployPipeline # The TARGET pipeline
+                # Pin the target's "Source" action to the commit this run built
+                SourceRevisions: '[{"actionName":"Source","revisionType":"COMMIT_ID","revisionValue":"#{SourceVariables.CommitId}"}]'
+                # Map into the target's declared pipeline-level variables
+                Variables: '[{"name":"ReleaseVersion","value":"#{BuildVariables.RELEASE_VERSION}"},{"name":"UpstreamExecutionId","value":"#{codepipeline.PipelineExecutionId}"}]'
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-build-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (CodeCommit push -> build pipeline)
+  # ---------------------------------------------------------------
+
+  BuildPipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the build pipeline on push to the source branch
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !Sub "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref SourceBranchName
+      Targets:
+        - Id: build-pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${BuildPipeline}"
+          RoleArn: !GetAtt BuildPipelineTriggerEventRole.Arn
+
+Outputs:
+
+  CodeCommitCloneUrlHttp:
+    Condition: IsCreateCodeCommitRepository
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  CodeCommitCloneUrlGrc:
+    Description: git-remote-codecommit URL (pip install git-remote-codecommit)
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepositoryName}"
+
+  BuildPipelineName:
+    Value: !Ref BuildPipeline
+
+  DeployPipelineName:
+    Value: !Ref DeployPipeline
+
+  DeployPipelineArn:
+    Value: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${DeployPipeline}"
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
