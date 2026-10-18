@@ -11,7 +11,7 @@ Provision a CodeCommit repository
 
 ### CodeCommit - Triggers - SNS
 
-[code-codecommit-sns](code-codecommit-sns.yaml)
+[code-codecommit-trigger-sns](code-codecommit-trigger-sns.yaml)
 
 ### CodeCommit - Triggers - Lambda
 

@@ -1,0 +1,637 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate + ALB + native ECS blue/green deployment (no CodeDeploy) + Lambda test hook
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Fargate service that uses the native Amazon ECS blue/green deployment
+#   strategy (DeploymentController ECS + Strategy BLUE_GREEN). ECS shifts
+#   traffic itself by flipping listener rule weights between two target groups,
+#   so no CodeDeploy application, deployment group, AppSpec or task sets.
+#
+#   Each deployment (change ContainerImageName and update the stack):
+#     1. Green tasks start and register with the alternate target group
+#     2. Test listener (:8080) rule shifts to green
+#     3. Lambda hook at POST_TEST_TRAFFIC_SHIFT calls :8080 -> SUCCEEDED / FAILED
+#     4. (Optional) PAUSE hook waits for `aws ecs continue-service-deployment`
+#     5. Production listener (:80) rule shifts to green
+#     6. Bake time: blue kept running; the alarm can still trigger a rollback
+#     7. Blue tasks are stopped
+#
+# Resources created
+#   - Security groups for the load balancer and the container service
+#   - Internet-facing ALB, two target groups (blue / green)
+#   - Production listener (:80) + production listener rule (weighted 1/0)
+#   - Test listener (:8080) + test listener rule (weighted 1/0)
+#   - ECS Cluster, Task Definition, Service (Fargate, BLUE_GREEN)
+#   - IAM: task execution role, ECS infrastructure role for load balancers,
+#     ECS lifecycle hook invoke role, Lambda execution role
+#   - Lambda test hook + log groups
+#   - CloudWatch alarm (ALB target 5XX) used for automatic rollback
+#
+# Pre-requisites
+#   - A VPC with at least 2 public subnets (IGW route) in different AZs
+#
+# Assumptions
+#   - ALB and tasks share the same public subnets; tasks get public IPs to
+#     pull images without NAT. Security Hub [ECS.2] flags public IPs; move
+#     tasks to private subnets with NAT / VPC endpoints for production
+#   - Test listener :8080 is open to 0.0.0.0/0 so the Lambda hook (not in the
+#     VPC) can reach it. Restrict it, or put the Lambda in the VPC, for production
+#   - ECS updates the listener *rules*, not the listener default action, so
+#     both listeners default to a fixed 404 and a catch-all "/*" rule carries
+#     the weighted forward. Do not edit the rule weights out-of-band
+#   - The first stack create is not a blue/green deployment (no previous revision)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network"
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+      - Label:
+          default: "Container"
+        Parameters:
+          - ContainerImageName
+          - ContainerPort
+          - TaskCpu
+          - TaskMemory
+      - Label:
+          default: "Service / Blue-Green Deployment"
+        Parameters:
+          - TaskDesiredCount
+          - DeploymentBakeTimeInMinutes
+          - DeploymentPauseHookEnabled
+
+# ---------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy into
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnet IDs (min 2 AZs) for the ALB and tasks
+
+  ContainerImageName:
+    Type: String
+    Default: "public.ecr.aws/docker/library/nginx:1.27"
+    Description: >
+      Container image URI. Change it (e.g. to ...nginx:1.28) and update the
+      stack to trigger a blue/green deployment
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port the container listens on
+
+  TaskCpu:
+    Type: Number
+    Default: 256
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+    Description: Task CPU units (256 = 0.25 vCPU)
+
+  TaskMemory:
+    Type: Number
+    Default: 512
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+    Description: Task memory in MiB (must be a valid Fargate combination with TaskCpu)
+
+  TaskDesiredCount:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: Desired number of running tasks (blue and green each run this many during a deployment)
+
+  DeploymentBakeTimeInMinutes:
+    Type: Number
+    Default: 5
+    MinValue: 0
+    MaxValue: 1440
+    Description: Minutes blue keeps running after production traffic shifts to green (ECS default is 15)
+
+  DeploymentPauseHookEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Pause before the production traffic shift until continue-service-deployment is called
+
+Conditions:
+
+  IsDeploymentPauseHookEnabled: !Equals [!Ref DeploymentPauseHookEnabled, "true"]
+
+# ---------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Allow production (80) and test (8080) traffic to the load balancer
+      SecurityGroupIngress:
+        - Description: Production listener
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - Description: Test listener (green validation) - restrict for production
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer-securitygroup"
+
+  ContainerServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Allow inbound from the load balancer to ECS task ENIs
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containerservice-securitygroup"
+
+  # ---------------------------------------------------------------
+  # Load Balancer + Listeners + Target Groups
+  # ---------------------------------------------------------------
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets: !Ref VpcSubnetList
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: "false"
+        - Key: idle_timeout.timeout_seconds
+          Value: "60"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer"
+
+  # Blue / green are roles, not fixed colors: ECS alternates which target group
+  # holds production on every deployment. "Primary" is the one given to the
+  # service as TargetGroupArn; "Alternate" is AdvancedConfiguration.AlternateTargetGroupArn.
+  PrimaryTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30" # Default 300s slows every blue/green shift
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-primary-targetgroup"
+
+  AlternateTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alternate-targetgroup"
+
+  # Production listener. ECS manages the *rule* below, so the default action is
+  # a fixed 404 that is never hit while the catch-all rule exists.
+  ProductionListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: "No matching rule"
+
+  # [Blue/Green] Must forward to BOTH target groups with weights 1 / 0.
+  # ECS flips the weights to shift traffic and flips them back on rollback.
+  ProductionListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ProductionListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values: ["/*"]
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref PrimaryTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref AlternateTargetGroup
+                Weight: 0
+
+  # [Blue/Green] Optional test listener: green receives test traffic here
+  # before production shifts (TEST_TRAFFIC_SHIFT stage)
+  TestListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 8080
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: "No matching rule"
+
+  TestListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref TestListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values: ["/*"]
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref PrimaryTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref AlternateTargetGroup
+                Weight: 0
+
+  # ---------------------------------------------------------------
+  # Cluster / Compute
+  # ---------------------------------------------------------------
+
+  ContainerCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${Application}-${Environment}"
+      CapacityProviders:
+        - FARGATE
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containercluster"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  ContainerTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-task-execution-role"
+
+  # [Blue/Green] Replaces the CodeDeploy service role (ecsCodeDeployRole).
+  # ECS assumes it to modify listener rules and register targets.
+  LoadBalancerInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAccessToECSForInfrastructureManagement
+            Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer-infrastructure-role"
+
+  # [Blue/Green] ECS assumes this role to invoke Lambda lifecycle hooks
+  DeploymentHookInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-deployment-hooks
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt TestTrafficHookLambdaFunction.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-deployment-hook-invoke-role"
+
+  TestTrafficHookLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt TestTrafficHookLambdaLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-testtraffichook-lambda-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  ContainerTaskLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/ecs/${Application}/${Environment}"
+      RetentionInDays: 7
+
+  TestTrafficHookLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/test-traffic-hook"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Task Definition
+  # ---------------------------------------------------------------
+
+  ContainerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${Application}-${Environment}-task"
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ContainerTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub "${Application}-${Environment}-container"
+          Image: !Ref ContainerImageName
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ContainerTaskLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-taskdefinition"
+
+  # ---------------------------------------------------------------
+  # Service
+  # ---------------------------------------------------------------
+
+  ContainerService:
+    Type: AWS::ECS::Service # Listener rules are referenced below, so no DependsOn needed
+    Properties:
+      Cluster: !Ref ContainerCluster
+      ServiceName: !Sub "${Application}-${Environment}-service"
+      LaunchType: FARGATE
+      DesiredCount: !Ref TaskDesiredCount
+      TaskDefinition: !Ref ContainerTaskDefinition
+      HealthCheckGracePeriodSeconds: 60
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ContainerServiceSecurityGroup
+          Subnets: !Ref VpcSubnetList
+
+      # [Blue/Green] Native ECS controller - not CODE_DEPLOY, not EXTERNAL
+      DeploymentController:
+        Type: ECS
+
+      DeploymentConfiguration:
+        Strategy: BLUE_GREEN                               # ROLLING | BLUE_GREEN | LINEAR | CANARY
+        BakeTimeInMinutes: !Ref DeploymentBakeTimeInMinutes
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        # Roll back automatically if the alarm fires during the deployment or bake time.
+        # (DeploymentCircuitBreaker is documented as rolling-update only.)
+        Alarms:
+          Enable: true
+          Rollback: true
+          AlarmNames:
+            - !Ref LoadBalancerTarget5xxAlarm
+        LifecycleHooks:
+          # Lambda hook: validate green through the test listener. The function
+          # returns hookStatus SUCCEEDED / FAILED / IN_PROGRESS.
+          - TargetType: AWS_LAMBDA
+            HookTargetArn: !GetAtt TestTrafficHookLambdaFunction.Arn
+            RoleArn: !GetAtt DeploymentHookInvokeRole.Arn
+            LifecycleStages:
+              - POST_TEST_TRAFFIC_SHIFT
+            TimeoutConfiguration:
+              TimeoutInMinutes: 10
+              Action: ROLLBACK
+          # Pause hook (optional): manual approval before production shift.
+          # Not allowed at TEST_TRAFFIC_SHIFT / PRODUCTION_TRAFFIC_SHIFT.
+          - !If
+            - IsDeploymentPauseHookEnabled
+            - TargetType: PAUSE
+              LifecycleStages:
+                - PRE_PRODUCTION_TRAFFIC_SHIFT
+              TimeoutConfiguration:
+                TimeoutInMinutes: 60
+                Action: ROLLBACK
+            - !Ref AWS::NoValue
+
+      LoadBalancers:
+        - ContainerName: !Sub "${Application}-${Environment}-container"
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref PrimaryTargetGroup
+          # [Blue/Green] Replaces the CodeDeploy deployment group's
+          # target group pair + listener configuration
+          AdvancedConfiguration:
+            AlternateTargetGroupArn: !Ref AlternateTargetGroup
+            ProductionListenerRule: !Ref ProductionListenerRule
+            TestListenerRule: !Ref TestListenerRule
+            RoleArn: !GetAtt LoadBalancerInfrastructureRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containerservice"
+
+  # ---------------------------------------------------------------
+  # Deployment hooks + rollback alarm
+  # ---------------------------------------------------------------
+
+  # Replaces CodeDeploy AppSpec "AfterAllowTestTraffic" hooks. Unlike CodeDeploy,
+  # the function does NOT call PutLifecycleEventHookExecutionStatus - the return
+  # value is the hook status.
+  TestTrafficHookLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: ECS blue/green hook - checks green via the test listener
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 128
+      Role: !GetAtt TestTrafficHookLambdaExecutionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref TestTrafficHookLambdaLogGroup
+      Environment:
+        Variables:
+          TEST_URL: !Sub "http://${LoadBalancer.DNSName}:8080/"
+          MAX_ATTEMPTS: "5"
+      Code:
+        ZipFile: |
+          import json, os, urllib.request
+
+          TEST_URL = os.environ["TEST_URL"]
+          MAX_ATTEMPTS = int(os.environ.get("MAX_ATTEMPTS", "5"))
+
+          def handler(event, context):
+              print(json.dumps(event))
+              details = event.get("hookDetails") or {}
+              attempt = int(details.get("attempt", 0)) + 1
+              try:
+                  with urllib.request.urlopen(TEST_URL, timeout=5) as r:
+                      status = r.status
+                      server = r.headers.get("Server")
+                  print(f"attempt={attempt} status={status} server={server}")
+                  if 200 <= status < 300:
+                      return {"hookStatus": "SUCCEEDED"}
+              except Exception as e:
+                  print(f"attempt={attempt} error={e}")
+              if attempt >= MAX_ATTEMPTS:
+                  return {"hookStatus": "FAILED"}  # ECS rolls back to blue
+              # Ask ECS to call again in 15s, carrying state in hookDetails
+              return {"hookStatus": "IN_PROGRESS", "callBackDelay": 15,
+                      "hookDetails": {"attempt": attempt}}
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-testtraffichook-lambda"
+
+  LoadBalancerTarget5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Target 5XX on the load balancer - triggers ECS deployment rollback
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+# ---------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------
+Outputs:
+
+  ProductionUrl:
+    Description: Production listener
+    Value: !Sub "http://${LoadBalancer.DNSName}/"
+
+  TestUrl:
+    Description: Test listener - serves green during a deployment
+    Value: !Sub "http://${LoadBalancer.DNSName}:8080/"
+
+  ContainerClusterName:
+    Value: !Ref ContainerCluster
+
+  ContainerClusterArn:
+    Value: !GetAtt ContainerCluster.Arn
+
+  ContainerServiceArn:
+    Value: !Ref ContainerService
+
+  ContainerServiceName:
+    Value: !GetAtt ContainerService.Name
+
+  TestTrafficHookLambdaFunctionArn:
+    Value: !GetAtt TestTrafficHookLambdaFunction.Arn
