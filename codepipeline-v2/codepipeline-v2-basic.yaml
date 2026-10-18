@@ -1,0 +1,386 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 basic - S3 source + Commands action + pipeline variables + stage retry/rollback
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Minimal V2 type pipeline that needs no Git connection and no CodeBuild
+#   project. Upload a zip to the source bucket and the pipeline runs:
+#     Source (S3) -> Build (Commands action) -> Release (Commands action)
+#
+#   V2-only features demonstrated (marked "[V2]" inline below):
+#     - PipelineType: V2
+#     - ExecutionMode: QUEUED            (V1 only supports SUPERSEDED; PARALLEL
+#                                         is V2 but not allowed with ROLLBACK)
+#     - Variables (pipeline-level)       overridable per execution at start
+#     - Commands action                  shell commands without a CodeBuild project
+#     - OutputVariables on Commands      export shell env vars to later stages
+#     - OnFailure Result: RETRY          automatic stage retry (one attempt)
+#     - OnFailure Result: ROLLBACK       automatic stage rollback
+#
+# Resources created
+#   - AWS::S3::Bucket                 (source bucket, versioned, EventBridge enabled)
+#   - AWS::S3::Bucket                 (artifact store bucket)
+#   - AWS::IAM::Role                  (pipeline service role)
+#   - AWS::IAM::Role                  (EventBridge -> StartPipelineExecution role)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name> for Commands action)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (S3 Object Created -> start pipeline)
+#
+# Pre-requisites
+#   - None. After deploy, upload a zip to the source bucket at SourceObjectKey
+#
+# Assumptions
+#   - The first execution started at stack creation fails at Source because the
+#     source object does not exist yet. This is expected
+#   - Commands action runs on CodePipeline-managed CodeBuild compute and is
+#     billed as CodeBuild minutes (BUILD_GENERAL1_SMALL, LINUX_CONTAINER)
+#   - V2 pipelines are billed per action-execution minute, not per pipeline/month
+#   - Buckets are not emptied on stack delete; empty them first
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Pipeline
+        Parameters:
+          - SourceObjectKey
+          - PipelineExecutionMode
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceObjectKey:
+    Type: String
+    Default: source.zip
+    Description: S3 object key (zip) in the source bucket that starts the pipeline
+
+  PipelineExecutionMode:
+    Type: String
+    Default: QUEUED
+    AllowedValues: [QUEUED, SUPERSEDED] # PARALLEL is V2 too, but cannot be combined with a ROLLBACK result
+    Description: "[V2] How concurrent executions are handled. QUEUED requires V2"
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # S3 Buckets
+  # ---------------------------------------------------------------
+
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled # Required by the S3 source action
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true # Emits "Object Created" events; no CloudTrail trail needed
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-source-bucket"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 service role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSource
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt SourceBucket.Arn
+                  - !Sub "${SourceBucket.Arn}/*"
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              # [V2] Commands action writes its compute logs to /aws/codepipeline/<pipeline-name>
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  # [V2] Pre-create the Commands action log group so retention is controlled.
+  # CodePipeline uses the fixed name /aws/codepipeline/<pipeline-name>.
+  PipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-pipeline" # Fixed so the log group name is known
+      RoleArn: !GetAtt PipelineServiceRole.Arn
+      PipelineType: V2                          # [V2] Billed per action-execution minute
+      ExecutionMode: !Ref PipelineExecutionMode # [V2] QUEUED (V2 only) or SUPERSEDED
+      RestartExecutionOnUpdate: false
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      # [V2] Pipeline-level variables. Referenced as #{variables.<Name>}.
+      # Defaults apply to triggered runs; override per run with
+      #   aws codepipeline start-pipeline-execution --variables name=ReleaseVersion,value=v2
+      # Note: pipeline-level variables cannot be used in Source actions.
+      Variables:
+        - Name: ReleaseVersion
+          DefaultValue: latest
+          Description: Version label printed by Build and Release
+        - Name: TargetEnvironment
+          DefaultValue: !Ref Environment
+          Description: Environment label passed to the Release stage
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: S3Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: "1"
+              Namespace: SourceVariables # Exposes #{SourceVariables.ETag} and #{SourceVariables.VersionId}
+              Configuration:
+                S3Bucket: !Ref SourceBucket
+                S3ObjectKey: !Ref SourceObjectKey
+                PollForSourceChanges: false # Started by the EventBridge rule instead
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            # [V2] Commands action: runs on CodePipeline-managed CodeBuild compute,
+            # no AWS::CodeBuild::Project or buildspec needed.
+            - Name: BuildCommands
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands
+                Version: "1"
+              Namespace: BuildVariables
+              Configuration:
+                EnvironmentType: LINUX_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL
+              # [V2] Plain env vars for the commands; values can reference variables
+              EnvironmentVariables:
+                - Name: RELEASE_VERSION
+                  Value: "#{variables.ReleaseVersion}"
+                  Type: PLAINTEXT
+                - Name: SOURCE_VERSION_ID
+                  Value: "#{SourceVariables.VersionId}"
+                  Type: PLAINTEXT
+              # Single-line commands only. Quote them: "#{...}" would otherwise be a YAML comment.
+              Commands:
+                - "echo Execution #{codepipeline.PipelineExecutionId}"
+                - "echo Release version $RELEASE_VERSION from S3 version $SOURCE_VERSION_ID"
+                - "ls -la"
+                - "mkdir -p dist && find . -mindepth 1 -maxdepth 1 ! -name dist -exec cp -r -t dist {} +"
+                - "echo \"$RELEASE_VERSION\" > dist/VERSION"
+                - "export BUILD_TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)"
+              # [V2] Export shell env vars as action output variables -> #{BuildVariables.BUILD_TIMESTAMP}
+              OutputVariables:
+                - BUILD_TIMESTAMP
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+                  Files:            # [V2] Files is only used by the Commands action
+                    - "dist/**/*"
+              RunOrder: 1
+          # [V2] Automatic retry: re-run only the failed actions once on failure
+          OnFailure:
+            Result: RETRY
+            RetryConfiguration:
+              RetryMode: FAILED_ACTIONS
+
+        - Name: Release
+          Actions:
+            - Name: ReleaseCommands
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands
+                Version: "1"
+              EnvironmentVariables:
+                - Name: TARGET_ENVIRONMENT
+                  Value: "#{variables.TargetEnvironment}"
+                - Name: BUILD_TIMESTAMP
+                  Value: "#{BuildVariables.BUILD_TIMESTAMP}" # Output variable from the Build stage
+              Commands:
+                - "echo Releasing build $BUILD_TIMESTAMP to $TARGET_ENVIRONMENT"
+                - "cat dist/VERSION"
+              InputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+          # [V2] Automatic rollback: on failure, re-run this stage with the artifacts
+          # of the last successful execution (requires a previous success in the
+          # current pipeline structure version).
+          OnFailure:
+            Result: ROLLBACK
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (S3 Object Created -> start pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline when the source object is uploaded
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref SourceBucket
+          object:
+            key:
+              - !Ref SourceObjectKey
+      Targets:
+        - Id: codepipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  PipelineArn:
+    Value: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+
+  PipelineVersion:
+    Description: Pipeline structure version (increments on every update)
+    Value: !GetAtt Pipeline.Version
+
+  SourceBucketName:
+    Description: Upload the source zip here
+    Value: !Ref SourceBucket
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+
+  PipelineCommandsLogGroupName:
+    Description: Commands action compute logs
+    Value: !Ref PipelineCommandsLogGroup

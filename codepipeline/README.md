@@ -172,6 +172,12 @@ CodePipeline example with CodeCommit as Source. Has Stages Source,Build,Deploy. 
 
 [code-codepipeline-ecs](code-codepipeline-ecs.yaml)
 
+### CodePipeline V2
+
+V2 type pipeline templates: execution modes, pipeline variables, Commands action, stage retry/rollback, triggers.
+
+[codepipeline-v2/README.md](../codepipeline-v2/README.md)
+
 ## Resources
 
 https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
