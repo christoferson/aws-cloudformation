@@ -1,0 +1,402 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 - Dockerfile -> ECRBuildAndPublish -> InspectorScan gate (severity thresholds, SBOM)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Feature: scan the image that was just pushed and fail the pipeline when
+#   vulnerability counts exceed thresholds.
+#     git push -> Source (CodeCommit) -> Build (ECRBuildAndPublish)
+#              -> Scan (InspectorScan, ECRImageScan) -> SBOM artifact
+#   InspectorScan is a managed compute action; its action reference does not
+#   mark it V2-only. ECRBuildAndPublish is V2-only.
+#
+# Resources created
+#   - AWS::CodeCommit::Repository     (Dockerfile in the repository root)
+#   - AWS::ECR::Repository
+#   - AWS::S3::Bucket                 (artifact store, holds the SBOM)
+#   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (CodeCommit push to branch -> pipeline)
+#
+# Pre-requisites
+#   - None. The only documented Inspector setup is IAM inspector-scan:ScanSbom
+#     (added below); no account activation step is listed
+#
+# Assumptions
+#   - CodeCommit and ECR repositories are named <Application>-<Environment>-inspector-scan
+#   - ImageTags / ImageTag use #{SourceVariables.CommitId}: variables are allowed in
+#     action configuration fields in general; the action references do not mention it.
+#     The scan finds the image by this commit tag (ImageTag takes a tag, not a digest)
+#   - Scans are billed by Inspector plus CodeBuild minutes (managed compute)
+#   - The first execution at stack creation fails at Source (empty repository)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - SourceBranchName
+      - Label:
+          default: Image Scan (Amazon Inspector)
+        Parameters:
+          - ImageScanCriticalThreshold
+          - ImageScanHighThreshold
+          - ImageScanMediumThreshold
+          - ImageScanLowThreshold
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch that starts the pipeline
+
+  ImageScanCriticalThreshold:
+    Type: String
+    Default: "0"
+    AllowedPattern: "^[0-9]+$"
+    Description: Fail the scan when CRITICAL findings exceed this count (0 = fail on any)
+
+  ImageScanHighThreshold:
+    Type: String
+    Default: "0"
+    AllowedPattern: "^[0-9]+$"
+    Description: Fail the scan when HIGH findings exceed this count
+
+  ImageScanMediumThreshold:
+    Type: String
+    Default: "10"
+    AllowedPattern: "^[0-9]+$"
+    Description: Fail the scan when MEDIUM findings exceed this count
+
+  ImageScanLowThreshold:
+    Type: String
+    Default: "50"
+    AllowedPattern: "^[0-9]+$"
+    Description: Fail the scan when LOW findings exceed this count
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Source Repository + Container Image Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    DeletionPolicy: Retain # Keep code if the stack is deleted
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-inspector-scan"
+      RepositoryDescription: CodePipeline V2 Inspector scan demo - Dockerfile in the root
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-inspector-scan-codecommit-repository"
+
+  ContainerImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-inspector-scan"
+      ImageTagMutability: MUTABLE # "latest" moves on every build
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      EmptyOnDelete: true # Allows stack delete with images present
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the 20 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-inspector-scan-container-image-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-inspector-scan-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - CodeCommit, artifacts, ECR push, Inspector scan, managed compute logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !GetAtt CodeCommitRepository.Arn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: EcrAuthorization
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:DescribeRepositories
+                  - sts:GetServiceBearerToken
+                Resource: "*" # Account-level calls, no resource scoping
+              # ECRBuildAndPublish push + InspectorScan pull (GetDownloadUrlForLayer,
+              # BatchGetImage, BatchCheckLayerAvailability)
+              - Sid: EcrPushPullImage
+                Effect: Allow
+                Action:
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                Resource: !GetAtt ContainerImageRepository.Arn
+              - Sid: InspectorScanSbom
+                Effect: Allow
+                Action: inspector-scan:ScanSbom
+                Resource: "*" # No resource-level scoping for this action
+              - Sid: ManagedComputeLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-inspector-scan-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-inspector-scan-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-inspector-scan-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-inspector-scan-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  # Shared by ECRBuildAndPublish and InspectorScan (managed CodeBuild compute)
+  PipelineManagedComputeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-inspector-scan-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineManagedComputeLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-inspector-scan-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity ECRBuildAndPublish and InspectorScan run as
+      PipelineType: V2
+      ExecutionMode: QUEUED # [V2] Every commit is built and scanned, in order
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"   # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference outputs: CommitId, BranchName, ...
+              Configuration:
+                RepositoryName: !GetAtt CodeCommitRepository.Name
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Omitted = true (polling). False because EventBridge starts it; both = duplicate runs
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildAndPublishImage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: ECRBuildAndPublish # [V2] Replaces a CodeBuild project + docker buildspec
+                Version: "1"
+              Namespace: BuildVariables # -> ECRImageDigestId, ECRRepositoryName
+              Configuration:
+                ECRRepositoryName: !Ref ContainerImageRepository # Repository must already exist
+                ImageTags: "latest,#{SourceVariables.CommitId}" # The commit tag is what Scan looks up
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Scan
+          Actions:
+            - Name: ScanImage
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: InspectorScan # Managed compute; not marked V2-only in its action reference
+                Version: "1"
+              Namespace: ScanVariables # -> HighestScannedSeverity (medium | high | critical)
+              Configuration:
+                InspectorRunMode: ECRImageScan # or SourceCodeScan (scans the source input artifact instead)
+                ECRRepositoryName: !Ref ContainerImageRepository
+                ImageTag: "#{SourceVariables.CommitId}" # Takes a tag, not a digest
+                # Fail when the count at a severity is ABOVE its threshold
+                CriticalThreshold: !Ref ImageScanCriticalThreshold
+                HighThreshold: !Ref ImageScanHighThreshold
+                MediumThreshold: !Ref ImageScanMediumThreshold
+                LowThreshold: !Ref ImageScanLowThreshold
+              # No InputArtifacts: ECRImageScan reads the image from ECR
+              OutputArtifacts:
+                - Name: ImageSbomArtifact # SBOM with vulnerability details (artifact bucket)
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-inspector-scan-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (CodeCommit push -> pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline on push to the source branch
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt CodeCommitRepository.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref SourceBranchName
+      Targets:
+        - Id: pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  CodeCommitCloneUrlGrc:
+    Description: git-remote-codecommit URL (pip install git-remote-codecommit)
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepository.Name}"
+
+  CodeCommitCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  ContainerImageRepositoryUri:
+    Value: !GetAtt ContainerImageRepository.RepositoryUri
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  ArtifactBucketName:
+    Description: Holds the SBOM artifact (ImageSbomArtifact) per execution
+    Value: !Ref ArtifactBucket

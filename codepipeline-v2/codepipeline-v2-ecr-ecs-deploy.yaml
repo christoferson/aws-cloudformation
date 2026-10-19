@@ -1,0 +1,444 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 - Dockerfile -> ECRBuildAndPublish -> digest-pinned imagedefinitions.json -> ECS deploy
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Feature: deploy a freshly built image to an existing ECS service.
+#     git push -> Source (CodeCommit) -> Build (ECRBuildAndPublish)
+#              -> Verify (Commands: imagedefinitions.json = repo@sha256:<digest>)
+#              -> Deploy (ECS standard action)
+#   The ECS deploy action itself works in V1 and V2; the V2 parts are the
+#   ECRBuildAndPublish build (no CodeBuild project) and the Commands action
+#   that turns its digest output variable into imagedefinitions.json.
+#
+# Resources created
+#   - AWS::CodeCommit::Repository     (Dockerfile in the repository root)
+#   - AWS::ECR::Repository
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (CodeCommit push to branch -> pipeline)
+#
+# Pre-requisites
+#   - An ECS cluster + service whose task definition has a container named
+#     ContainerName
+#
+# Assumptions
+#   - CodeCommit and ECR repositories are named <Application>-<Environment>-ecs-deploy
+#   - ImageTags uses #{SourceVariables.CommitId}: variables are allowed in action
+#     configuration fields in general; the action reference does not mention it
+#   - imagedefinitions.json uses a digest URI (repo@sha256:...); the file
+#     reference only shows repo:tag examples
+#   - iam:PassRole is on * limited to ecs / ecs-tasks; scope it to your task and
+#     execution role ARNs for production
+#   - The first execution at stack creation fails at Source (empty repository)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - SourceBranchName
+      - Label:
+          default: Deploy (Amazon ECS)
+        Parameters:
+          - ContainerClusterName
+          - ContainerServiceName
+          - ContainerName
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch that starts the pipeline
+
+  ContainerClusterName:
+    Type: String
+    MinLength: 1
+    Description: Existing ECS cluster name
+
+  ContainerServiceName:
+    Type: String
+    MinLength: 1
+    Description: Existing ECS service name in ContainerClusterName
+
+  ContainerName:
+    Type: String
+    MinLength: 1
+    Description: Container name in the service's task definition (written to imagedefinitions.json)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Source Repository + Container Image Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    DeletionPolicy: Retain # Keep code if the stack is deleted
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-ecs-deploy"
+      RepositoryDescription: CodePipeline V2 ECS deploy demo - Dockerfile in the root
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecs-deploy-codecommit-repository"
+
+  ContainerImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-ecs-deploy"
+      ImageTagMutability: MUTABLE # "latest" moves on every build; deploys are pinned by digest
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      EmptyOnDelete: true # Allows stack delete with images present
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the 20 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecs-deploy-container-image-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecs-deploy-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - CodeCommit, artifacts, ECR push, ECS deploy, managed compute logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !GetAtt CodeCommitRepository.Arn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: EcrAuthorization
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:DescribeRepositories
+                  - sts:GetServiceBearerToken
+                Resource: "*" # Account-level calls, no resource scoping
+              # ECRBuildAndPublish push + Verify DescribeImages
+              - Sid: EcrPushImage
+                Effect: Allow
+                Action:
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:DescribeImages
+                Resource: !GetAtt ContainerImageRepository.Arn
+              # ECS standard deploy action - minimum permissions per the action reference
+              - Sid: ContainerTaskDefinition
+                Effect: Allow
+                Action:
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Sid: ContainerService
+                Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ContainerClusterName}/${ContainerServiceName}"
+              - Sid: ContainerTaskDefinitionTag
+                Effect: Allow
+                Action: ecs:TagResource
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/*"
+                Condition:
+                  StringEquals:
+                    ecs:CreateAction: RegisterTaskDefinition
+              - Sid: ContainerTaskPassRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: "*" # Scope to your task + execution role ARNs for production
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - ecs.amazonaws.com
+                      - ecs-tasks.amazonaws.com
+              - Sid: ManagedComputeLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-ecs-deploy-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-ecs-deploy-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecs-deploy-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecs-deploy-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  # Shared by ECRBuildAndPublish and Commands (managed CodeBuild compute)
+  PipelineManagedComputeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-ecs-deploy-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineManagedComputeLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-ecs-deploy-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity ECRBuildAndPublish and Commands run as
+      PipelineType: V2
+      ExecutionMode: QUEUED # [V2] Every commit deploys, in order
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"   # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference outputs: CommitId, BranchName, ...
+              Configuration:
+                RepositoryName: !GetAtt CodeCommitRepository.Name
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Omitted = true (polling). False because EventBridge starts it; both = duplicate runs
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildAndPublishImage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: ECRBuildAndPublish # [V2] Replaces a CodeBuild project + docker buildspec
+                Version: "1"
+              Namespace: BuildVariables # -> ECRImageDigestId, ECRRepositoryName
+              Configuration:
+                ECRRepositoryName: !Ref ContainerImageRepository # Repository must already exist
+                ImageTags: "latest,#{SourceVariables.CommitId}" # Comma-delimited; default "latest". DockerFilePath omitted = repo root
+              InputArtifacts:
+                - Name: SourceArtifact
+              # No OutputArtifacts: this action outputs variables, not files
+              RunOrder: 1
+
+        - Name: Verify
+          Actions:
+            - Name: WriteImageDefinitions
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands  # [V2] Commands / EnvironmentVariables / OutputVariables are action properties, not Configuration
+                Version: "1"
+              EnvironmentVariables: # #{...} resolved by CodePipeline at run time; !Ref/!Sub by CloudFormation at deploy time
+                - Name: IMAGE_REGISTRY
+                  Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}"
+                - Name: IMAGE_REPOSITORY
+                  Value: "#{BuildVariables.ECRRepositoryName}"
+                - Name: IMAGE_DIGEST
+                  Value: "#{BuildVariables.ECRImageDigestId}"
+                - Name: CONTAINER_NAME
+                  Value: !Ref ContainerName
+              Commands:
+                # Docs say "the sha256 digest" without showing the format; ensure the sha256: prefix
+                - "case \"$IMAGE_DIGEST\" in sha256:*) ;; *) IMAGE_DIGEST=\"sha256:$IMAGE_DIGEST\" ;; esac"
+                - "aws ecr describe-images --repository-name \"$IMAGE_REPOSITORY\" --image-ids imageDigest=\"$IMAGE_DIGEST\" --query \"imageDetails[0].{tags:imageTags,pushedAt:imagePushedAt}\""
+                - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"$CONTAINER_NAME\" \"$IMAGE_REGISTRY/$IMAGE_REPOSITORY@$IMAGE_DIGEST\" > imagedefinitions.json"
+                - "cat imagedefinitions.json"
+              InputArtifacts:
+                - Name: SourceArtifact # Commands requires at least one input artifact
+              OutputArtifacts:
+                - Name: ImageDefinitionsArtifact
+                  Files:            # Commands only: workspace files to put in the artifact
+                    - imagedefinitions.json
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployToContainerService
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: ECS      # "ECS standard": updates the service; the service's own deployment config decides how it rolls out
+                Version: "1"
+              Configuration:
+                ClusterName: !Ref ContainerClusterName
+                ServiceName: !Ref ContainerServiceName
+                FileName: imagedefinitions.json
+              InputArtifacts:
+                - Name: ImageDefinitionsArtifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ecs-deploy-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (CodeCommit push -> pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline on push to the source branch
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt CodeCommitRepository.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref SourceBranchName
+      Targets:
+        - Id: pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  CodeCommitCloneUrlGrc:
+    Description: git-remote-codecommit URL (pip install git-remote-codecommit)
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepository.Name}"
+
+  CodeCommitCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  ContainerImageRepositoryUri:
+    Value: !GetAtt ContainerImageRepository.RepositoryUri
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

@@ -1,0 +1,515 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 - ECS deploy + On Success CloudWatchAlarm condition -> automatic stage ROLLBACK
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Feature: "the deployment succeeded" is not "the release is healthy".
+#   After the Deploy stage succeeds, an On Success condition checks an error-rate
+#   alarm; if it is in ALARM, CodePipeline rolls the stage back automatically.
+#     git push -> Source (CodeCommit) -> Build (ECRBuildAndPublish)
+#              -> Verify (Commands: imagedefinitions.json = repo@sha256:<digest>)
+#              -> Deploy (ECS) + Bake (Commands)
+#                 On Success: CloudWatchAlarm rule -> ALARM -> ROLLBACK
+#   Rollback re-runs the stage with the artifacts and variables of the last
+#   execution that succeeded in that stage, as a new execution of type
+#   "rollback". Because imagedefinitions.json is digest-pinned, that redeploys
+#   exactly the previous image.
+#
+# Resources created
+#   - AWS::CodeCommit::Repository     (Dockerfile in the repository root)
+#   - AWS::ECR::Repository
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (CodeCommit push to branch -> pipeline)
+#
+# Pre-requisites
+#   - An ECS cluster + service whose task definition has a container named
+#     ContainerName
+#   - A CloudWatch alarm for the service's errors (e.g. ALB
+#     HTTPCode_Target_5XX_Count), named DeployRollbackAlarmName
+#
+# Assumptions
+#   - CodeCommit and ECR repositories are named <Application>-<Environment>-alarm-rollback
+#   - CloudWatchAlarm rule on On Success: OK and INSUFFICIENT_DATA pass, ALARM fails.
+#     If the alarm is OK when first checked the rule passes at once; WaitTime only
+#     applies when it is already in ALARM. The Bake step gives the alarm time to
+#     see traffic on the new version first
+#   - Rollback needs a previous execution that succeeded in the Deploy stage in the
+#     current pipeline structure version (none on the first deploy or right after a
+#     pipeline update). Not available with ExecutionMode PARALLEL
+#   - cloudwatch:DescribeAlarms for the rule is inferred; the rule reference lists
+#     no permissions
+#   - iam:PassRole is on * limited to ecs / ecs-tasks; scope it for production
+#   - The first execution at stack creation fails at Source (empty repository)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - SourceBranchName
+      - Label:
+          default: Deploy (Amazon ECS)
+        Parameters:
+          - ContainerClusterName
+          - ContainerServiceName
+          - ContainerName
+      - Label:
+          default: Post-deploy health check
+        Parameters:
+          - DeployRollbackAlarmName
+          - DeployRollbackAlarmWaitTimeInMinutes
+          - DeployBakeTimeInMinutes
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch that starts the pipeline
+
+  ContainerClusterName:
+    Type: String
+    MinLength: 1
+    Description: Existing ECS cluster name
+
+  ContainerServiceName:
+    Type: String
+    MinLength: 1
+    Description: Existing ECS service name in ContainerClusterName
+
+  ContainerName:
+    Type: String
+    MinLength: 1
+    Description: Container name in the service's task definition (written to imagedefinitions.json)
+
+  DeployRollbackAlarmName:
+    Type: String
+    MinLength: 1
+    Description: Existing CloudWatch alarm (e.g. error rate). In ALARM after Deploy succeeds = roll back
+
+  DeployRollbackAlarmWaitTimeInMinutes:
+    Type: String
+    Default: "1"
+    AllowedPattern: "^[0-9]+$"
+    Description: CloudWatchAlarm rule WaitTime - minutes an alarm already in ALARM gets to recover before rollback
+
+  DeployBakeTimeInMinutes:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 50
+    Description: Minutes to wait after the ECS deploy before the On Success check (Commands timeout is 55)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Source Repository + Container Image Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    DeletionPolicy: Retain # Keep code if the stack is deleted
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-alarm-rollback"
+      RepositoryDescription: CodePipeline V2 alarm rollback demo - Dockerfile in the root
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alarm-rollback-codecommit-repository"
+
+  ContainerImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-alarm-rollback"
+      ImageTagMutability: MUTABLE # "latest" moves on every build; deploys are pinned by digest
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      EmptyOnDelete: true # Allows stack delete with images present
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the 20 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alarm-rollback-container-image-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30 # Rollback reuses old artifacts - keep this longer than your rollback horizon
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alarm-rollback-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - CodeCommit, artifacts, ECR push, ECS deploy, alarm read, managed compute logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !GetAtt CodeCommitRepository.Arn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: EcrAuthorization
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:DescribeRepositories
+                  - sts:GetServiceBearerToken
+                Resource: "*" # Account-level calls, no resource scoping
+              # ECRBuildAndPublish push + Verify DescribeImages
+              - Sid: EcrPushImage
+                Effect: Allow
+                Action:
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:DescribeImages
+                Resource: !GetAtt ContainerImageRepository.Arn
+              # ECS standard deploy action - minimum permissions per the action reference
+              - Sid: ContainerTaskDefinition
+                Effect: Allow
+                Action:
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Sid: ContainerService
+                Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ContainerClusterName}/${ContainerServiceName}"
+              - Sid: ContainerTaskDefinitionTag
+                Effect: Allow
+                Action: ecs:TagResource
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/*"
+                Condition:
+                  StringEquals:
+                    ecs:CreateAction: RegisterTaskDefinition
+              - Sid: ContainerTaskPassRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: "*" # Scope to your task + execution role ARNs for production
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - ecs.amazonaws.com
+                      - ecs-tasks.amazonaws.com
+              # CloudWatchAlarm rule (runs as this role) + Bake step. Inferred - the rule
+              # reference lists no permissions
+              - Sid: DeployRollbackAlarmRead
+                Effect: Allow
+                Action: cloudwatch:DescribeAlarms
+                Resource: !Sub "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${DeployRollbackAlarmName}"
+              - Sid: ManagedComputeLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-alarm-rollback-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-alarm-rollback-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alarm-rollback-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alarm-rollback-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  # Shared by ECRBuildAndPublish and Commands (managed CodeBuild compute)
+  PipelineManagedComputeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-alarm-rollback-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineManagedComputeLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-alarm-rollback-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity the managed compute actions and the rule run as
+      PipelineType: V2
+      ExecutionMode: QUEUED # [V2] PARALLEL would rule out ROLLBACK
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"   # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference outputs: CommitId, BranchName, ...
+              Configuration:
+                RepositoryName: !GetAtt CodeCommitRepository.Name
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Omitted = true (polling). False because EventBridge starts it; both = duplicate runs
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildAndPublishImage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: ECRBuildAndPublish # [V2] Replaces a CodeBuild project + docker buildspec
+                Version: "1"
+              Namespace: BuildVariables # -> ECRImageDigestId, ECRRepositoryName
+              Configuration:
+                ECRRepositoryName: !Ref ContainerImageRepository # Repository must already exist
+                ImageTags: "latest,#{SourceVariables.CommitId}" # Comma-delimited; default "latest". DockerFilePath omitted = repo root
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Verify
+          Actions:
+            - Name: WriteImageDefinitions
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands  # [V2] Commands / EnvironmentVariables / OutputVariables are action properties, not Configuration
+                Version: "1"
+              EnvironmentVariables: # #{...} resolved by CodePipeline at run time; !Ref/!Sub by CloudFormation at deploy time
+                - Name: IMAGE_REGISTRY
+                  Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}"
+                - Name: IMAGE_REPOSITORY
+                  Value: "#{BuildVariables.ECRRepositoryName}"
+                - Name: IMAGE_DIGEST
+                  Value: "#{BuildVariables.ECRImageDigestId}"
+                - Name: CONTAINER_NAME
+                  Value: !Ref ContainerName
+              Commands:
+                # Docs say "the sha256 digest" without showing the format; ensure the sha256: prefix
+                - "case \"$IMAGE_DIGEST\" in sha256:*) ;; *) IMAGE_DIGEST=\"sha256:$IMAGE_DIGEST\" ;; esac"
+                - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"$CONTAINER_NAME\" \"$IMAGE_REGISTRY/$IMAGE_REPOSITORY@$IMAGE_DIGEST\" > imagedefinitions.json"
+                - "cat imagedefinitions.json"
+              InputArtifacts:
+                - Name: SourceArtifact # Commands requires at least one input artifact
+              OutputArtifacts:
+                - Name: ImageDefinitionsArtifact # This is what a rollback reuses from the last good run
+                  Files:
+                    - imagedefinitions.json
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployToContainerService
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: ECS      # "ECS standard": updates the service; the service's own deployment config decides how it rolls out
+                Version: "1"
+              Configuration:
+                ClusterName: !Ref ContainerClusterName
+                ServiceName: !Ref ContainerServiceName
+                FileName: imagedefinitions.json
+              InputArtifacts:
+                - Name: ImageDefinitionsArtifact
+              RunOrder: 1
+            # Gives the alarm time to see traffic on the new version before the
+            # On Success check (the rule passes at once if the alarm is OK)
+            - Name: BakeAndWatchAlarm
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands
+                Version: "1"
+              EnvironmentVariables:
+                - Name: BAKE_MINUTES
+                  Value: !Ref DeployBakeTimeInMinutes
+                - Name: ALARM_NAME
+                  Value: !Ref DeployRollbackAlarmName
+              Commands:
+                - "echo \"Baking for $BAKE_MINUTES minute(s), watching alarm $ALARM_NAME\""
+                - "for i in $(seq 1 $BAKE_MINUTES); do sleep 60; echo minute $i: $(aws cloudwatch describe-alarms --alarm-names \"$ALARM_NAME\" --query 'MetricAlarms[0].StateValue' --output text); done"
+              InputArtifacts:
+                - Name: ImageDefinitionsArtifact # Commands requires at least one input artifact
+              RunOrder: 2  # After the deploy
+          # [V2] Stage condition. If ANY rule fails, Result is applied
+          OnSuccess:
+            Conditions:
+              - Result: ROLLBACK # On Success allows ROLLBACK or FAIL
+                Rules:
+                  - Name: ErrorRateAlarm
+                    RuleTypeId:
+                      Category: Rule # Always "Rule"; Provider is the rule type
+                      Owner: AWS
+                      Provider: CloudWatchAlarm
+                      Version: "1"
+                    Configuration:
+                      AlarmName: !Ref DeployRollbackAlarmName
+                      WaitTime: !Ref DeployRollbackAlarmWaitTimeInMinutes
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alarm-rollback-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (CodeCommit push -> pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline on push to the source branch
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt CodeCommitRepository.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref SourceBranchName
+      Targets:
+        - Id: pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  CodeCommitCloneUrlGrc:
+    Description: git-remote-codecommit URL (pip install git-remote-codecommit)
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepository.Name}"
+
+  CodeCommitCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  ContainerImageRepositoryUri:
+    Value: !GetAtt ContainerImageRepository.RepositoryUri
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

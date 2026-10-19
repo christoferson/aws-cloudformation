@@ -1,0 +1,405 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 - pipeline-level variables (image tag per run) + Entry condition SKIP with VariableCheck
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Feature: pipeline-level variables, set per execution.
+#     git push -> Source (CodeCommit) -> Build (ECRBuildAndPublish, tag = #{variables.ImageTag})
+#              -> SmokeTest (Commands)  <- Entry condition: VariableCheck
+#                                          #{variables.RunSmokeTest} EQ "true", else SKIP
+#   Triggered runs use the defaults. Manual runs can override them:
+#     aws codepipeline start-pipeline-execution --name <pipeline> \
+#       --variables name=ImageTag,value=v1-2-0 name=RunSmokeTest,value=false
+#
+# Resources created
+#   - AWS::CodeCommit::Repository     (Dockerfile in the repository root)
+#   - AWS::ECR::Repository
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (CodeCommit push to branch -> pipeline)
+#
+# Pre-requisites
+#   - None. Push a Dockerfile to the repository root after deploy
+#
+# Assumptions
+#   - CodeCommit and ECR repositories are named <Application>-<Environment>-pipeline-variables
+#   - Pipeline variable values must match [A-Za-z0-9@\-_]+ (no dots: v1-2-0, not v1.2.0)
+#   - Pipeline-level variables cannot be used in Source actions
+#   - ImageTags uses #{...} variables: allowed in action configuration fields in
+#     general; the ECRBuildAndPublish reference does not mention it specifically
+#   - Entry SKIP is only supported for the LambdaInvoke and VariableCheck rules.
+#     A skipped stage cannot be retried, rolled back to, or have its condition overridden
+#   - The first execution at stack creation fails at Source (empty repository)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - SourceBranchName
+      - Label:
+          default: Pipeline variable defaults
+        Parameters:
+          - ImageTagDefault
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch that starts the pipeline
+
+  ImageTagDefault:
+    Type: String
+    Default: latest
+    AllowedPattern: "[A-Za-z0-9@\\-_]+"
+    Description: Default for the ImageTag pipeline variable (used by triggered runs)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Source Repository + Container Image Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    DeletionPolicy: Retain # Keep code if the stack is deleted
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-pipeline-variables"
+      RepositoryDescription: CodePipeline V2 pipeline variables demo - Dockerfile in the root
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-variables-codecommit-repository"
+
+  ContainerImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-pipeline-variables"
+      ImageTagMutability: MUTABLE # The same ImageTag value can be pushed by several runs
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      EmptyOnDelete: true # Allows stack delete with images present
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the 20 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-variables-container-image-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-variables-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - CodeCommit, artifacts, ECR push, managed compute logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: !GetAtt CodeCommitRepository.Arn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: EcrAuthorization
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:DescribeRepositories
+                  - sts:GetServiceBearerToken
+                Resource: "*" # Account-level calls, no resource scoping
+              # ECRBuildAndPublish push + SmokeTest DescribeImages
+              - Sid: EcrPushImage
+                Effect: Allow
+                Action:
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:DescribeImages
+                Resource: !GetAtt ContainerImageRepository.Arn
+              - Sid: ManagedComputeLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-pipeline-variables-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-pipeline-variables-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-variables-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-variables-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  # Shared by ECRBuildAndPublish and Commands (managed CodeBuild compute)
+  PipelineManagedComputeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-pipeline-variables-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineManagedComputeLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-pipeline-variables-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity ECRBuildAndPublish and Commands run as
+      PipelineType: V2
+      ExecutionMode: QUEUED # [V2] Runs wait their turn instead of superseding each other
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      # [V2] Pipeline-level variables, referenced as #{variables.<Name>}.
+      # Defaults apply to triggered runs; start-pipeline-execution --variables overrides them per run.
+      Variables: # Max 50
+        - Name: ImageTag
+          DefaultValue: !Ref ImageTagDefault
+          Description: Extra tag pushed with the image (alongside the commit SHA)
+        - Name: RunSmokeTest
+          DefaultValue: "true"
+          Description: Anything other than true skips the SmokeTest stage
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"   # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference outputs: CommitId, BranchName, ...
+              Configuration:  # No #{variables.*} here: pipeline-level variables cannot be used in Source actions
+                RepositoryName: !GetAtt CodeCommitRepository.Name
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Omitted = true (polling). False because EventBridge starts it; both = duplicate runs
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildAndPublishImage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: ECRBuildAndPublish # [V2] Replaces a CodeBuild project + docker buildspec
+                Version: "1"
+              Namespace: BuildVariables # -> ECRImageDigestId, ECRRepositoryName
+              Configuration:
+                ECRRepositoryName: !Ref ContainerImageRepository # Repository must already exist
+                ImageTags: "#{variables.ImageTag},#{SourceVariables.CommitId}" # Pipeline variable + action output variable
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: SmokeTest
+          # [V2] Entry condition with SKIP: if the rule fails, the stage is skipped
+          # (status Skipped, actions "Didn't Run") instead of failing the run
+          BeforeEntry:
+            Conditions:
+              - Result: SKIP # Only supported with LambdaInvoke / VariableCheck rules
+                Rules:
+                  - Name: RunSmokeTestEnabled
+                    RuleTypeId:
+                      Category: Rule # Always "Rule"; Provider is the rule type
+                      Owner: AWS
+                      Provider: VariableCheck
+                      Version: "1"
+                    Configuration:
+                      Variable: "#{variables.RunSmokeTest}"
+                      Operator: EQ # EQ | NE | CONTAINS | MATCHES (Java regex)
+                      Value: "true" # Rule passes (stage runs) only when equal
+          Actions:
+            - Name: CheckPushedImage
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands  # [V2] Commands / EnvironmentVariables / OutputVariables are action properties, not Configuration
+                Version: "1"
+              EnvironmentVariables:
+                - Name: IMAGE_TAG
+                  Value: "#{variables.ImageTag}" # Resolved per execution
+                - Name: IMAGE_REPOSITORY
+                  Value: "#{BuildVariables.ECRRepositoryName}"
+                - Name: IMAGE_DIGEST
+                  Value: "#{BuildVariables.ECRImageDigestId}"
+              Commands:
+                # Docs say "the sha256 digest" without showing the format; ensure the sha256: prefix
+                - "case \"$IMAGE_DIGEST\" in sha256:*) ;; *) IMAGE_DIGEST=\"sha256:$IMAGE_DIGEST\" ;; esac"
+                - "echo Checking $IMAGE_REPOSITORY:$IMAGE_TAG is $IMAGE_DIGEST"
+                - "test \"$(aws ecr describe-images --repository-name \"$IMAGE_REPOSITORY\" --image-ids imageTag=\"$IMAGE_TAG\" --query 'imageDetails[0].imageDigest' --output text)\" = \"$IMAGE_DIGEST\""
+              InputArtifacts:
+                - Name: SourceArtifact # Commands requires at least one input artifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-pipeline-variables-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (CodeCommit push -> pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline on push to the source branch
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt CodeCommitRepository.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref SourceBranchName
+      Targets:
+        - Id: pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  CodeCommitCloneUrlGrc:
+    Description: git-remote-codecommit URL (pip install git-remote-codecommit)
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepository.Name}"
+
+  CodeCommitCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  ContainerImageRepositoryUri:
+    Value: !GetAtt ContainerImageRepository.RepositoryUri
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

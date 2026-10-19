@@ -190,9 +190,9 @@ The deploy action can succeed while users see errors. So the pipeline checks hea
               WaitTime: "1"            # minutes to let an alarm already in ALARM recover
 ```
 
-> **Timing gotcha.** The console guide says that if the alarm is **OK when the rule is first checked, the rule succeeds immediately**, and `WaitTime` only applies when it's already in ALARM. Elsewhere, the same guide describes a 60-minute wait as watching for ALARM within 60 minutes. The two statements conflict. Right after a deploy, the alarm usually hasn't seen the new version's errors yet. So the Docker template adds a **bake** step (a Commands action that waits N minutes after the ECS deploy) before the On Success check runs. See [docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md](../docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md) and [docs/codepipeline/ug-stage-conditions.md](../docs/codepipeline/ug-stage-conditions.md).
+> **Timing gotcha.** The console guide says that if the alarm is **OK when the rule is first checked, the rule succeeds immediately**, and `WaitTime` only applies when it's already in ALARM. Elsewhere, the same guide describes a 60-minute wait as watching for ALARM within 60 minutes. The two statements conflict. Right after a deploy, the alarm usually hasn't seen the new version's errors yet. So the alarm-rollback and all-features templates add a **bake** step (a Commands action that waits N minutes after the ECS deploy) before the On Success check runs. See [docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md](../docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md) and [docs/codepipeline/ug-stage-conditions.md](../docs/codepipeline/ug-stage-conditions.md).
 
-Implemented in the [Docker template](#codepipeline-v2---docker-build-scan-and-deploy-ecrbuildandpublish-inspectorscan-ecs-codecommit) (`DeployRollbackAlarmName`).
+Implemented in [codepipeline-v2-ecr-ecs-alarm-rollback.yaml](codepipeline-v2-ecr-ecs-alarm-rollback.yaml) and the [Docker series](#codepipeline-v2---docker-series) all-features template.
 
 ### 6. Triggers and filters — `Triggers`
 
@@ -499,7 +499,7 @@ Why pin the commit? If two pushes land close together, a deploy pipeline without
 | Downstream fetches the branch head | Downstream pinned to the upstream `CommitId` |
 | Data passed through artifacts or SSM parameters | `Variables` passed directly into the target's pipeline variables |
 
-**Source.** CodeCommit, created by the stack (`CreateCodeCommitRepository=true`, the default), or an existing repository (`false` + `CodeCommitRepositoryName`). The repository has `DeletionPolicy: Retain`, so deleting the stack keeps your code. For GitHub, swap both source actions for `CodeStarSourceConnection`, as in the triggers template. The invoke action is the same.
+**Source.** CodeCommit, always created by the stack as `<Application>-<Environment>-invoke-demo` (`myapp-dev-invoke-demo`). The repository has `DeletionPolicy: Retain`, so deleting the stack keeps your code; delete it by hand before re-creating a stack with the same name. For GitHub, swap both source actions for `CodeStarSourceConnection`, as in the triggers template. The invoke action is the same.
 
 #### Deploy
 
@@ -548,62 +548,59 @@ aws cloudformation delete-stack --stack-name myapp-dev-invoke-pipeline
 aws codecommit delete-repository --repository-name myapp-dev-invoke-demo   # only if you want the code gone
 ```
 
-### CodePipeline V2 - Docker Build, Scan and Deploy (ECRBuildAndPublish, InspectorScan, ECS, CodeCommit)
+### CodePipeline V2 - Docker Series
 
-[codepipeline-v2-ecr-build-publish.yaml](codepipeline-v2-ecr-build-publish.yaml)
+Each template builds a Dockerfile with **`ECRBuildAndPublish`** (no CodeBuild project, no buildspec, no `docker login` / `docker push` script) from a CodeCommit repository the stack creates. Each one then showcases **one feature**. The all-features template combines them, and nothing is optional: no `!If` conditions.
 
-Build a Dockerfile, push it to ECR, optionally scan it with Amazon Inspector, and optionally deploy it to ECS, all the V2 way: **no CodeBuild project, no buildspec, no `docker login` / `docker push` script**.
+| Template | Feature | Pipeline |
+|---|---|---|
+| [codepipeline-v2-ecr-ecs-deploy.yaml](codepipeline-v2-ecr-ecs-deploy.yaml) | ECS deploy, digest-pinned | Source → Build → Verify → Deploy |
+| [codepipeline-v2-ecr-inspector-scan.yaml](codepipeline-v2-ecr-inspector-scan.yaml) | Inspector scan gate + SBOM | Source → Build → Scan |
+| [codepipeline-v2-ecr-ecs-alarm-rollback.yaml](codepipeline-v2-ecr-ecs-alarm-rollback.yaml) | **[V2]** On Success alarm → ROLLBACK | Source → Build → Verify → Deploy + Bake |
+| [codepipeline-v2-ecr-ecs-deployment-window.yaml](codepipeline-v2-ecr-ecs-deployment-window.yaml) | **[V2]** Entry DeploymentWindow → FAIL | Source → Build → Verify → Deploy |
+| [codepipeline-v2-ecr-pipeline-variables.yaml](codepipeline-v2-ecr-pipeline-variables.yaml) | **[V2]** pipeline variables + Entry VariableCheck → SKIP | Source → Build → SmokeTest |
+| [codepipeline-v2-ecr-ecs-all-features.yaml](codepipeline-v2-ecr-ecs-all-features.yaml) | All of the above + **[V2]** automatic retry | Source → Build → Scan → Verify → Deploy + Bake |
+
+All-features pipeline:
 
 ```
  git push main ──(EventBridge)──► Pipeline (V2, QUEUED)
-   Source : CodeCommit (created by the stack)   namespace SourceVariables → CommitId
-   Build  : ECRBuildAndPublish                  namespace BuildVariables
-              Dockerfile in the repository root
-              pushes  <repo>:latest  and  <repo>:<commit sha>
+   Source : CodeCommit            namespace SourceVariables → CommitId
+   Build  : ECRBuildAndPublish    tags #{variables.ImageTag} + <commit sha>
               outputs #{BuildVariables.ECRImageDigestId}, #{BuildVariables.ECRRepositoryName}
-   Scan   : InspectorScan  (ImageScanEnabled=true)          namespace ScanVariables
-              ECRImageScan of <repo>:<commit sha>
-              FAILS when findings exceed Critical/High/Medium/Low thresholds
-              output artifact ImageSbomArtifact (SBOM), variable HighestScannedSeverity
-   Verify : Commands              describe-images BY DIGEST
-              writes imagedefinitions.json → [{"name":"web","imageUri":"<repo>@sha256:..."}]
-   Deploy : ECS standard action  (ContainerClusterName + ContainerServiceName set)
-              new task definition revision with the pinned image → UpdateService
-            + Bake (Commands)    wait DeployBakeTimeInMinutes, print alarm state
-            On Success: CloudWatchAlarm rule (DeployRollbackAlarmName set)
-              ALARM → ROLLBACK: re-run Deploy with the last good imagedefinitions.json
+            OnFailure: RETRY (FAILED_ACTIONS, one attempt)
+   Scan   : InspectorScan         ECRImageScan of <repo>:<commit sha>, thresholds, SBOM artifact
+            Entry: VariableCheck #{variables.RunImageScan} EQ true, else SKIP
+   Verify : Commands              imagedefinitions.json → [{"name":"<ContainerName>","imageUri":"<repo>@sha256:..."}]
+   Deploy : ECS standard action   + Bake (Commands, DeployBakeTimeInMinutes)
+            Entry: DeploymentWindow (cron), else FAIL
+            On Success: CloudWatchAlarm in ALARM → ROLLBACK to the last good imagedefinitions.json
 ```
 
-V2 features covered (marked `[V2]` in the template):
-- `ECRBuildAndPublish` build action on managed CodeBuild compute
-- Its output variables `ECRImageDigestId` and `ECRRepositoryName`
-- A Commands action consuming them and producing a `Files` output artifact
-- `QUEUED`, so every commit gets its own image, built in order
+Each stack names its CodeCommit and ECR repositories `<Application>-<Environment>-<feature>`, so you can deploy several side by side. For example, `myapp-dev-ecs-deploy` and `myapp-dev-all-features`.
 
-Also shown: `InspectorScan`. It's a managed-compute action, but the docs don't mark it V2-only.
+#### V2 feature coverage
 
-#### Parameters
+Mapped to the V1 / V2 table in [../docs/codepipeline/pipeline-types-planning.md](../docs/codepipeline/pipeline-types-planning.md):
 
-| Parameter | Default | Effect |
-|---|---|---|
-| `SourceBranchName` | `main` | Branch that starts the pipeline |
-| `ImageScanEnabled` | `true` | `false` removes the Scan stage and its IAM permission |
-| `ImageScanCriticalThreshold` | `0` | Fail if CRITICAL findings exceed this count. Blank = not checked |
-| `ImageScanHighThreshold` | `0` | Same for HIGH |
-| `ImageScanMediumThreshold` | blank | Same for MEDIUM |
-| `ImageScanLowThreshold` | blank | Same for LOW |
-| `ContainerClusterName` | blank | Existing ECS cluster. Blank = no Deploy stage |
-| `ContainerServiceName` | blank | Existing ECS service in that cluster. Blank = no Deploy stage |
-| `ContainerName` | `web` | Container name in the service's task definition (written to `imagedefinitions.json`) |
-| `DeployRollbackAlarmName` | blank | Existing CloudWatch alarm, such as an error rate. If set (and Deploy is on), an **On Success** condition rolls production back when it's in ALARM |
-| `DeployRollbackAlarmWaitTimeInMinutes` | `1` | `CloudWatchAlarm` rule `WaitTime`: how long an alarm already in ALARM gets to recover before rollback. Blank = rule default |
-| `DeployBakeTimeInMinutes` | `5` | Commands step after the ECS deploy that waits and prints the alarm state each minute. `0` = no bake. Max 50 (the Commands timeout is 55) |
+| V2 feature | Showcased in |
+|---|---|
+| QUEUED execution mode | all Docker-series templates, [basic](codepipeline-v2-basic.yaml), [invoke](codepipeline-v2-invoke-pipeline.yaml) |
+| PARALLEL execution mode | [github-triggers](codepipeline-v2-github-triggers.yaml) (can't be combined with ROLLBACK, so it's not in all-features) |
+| Pipeline-level variables | [ecr-pipeline-variables](codepipeline-v2-ecr-pipeline-variables.yaml), all-features, basic, invoke |
+| Rollback for pipeline stages | [ecr-ecs-alarm-rollback](codepipeline-v2-ecr-ecs-alarm-rollback.yaml) (On Success), all-features, basic (On Failure) |
+| Stage conditions | alarm-rollback (On Success), [ecr-ecs-deployment-window](codepipeline-v2-ecr-ecs-deployment-window.yaml) (Entry), pipeline-variables (Entry), all-features |
+| Entry conditions with Skip result | pipeline-variables (`RunSmokeTest`), all-features (`RunImageScan`) |
+| Automatic retry on failure | all-features (Build), basic (Build) |
+| Commands action | all |
+| Source revision overrides | invoke (invoke action), plus `start-pipeline-execution --source-revisions` (section 7) |
+| Triggers and Git filtering | github-triggers (needs a CodeConnections source) |
 
-The CodeCommit repository and the ECR repository are both named `<Application>-<Environment>-app` (`myapp-dev-app`). The Dockerfile always goes in the repository root.
+`ECRBuildAndPublish` is V2-only. The ECS deploy action and `InspectorScan` aren't marked V2-only in their action references.
 
 #### V1 way vs V2 way
 
-| Step | V1 (e.g. [../codepipeline/code-codepipeline-ecs.yaml](../codepipeline/code-codepipeline-ecs.yaml)) | V2 (this template) |
+| Step | V1 (e.g. [../codepipeline/code-codepipeline-ecs.yaml](../codepipeline/code-codepipeline-ecs.yaml)) | V2 (Docker series) |
 |---|---|---|
 | Build resource | `AWS::CodeBuild::Project` + its own service role | Nothing. `ECRBuildAndPublish` runs as the pipeline role |
 | Build script | `buildspec.yml` with `aws ecr get-login-password \| docker login`, `docker build`, `docker tag`, `docker push` | `ECRRepositoryName` (+ optional `ImageTags`) |
@@ -611,33 +608,35 @@ The CodeCommit repository and the ECR repository are both named `<Application>-<
 | Tag per commit | `IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION \| cut -c1-7)` in the buildspec | `ImageTags: "latest,#{SourceVariables.CommitId}"` |
 | Vulnerability gate | Extra CodeBuild step installing and running a scanner | `InspectorScan` action with severity thresholds + SBOM artifact |
 | Image reference passed to deploy | `imagedefinitions.json` written by the buildspec, usually `:latest` | Output variable `ECRImageDigestId` → `repo@sha256:...` |
-| Deploy | ECS standard action | Same ECS standard action, fed the digest-pinned file |
+| Deploy gating / health | Manual approval, or custom Lambda | Entry `DeploymentWindow`, On Success `CloudWatchAlarm` → ROLLBACK |
 
 #### Why pin by digest?
 
-Tags are mutable, and `latest` moves on every build. A digest names exactly one image. The Verify stage writes `repo@sha256:<digest>` into `imagedefinitions.json`, so the image that was built **and scanned** is the one ECS deploys, even if another build moves `latest` in between. You don't need a hand-maintained `imagedefinitions.json` in the repo, which is what the AWS console tutorial uses.
+Tags are mutable, and `latest` moves on every build. A digest names exactly one image. Verify writes `repo@sha256:<digest>` into `imagedefinitions.json`, so the image that was built **and scanned** is the one ECS deploys, even if another build moves `latest` in between. It also makes rollback exact: re-running Deploy with the last good artifact redeploys the previous digest. You don't need a hand-maintained `imagedefinitions.json` in the repo, which is what the AWS console tutorial uses.
 
 > The `imagedefinitions.json` reference only shows `repo:tag` examples. A digest URI is a valid image reference, but confirm it on your first deploy.
 
-#### About the Inspector scan
+#### Inspector scan ([ecr-inspector-scan](codepipeline-v2-ecr-inspector-scan.yaml), all-features)
 
-- **Enable / disable:** `ImageScanEnabled`. The only documented account setup is the IAM permission `inspector-scan:ScanSbom`, which the template adds. There's no "activate Inspector" step. Scans are billed by Inspector, plus CodeBuild minutes for the managed compute.
-- **Thresholds:** the action fails when the count at a severity is above its threshold, so `0` means "fail on any". The defaults block any CRITICAL or HIGH finding and ignore MEDIUM and LOW.
+- **Setup:** the only documented account setup is the IAM permission `inspector-scan:ScanSbom`, which the templates add. There's no "activate Inspector" step. Scans are billed by Inspector, plus CodeBuild minutes for the managed compute.
+- **Thresholds:** the action fails when the count at a severity is **above** its threshold, so `0` means "fail on any". The template defaults are Critical `0`, High `0`, Medium `10` and Low `50`. These are the templates' choice; AWS doesn't recommend values.
 - **Scan by tag:** `ImageTag` takes a tag, not a digest, so the scan uses the `<commit sha>` tag that Build pushed. If you change `ImageTags`, keep the commit tag.
-- **Output:** the SBOM is kept as `ImageSbomArtifact` in the artifact bucket (30-day lifecycle). `HighestScannedSeverity` is printed by Verify.
-- `SourceCodeScan` mode scans the repository instead of the image. Use `InputArtifacts: SourceArtifact` and leave out `ECRRepositoryName` / `ImageTag`.
+- **Output:** the SBOM is kept as `ImageSbomArtifact` in the artifact bucket (30-day lifecycle). The output variable `HighestScannedSeverity` is `medium`, `high` or `critical`.
+- **Other mode:** `SourceCodeScan` scans the repository instead of the image. Use `InputArtifacts: SourceArtifact` and leave out `ECRRepositoryName` / `ImageTag`.
+
+To see the gate fail, set `ImageScanLowThreshold=0`, or use an old base image such as `FROM public.ecr.aws/docker/library/python:3.8` (likely to have known HIGH findings), then push again.
 
 Docs: [../docs/codepipeline/ug-action-reference-inspector-scan.md](../docs/codepipeline/ug-action-reference-inspector-scan.md), [../docs/codepipeline/inspector-configure-cicd-account.md](../docs/codepipeline/inspector-configure-cicd-account.md).
 
-#### About the ECS deploy
+#### ECS deploy ([ecr-ecs-deploy](codepipeline-v2-ecr-ecs-deploy.yaml), and every template with a Deploy stage)
 
-- **Leave it off at first:** use blank cluster and service to get build and scan working. Then update the stack with an existing cluster and service. The `ecs/` folder templates can create them, for example [../ecs-managed-instance/](../ecs-managed-instance/) or the [blue/green example](../ecs/ecs-blue-green/README.md).
+- **Required parameters:** `ContainerClusterName`, `ContainerServiceName`, `ContainerName`. The `ecs/` folder templates can create a cluster and service, for example [../ecs-managed-instance/](../ecs-managed-instance/) or the [blue/green example](../ecs/ecs-blue-green/README.md).
 - **Container name:** the service's task definition must have a container named `ContainerName`. The action registers a new task definition revision with only that container's image replaced, then updates the service.
-- **IAM:** added only when the stage exists. That's the action reference's minimum: `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition`, `ecs:UpdateService` / `ecs:DescribeServices` on that service, `ecs:TagResource` for new task definitions, and `iam:PassRole` for ECS. `PassRole` is on `*`, limited to `ecs` / `ecs-tasks`, so scope it to your task and execution role ARNs for production.
+- **IAM:** the action reference's minimum: `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition`, `ecs:UpdateService` / `ecs:DescribeServices` on that service, `ecs:TagResource` for new task definitions, and `iam:PassRole` for ECS. `PassRole` is on `*`, limited to `ecs` / `ecs-tasks`, so scope it to your task and execution role ARNs for production.
 
 Docs: [../docs/codepipeline/ug-action-reference-ecs.md](../docs/codepipeline/ug-action-reference-ecs.md), [../docs/codepipeline/ug-file-reference.md](../docs/codepipeline/ug-file-reference.md).
 
-#### About the post-deploy health check (automatic rollback)
+#### Alarm rollback ([ecr-ecs-alarm-rollback](codepipeline-v2-ecr-ecs-alarm-rollback.yaml), all-features)
 
 ```
  Deploy stage
@@ -645,14 +644,13 @@ Docs: [../docs/codepipeline/ug-action-reference-ecs.md](../docs/codepipeline/ug-
    2. BakeAndWatchAlarm          wait DeployBakeTimeInMinutes, print alarm state each minute
  stage SUCCEEDED → On Success condition
    CloudWatchAlarm rule  AlarmName = DeployRollbackAlarmName
-     OK     → rule succeeds → release stays
-     ALARM  → (WaitTime) → rule fails → ROLLBACK
+     OK / INSUFFICIENT_DATA → rule succeeds → release stays
+     ALARM                  → (WaitTime) → rule fails → ROLLBACK
               new execution, type "rollback": re-runs Deploy with the last good
               execution's ImageDefinitionsArtifact → repo@sha256:<previous> → ECS
 ```
 
-- **Why rollback means "previous image":** the Deploy stage's only input is `imagedefinitions.json`, which is pinned to a digest. Re-running the stage with the last good execution's artifact redeploys exactly the previous image. With `:latest` this wouldn't work, because the old artifact would point at the new image.
-- **Bring your own alarm:** the template doesn't know which load balancer or metric your service uses. A typical error-rate alarm for an ALB-backed service:
+- **Bring your own alarm** (`DeployRollbackAlarmName`, required). A typical error-rate alarm for an ALB-backed service:
 
   ```bash
   # LoadBalancer dimension = the part of the ALB ARN after "loadbalancer/", e.g. app/myapp-dev-alb/0123456789abcdef
@@ -663,51 +661,78 @@ Docs: [../docs/codepipeline/ug-action-reference-ecs.md](../docs/codepipeline/ug-
     --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching
   ```
 
-  Keep the alarm's period short (60s) and the bake at least one or two periods, so the alarm can react before the check.
-- **First deploy:** there's no earlier successful Deploy to roll back to, so the very first release can't be rolled back automatically. The same applies to the first deploy after any pipeline update.
-- **Mode:** works with `QUEUED` (this template). Rollback isn't available in `PARALLEL`.
-- **Permissions:** the rule runs as the pipeline role. The template adds `cloudwatch:DescribeAlarms` on that alarm, which the bake step also uses. The rule reference doesn't list permissions, so this one is inferred.
-- **Compared with ECS-native blue/green:** [../ecs/ecs-blue-green/](../ecs/ecs-blue-green/README.md) does this inside ECS (`DeploymentConfiguration.Alarms` + bake time, with traffic shifted back to blue). The pipeline approach works with any deploy action, but redeploys the previous version instead of flipping traffic.
+- **Bake:** the rule passes immediately if the alarm is OK when first checked, so the bake (`DeployBakeTimeInMinutes`, 1–50) gives the alarm time to react. Keep the alarm period short (60s) and the bake at least one or two periods.
+- **First deploy:** there's no earlier successful Deploy to roll back to. The same applies right after any pipeline update.
+- **Mode:** rollback isn't available in `PARALLEL` mode, so these templates use `QUEUED`.
+- **Permissions:** the rule runs as the pipeline role. `cloudwatch:DescribeAlarms` on that alarm is inferred, because the rule reference doesn't list permissions.
+- **Compared with ECS-native blue/green:** [../ecs/ecs-blue-green/](../ecs/ecs-blue-green/README.md) does this inside ECS by shifting traffic back to blue. The pipeline approach works with any deploy action, but redeploys the previous version instead.
 
-Try it:
-1. Deploy a healthy image once, so a good execution exists.
-2. Push a change that returns 5xx, or temporarily set the alarm to ALARM with `aws cloudwatch set-alarm-state --alarm-name myapp-dev-target-5xx --state-value ALARM --state-reason test` during the bake.
-3. The stage succeeds, the condition fails, and a rollback execution appears:
+Try it: deploy a healthy image once, then push a change. During the bake, run `aws cloudwatch set-alarm-state --alarm-name myapp-dev-target-5xx --state-value ALARM --state-reason test`. Then look for the rollback execution:
 
 ```bash
-aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-docker-pipeline \
+aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-alarm-rollback-pipeline \
   --query "pipelineExecutionSummaries[0:3].{id:pipelineExecutionId,type:executionType,status:status,rollback:rollbackMetadata}"
 ```
 
-#### Deploy
+#### Deployment window ([ecr-ecs-deployment-window](codepipeline-v2-ecr-ecs-deployment-window.yaml), all-features)
 
-Build and scan only:
-
-```bash
-aws cloudformation create-stack --stack-name myapp-dev-docker-pipeline \
-  --template-body file://codepipeline-v2-ecr-build-publish.yaml \
-  --capabilities CAPABILITY_IAM
+```yaml
+- Name: Deploy
+  BeforeEntry:
+    Conditions:
+      - Result: FAIL
+        Rules:
+          - Name: BusinessHoursWindow
+            RuleTypeId: { Category: Rule, Owner: AWS, Provider: DeploymentWindow, Version: "1" }
+            Configuration:
+              Cron: "0 0 9-17 ? * MON-FRI *"   # AWS example: 09:00-17:59 Mon-Fri
+              TimeZone: UTC
 ```
 
-Add the ECS deploy later, or disable the scan:
+- **What it does:** the rule succeeds when the current time matches the cron. Build and Verify run on every push. Outside the window, the Deploy stage isn't entered and the `FAIL` result is applied. The docs don't describe the rule waiting for the window, so release the change again (or retry the stage) inside the window.
+- **Cron fields:** `Seconds Minutes Hours Day-of-month Month Day-of-week [Year]`. Use `?` in one of the two day fields.
+- **TimeZone:** `Region/City` (`Europe/Berlin`), `UTC[+-HH:MM]`, or an abbreviation (`EST`). UTC is the default format.
+- **Why FAIL and not SKIP:** Entry `SKIP` only works with the `LambdaInvoke` and `VariableCheck` rules.
+
+Docs: [../docs/codepipeline/ug-rule-reference-deployment-window.md](../docs/codepipeline/ug-rule-reference-deployment-window.md).
+
+#### Pipeline variables + SKIP ([ecr-pipeline-variables](codepipeline-v2-ecr-pipeline-variables.yaml), all-features)
+
+- **`ImageTag`:** default from `ImageTagDefault`, used in `ImageTags: "#{variables.ImageTag},#{SourceVariables.CommitId}"`.
+- **`RunSmokeTest`** (all-features: **`RunImageScan`**): an Entry condition with a `VariableCheck` rule (`EQ "true"`) and result **`SKIP`**. Any other value skips the stage: its status is Skipped and its actions show "Didn't Run". A skipped stage can't be retried or rolled back to, and a `SKIP` condition can't be overridden.
+- **Value format:** values must match `[A-Za-z0-9@\-_]+`, so use `v1-2-0`, not `v1.2.0`. Pipeline variables can't be used in Source actions.
 
 ```bash
-aws cloudformation update-stack --stack-name myapp-dev-docker-pipeline \
-  --template-body file://codepipeline-v2-ecr-build-publish.yaml --capabilities CAPABILITY_IAM \
+aws codepipeline start-pipeline-execution --name myapp-dev-pipeline-variables-pipeline \
+  --variables name=ImageTag,value=v1-2-0 name=RunSmokeTest,value=false
+```
+
+Docs: [../docs/codepipeline/ug-rule-reference-variable-check.md](../docs/codepipeline/ug-rule-reference-variable-check.md), [../docs/codepipeline/ug-reference-variables.md](../docs/codepipeline/ug-reference-variables.md).
+
+#### Deploy
+
+```bash
+# Build + scan only (no ECS needed)
+aws cloudformation create-stack --stack-name myapp-dev-inspector-scan \
+  --template-body file://codepipeline-v2-ecr-inspector-scan.yaml --capabilities CAPABILITY_IAM
+
+# Everything (needs an ECS service and an alarm)
+aws cloudformation create-stack --stack-name myapp-dev-all-features \
+  --template-body file://codepipeline-v2-ecr-ecs-all-features.yaml --capabilities CAPABILITY_IAM \
   --parameters ParameterKey=ContainerClusterName,ParameterValue=myapp-dev \
                ParameterKey=ContainerServiceName,ParameterValue=myapp-dev-service \
                ParameterKey=ContainerName,ParameterValue=myapp-dev-container \
-               ParameterKey=ImageScanEnabled,ParameterValue=true
+               ParameterKey=DeployRollbackAlarmName,ParameterValue=myapp-dev-target-5xx
 ```
 
 The first run fails at Source, because the repository is empty. This is expected.
 
 #### Run
 
-Push a Dockerfile to the repository root (sample from the AWS tutorial, [../docs/codepipeline/ug-tutorials-ecr-build-publish.md](../docs/codepipeline/ug-tutorials-ecr-build-publish.md)):
+Push a Dockerfile to the repository root (sample from the AWS tutorial, [../docs/codepipeline/ug-tutorials-ecr-build-publish.md](../docs/codepipeline/ug-tutorials-ecr-build-publish.md)). Use the `CodeCommitCloneUrlGrc` stack output:
 
 ```bash
-git clone codecommit::<region>://myapp-dev-app && cd myapp-dev-app && git switch -c main
+git clone codecommit::<region>://myapp-dev-all-features && cd myapp-dev-all-features && git switch -c main
 cat > Dockerfile <<'EOF'
 FROM public.ecr.aws/amazonlinux/amazonlinux:latest
 RUN yum update -y && yum install -y httpd && echo 'Hello World!' > /var/www/html/index.html
@@ -720,22 +745,20 @@ git add Dockerfile && git commit -m "Add Dockerfile" && git push -u origin main
 Check the result:
 
 ```bash
-aws ecr describe-images --repository-name myapp-dev-app \
+aws ecr describe-images --repository-name myapp-dev-all-features \
   --query "sort_by(imageDetails,&imagePushedAt)[-1].{digest:imageDigest,tags:imageTags}"
-aws codepipeline list-action-executions --pipeline-name myapp-dev-docker-pipeline \
-  --query "actionExecutionDetails[?actionName=='BuildAndPublishImage' || actionName=='ScanImage'].{action:actionName,status:status,vars:output.outputVariables}"
+aws codepipeline list-action-executions --pipeline-name myapp-dev-all-features-pipeline \
+  --query "actionExecutionDetails[].{action:actionName,status:status,vars:output.outputVariables}"
 ```
 
-To see the scan gate fail, set `ImageScanLowThreshold=0`, or use an old base image such as `FROM public.ecr.aws/docker/library/python:3.8` (likely to have known HIGH findings), and push again. If a threshold is exceeded, Scan fails, so Verify and Deploy never run.
-
-Build, Scan and Verify logs are in the log group `/aws/codepipeline/myapp-dev-docker-pipeline`.
+Logs for each stack are in `/aws/codepipeline/<pipeline-name>`.
 
 #### Delete
 
 ```bash
 aws s3 rm s3://<artifact-bucket> --recursive
-aws cloudformation delete-stack --stack-name myapp-dev-docker-pipeline   # ECR repo is emptied (EmptyOnDelete)
-aws codecommit delete-repository --repository-name myapp-dev-app         # retained by the stack; delete to reuse the name
+aws cloudformation delete-stack --stack-name myapp-dev-all-features    # ECR repo is emptied (EmptyOnDelete)
+aws codecommit delete-repository --repository-name myapp-dev-all-features   # retained by the stack; delete to reuse the name
 ```
 
 ----------------------------------------------------------------------------------
@@ -801,11 +824,10 @@ Check the EventBridge rule. It must match `referenceName` = your branch and `res
 
 ## Roadmap (next V2 templates)
 
-- `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow (deploy only in business hours), `SKIP` with `VariableCheck`. `OnSuccess` + `CloudWatchAlarm` + `ROLLBACK` is already in the Docker template.
 - `codepipeline-v2-lambda-deploy.yaml`: Lambda deploy action with traffic shifting and no CodeDeploy
 - ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
 - ~~`codepipeline-v2-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.
-- ~~`codepipeline-v2-ecr-build-publish.yaml`~~: done. Dockerfile → ECR with `ECRBuildAndPublish`, optional `InspectorScan` gate, digest-pinned `imagedefinitions.json`, optional ECS deploy.
+- ~~Docker series~~: done. `codepipeline-v2-ecr-*.yaml`: ECS deploy, Inspector scan, alarm rollback, deployment window, pipeline variables + SKIP, all-features.
 
 ## Resources
 
