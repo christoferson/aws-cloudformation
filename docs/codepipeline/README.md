@@ -13,7 +13,7 @@ Tables and lists were converted automatically, so some formatting is rough (nota
 | [pipeline-types-planning.md](pipeline-types-planning.md) | V1 vs V2 feature comparison + cost analyzer script |
 | [ug-concepts-how-it-works.md](ug-concepts-how-it-works.md) | Execution modes: SUPERSEDED / QUEUED / PARALLEL |
 | [ug-reference-variables.md](ug-reference-variables.md) | Variables, namespaces, `#{namespace.key}` syntax |
-| [ug-action-reference-Commands.md](ug-action-reference-Commands.md) | Commands action (V2 only) |
+| [ug-action-reference-commands.md](ug-action-reference-commands.md) | Commands action (V2 only) |
 | [ug-stage-retry.md](ug-stage-retry.md) | Manual and automatic stage retry |
 | [ug-stage-conditions.md](ug-stage-conditions.md) | Entry / OnFailure / OnSuccess conditions and rules |
 | [ug-rule-reference.md](ug-rule-reference.md) | Rule providers for conditions (index only) |
@@ -23,16 +23,16 @@ Tables and lists were converted automatically, so some formatting is rough (nota
 | [ug-pipelines-trigger-source-repo-changes-cli.md](ug-pipelines-trigger-source-repo-changes-cli.md) | Change detection for source repos (CLI) |
 | [ug-syntax-glob.md](ug-syntax-glob.md) | Glob pattern syntax for trigger filters |
 | [ug-pipelines-trigger-source-overrides.md](ug-pipelines-trigger-source-overrides.md) | Source revision override at start |
-| [ug-action-reference-CodestarConnectionSource.md](ug-action-reference-CodestarConnectionSource.md) | CodeConnections source action (GitHub / GitLab / Bitbucket) |
+| [ug-action-reference-codestar-connection-source.md](ug-action-reference-codestar-connection-source.md) | CodeConnections source action (GitHub / GitLab / Bitbucket) |
 | [ug-connections-github.md](ug-connections-github.md) | Creating a GitHub connection |
 | [ug-tutorials-github-gitclone.md](ug-tutorials-github-gitclone.md) | Tutorial: full clone (`CODEBUILD_CLONE_REF`) |
 | [ug-pipeline-requirements.md](ug-pipeline-requirements.md) | Pipeline structure reference (field definitions) |
-| [ug-action-reference-PipelineInvoke.md](ug-action-reference-PipelineInvoke.md) | Invoke action: start another pipeline with source revisions + variables (V2) |
-| [ug-action-reference-CodeCommit.md](ug-action-reference-CodeCommit.md) | CodeCommit source action, output variables, permissions |
-| [ug-action-reference-ECRBuildAndPublish.md](ug-action-reference-ECRBuildAndPublish.md) | ECRBuildAndPublish build action (V2) |
-| [ug-action-reference-EC2Deploy.md](ug-action-reference-EC2Deploy.md) | EC2 deploy action (V2) |
-| [ug-action-reference-LambdaDeploy.md](ug-action-reference-LambdaDeploy.md) | Lambda deploy action (V2) |
-| [ug-action-reference-EKS.md](ug-action-reference-EKS.md) | EKS deploy action (V2) |
+| [ug-action-reference-pipeline-invoke.md](ug-action-reference-pipeline-invoke.md) | Invoke action: start another pipeline with source revisions + variables (V2) |
+| [ug-action-reference-codecommit.md](ug-action-reference-codecommit.md) | CodeCommit source action, output variables, permissions |
+| [ug-action-reference-ecr-build-and-publish.md](ug-action-reference-ecr-build-and-publish.md) | ECRBuildAndPublish build action (V2) |
+| [ug-action-reference-ec2-deploy.md](ug-action-reference-ec2-deploy.md) | EC2 deploy action (V2) |
+| [ug-action-reference-lambda-deploy.md](ug-action-reference-lambda-deploy.md) | Lambda deploy action (V2) |
+| [ug-action-reference-eks.md](ug-action-reference-eks.md) | EKS deploy action (V2) |
 
 ### CloudFormation Template Reference — `AWS::CodePipeline::Pipeline`
 

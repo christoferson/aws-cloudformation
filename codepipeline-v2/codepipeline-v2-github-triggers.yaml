@@ -38,7 +38,7 @@ Description: CodePipeline V2 - CodeConnections (GitHub) source + Git tag / branc
 #   - Merging a PR into main can start two executions (PR CLOSED + push) if both
 #     match; this template filters PR events to OPEN / UPDATED only
 #   - Branch + file path filters do not fire on the first push of a new branch
-#   - Not available in some Regions (see docs/codepipeline/ug-action-reference-CodestarConnectionSource.md)
+#   - Not available in some Regions (see docs/codepipeline/ug-action-reference-codestar-connection-source.md)
 # -----------------------------------------------------------------------------
 
 Metadata:

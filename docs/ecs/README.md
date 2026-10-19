@@ -20,7 +20,7 @@ Downloaded 2026-10-18. Each file starts with its source URL. Check the live page
 | [ug-lambda-lifecycle-hooks.md](ug-lambda-lifecycle-hooks.md) | Lambda hook payloads, `hookStatus`, `hookDetails` |
 | [ug-pause-lifecycle-hooks.md](ug-pause-lifecycle-hooks.md) | Pause hooks, `continue-service-deployment` |
 | [ug-blue-green-permissions.md](ug-blue-green-permissions.md) | Role for ECS to invoke Lambda hooks |
-| [ug-AmazonECSInfrastructureRolePolicyForLoadBalancers.md](ug-AmazonECSInfrastructureRolePolicyForLoadBalancers.md) | Managed policy for the load balancer infrastructure role |
+| [ug-amazon-ecs-infrastructure-role-policy-for-load-balancers.md](ug-amazon-ecs-infrastructure-role-policy-for-load-balancers.md) | Managed policy for the load balancer infrastructure role |
 | [ug-deployment-alarm-failure.md](ug-deployment-alarm-failure.md) | CloudWatch alarm based rollback |
 | [ug-deployment-type-bluegreen.md](ug-deployment-type-bluegreen.md) | Legacy CodeDeploy blue/green (for comparison) |
 

@@ -228,18 +228,18 @@ In V1 you needed a Lambda, EventBridge glue or a custom action, and the downstre
 - The invoking pipeline's role needs `codepipeline:StartPipelineExecution` on the target pipeline ARN.
 - Both pipelines must be V2.
 
-See [docs/codepipeline/ug-action-reference-PipelineInvoke.md](../docs/codepipeline/ug-action-reference-PipelineInvoke.md).
+See [docs/codepipeline/ug-action-reference-pipeline-invoke.md](../docs/codepipeline/ug-action-reference-pipeline-invoke.md).
 
 ### Other V2-only actions (candidates for future templates)
 
 | Action | Category / Provider | What it replaces |
 |---|---|---|
 | ECR build and publish | `Build` / `ECRBuildAndPublish` | CodeBuild project + buildspec that only runs `docker build && docker push` |
-| EC2 deploy | `Deploy` / `EC2` | CodeDeploy agent + AppSpec. Uses the **SSM agent** instead. Linux only, up to 500 instances |
-| Lambda deploy | `Deploy` / `Lambda` | CodeDeploy for Lambda. Supports canary, linear and all-at-once traffic shifting |
+| EC2 deploy | `Deploy` / `EC2` | CodeDeploy agent + AppSpec. Deploys to instances selected by **tag** (`InstanceTagKey` / `InstanceTagValue`), using the **SSM agent** instead of the CodeDeploy agent. Linux only, up to 500 instances. `MaxBatch` / `MaxError` control rollout. With `TargetGroupNameList`, instances are deregistered during their deploy and re-registered after. Accepts an existing AppSpec as the deploy spec (unsupported fields ignored, `hooks` mapped best-effort) |
+| Lambda deploy | `Deploy` / `Lambda` | CodeDeploy for Lambda. **Publishes a version and shifts alias traffic** with `DeployStrategy`: `AllAtOnce` (default), `Canary<N>Percent<M>Minutes` or `Linear<N>PercentEvery<M>Minute(s)`, maximum total wait 2 days. Shifting **requires `FunctionAlias`**, which must already point to a version (the rollback target). Without an alias it deploys to `$LATEST` and publishes a version. Up to **10 CloudWatch alarms**: the action fails if one goes to ALARM. Can also promote an existing version via `PublishedTargetVersion`. Output variable `FunctionVersion` |
 | EKS deploy | `Deploy` / `EKS` | CodeBuild running `kubectl` / `helm`. Takes a manifest or Helm chart, works with public and private clusters |
 
-Docs: [ECRBuildAndPublish](../docs/codepipeline/ug-action-reference-ECRBuildAndPublish.md), [EC2Deploy](../docs/codepipeline/ug-action-reference-EC2Deploy.md), [LambdaDeploy](../docs/codepipeline/ug-action-reference-LambdaDeploy.md), [EKS](../docs/codepipeline/ug-action-reference-EKS.md).
+Docs: [ECRBuildAndPublish](../docs/codepipeline/ug-action-reference-ecr-build-and-publish.md), [EC2Deploy](../docs/codepipeline/ug-action-reference-ec2-deploy.md), [LambdaDeploy](../docs/codepipeline/ug-action-reference-lambda-deploy.md), [EKS](../docs/codepipeline/ug-action-reference-eks.md).
 
 ----------------------------------------------------------------------------------
 
@@ -531,7 +531,7 @@ Your cfn-lint is older than these V2 properties (seen with 0.85.x). Upgrade to c
 - The push matched no filter. Remember that defining `Triggers` turns off "any push to `BranchName`".
 - The commit changed only excluded paths, or it was the first push of a new branch (file path filters can't be evaluated yet).
 - `SourceActionName` in the trigger doesn't match the source action's `Name`.
-- The Region doesn't support connection triggers (see [docs/codepipeline/ug-action-reference-CodestarConnectionSource.md](../docs/codepipeline/ug-action-reference-CodestarConnectionSource.md)).
+- The Region doesn't support connection triggers (see [docs/codepipeline/ug-action-reference-codestar-connection-source.md](../docs/codepipeline/ug-action-reference-codestar-connection-source.md)).
 
 ##### Insufficient permissions: Unable to use Connection
 
