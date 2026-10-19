@@ -234,7 +234,7 @@ See [docs/codepipeline/ug-action-reference-pipeline-invoke.md](../docs/codepipel
 
 | Action | Category / Provider | What it replaces |
 |---|---|---|
-| ECR build and publish | `Build` / `ECRBuildAndPublish` | CodeBuild project + buildspec that only runs `docker build && docker push` |
+| ECR build and publish | `Build` / `ECRBuildAndPublish` | CodeBuild project + buildspec that only runs `docker build && docker push`. **Builds a Dockerfile and pushes to ECR** using managed CodeBuild compute (billed as CodeBuild). The **repository must already exist** (`ECRRepositoryName`). Optional `DockerFilePath` (default: repo root), `ImageTags` (comma-delimited, default `latest`), `RegistryType` (`private` / `public`). **Output variables `ECRImageDigestId`** (`sha256` manifest digest) and `ECRRepositoryName`, for pinning the deploy to the exact image. One input artifact, no output artifact |
 | EC2 deploy | `Deploy` / `EC2` | CodeDeploy agent + AppSpec. Deploys to instances selected by **tag** (`InstanceTagKey` / `InstanceTagValue`), using the **SSM agent** instead of the CodeDeploy agent. Linux only, up to 500 instances. `MaxBatch` / `MaxError` control rollout. With `TargetGroupNameList`, instances are deregistered during their deploy and re-registered after. Accepts an existing AppSpec as the deploy spec (unsupported fields ignored, `hooks` mapped best-effort) |
 | Lambda deploy | `Deploy` / `Lambda` | CodeDeploy for Lambda. **Publishes a version and shifts alias traffic** with `DeployStrategy`: `AllAtOnce` (default), `Canary<N>Percent<M>Minutes` or `Linear<N>PercentEvery<M>Minute(s)`, maximum total wait 2 days. Shifting **requires `FunctionAlias`**, which must already point to a version (the rollback target). Without an alias it deploys to `$LATEST` and publishes a version. Up to **10 CloudWatch alarms**: the action fails if one goes to ALARM. Can also promote an existing version via `PublishedTargetVersion`. Output variable `FunctionVersion` |
 | EKS deploy | `Deploy` / `EKS` | CodeBuild running `kubectl` / `helm`. Takes a manifest or Helm chart, works with public and private clusters |
@@ -505,6 +505,106 @@ aws cloudformation delete-stack --stack-name myapp-dev-invoke-pipeline
 aws codecommit delete-repository --repository-name myapp-dev-invoke-demo   # only if you want the code gone
 ```
 
+### CodePipeline V2 - Docker Build and Push (ECRBuildAndPublish, CodeCommit)
+
+[codepipeline-v2-ecr-build-publish.yaml](codepipeline-v2-ecr-build-publish.yaml)
+
+Build a Dockerfile and push it to ECR the V2 way: **no CodeBuild project, no buildspec, no `docker login` / `docker push` script**.
+
+```
+ git push main ──(EventBridge)──► Pipeline (V2, QUEUED)
+   Source : CodeCommit            namespace SourceVariables → CommitId
+   Build  : ECRBuildAndPublish    namespace BuildVariables
+              pushes  <repo>:latest  and  <repo>:<commit sha>
+              outputs #{BuildVariables.ECRImageDigestId}, #{BuildVariables.ECRRepositoryName}
+   Verify : Commands              describe-images BY DIGEST
+              writes imagedefinitions.json → [{"name":"web","imageUri":"<repo>@sha256:..."}]
+              output artifact ImageDefinitionsArtifact (ready for an ECS deploy action)
+```
+
+V2 features covered (marked `[V2]` in the template):
+- `ECRBuildAndPublish` build action on managed CodeBuild compute
+- Its output variables `ECRImageDigestId` and `ECRRepositoryName`
+- A Commands action consuming them and producing a `Files` output artifact
+- `QUEUED`, so every commit gets its own image, built in order
+
+#### V1 way vs V2 way
+
+| Step | V1 (e.g. [../codepipeline/code-codepipeline-ecs.yaml](../codepipeline/code-codepipeline-ecs.yaml)) | V2 (this template) |
+|---|---|---|
+| Build resource | `AWS::CodeBuild::Project` + its own service role | Nothing. `ECRBuildAndPublish` runs as the pipeline role |
+| Build script | `buildspec.yml` with `aws ecr get-login-password \| docker login`, `docker build`, `docker tag`, `docker push` | `ECRRepositoryName` (+ optional `DockerFilePath`, `ImageTags`) |
+| Privileged mode | Must enable `PrivilegedMode: true` on the project for Docker | Handled by the action |
+| Image reference passed on | `imagedefinitions.json` written by the buildspec, usually `:latest` | Output variable `ECRImageDigestId` → pin `repo@sha256:...` |
+| Tag per commit | `IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION \| cut -c1-7)` in the buildspec | `ImageTags: "latest,#{SourceVariables.CommitId}"` |
+
+#### Why pin by digest?
+
+Tags are mutable, and `latest` moves on every build. A digest names exactly one image. If you pass `#{BuildVariables.ECRImageDigestId}` downstream, the image that was built and scanned is the one that gets deployed, even if another build moves `latest` in between. The Verify stage writes that pinned URI into `imagedefinitions.json`. That file is the input artifact the ECS standard deploy action expects, so a later Deploy stage can use the `ImageDefinitionsArtifact` artifact directly. You don't need a hand-maintained `imagedefinitions.json` in the repo, which is what the AWS console tutorial uses.
+
+#### Deploy
+
+```bash
+aws cloudformation create-stack --stack-name myapp-dev-docker-pipeline \
+  --template-body file://codepipeline-v2-ecr-build-publish.yaml \
+  --capabilities CAPABILITY_IAM
+```
+
+The first run fails at Source, because the repository is empty. This is expected.
+
+#### Run
+
+Push a Dockerfile to the repository root (sample from the AWS tutorial, [../docs/codepipeline/ug-tutorials-ecr-build-publish.md](../docs/codepipeline/ug-tutorials-ecr-build-publish.md)):
+
+```bash
+git clone codecommit::<region>://myapp-dev-docker-demo && cd myapp-dev-docker-demo && git switch -c main
+cat > Dockerfile <<'EOF'
+FROM public.ecr.aws/amazonlinux/amazonlinux:latest
+RUN yum update -y && yum install -y httpd && echo 'Hello World!' > /var/www/html/index.html
+EXPOSE 80
+CMD ["/usr/sbin/httpd", "-D", "FOREGROUND"]
+EOF
+git add Dockerfile && git commit -m "Add Dockerfile" && git push -u origin main
+```
+
+Check the result:
+
+```bash
+aws ecr describe-images --repository-name myapp-dev-app \
+  --query "sort_by(imageDetails,&imagePushedAt)[-1].{digest:imageDigest,tags:imageTags,scan:imageScanStatus.status}"
+aws codepipeline list-action-executions --pipeline-name myapp-dev-docker-pipeline \
+  --query "actionExecutionDetails[?actionName=='BuildAndPublishImage'].output.outputVariables"
+```
+
+Build and Verify logs are in the log group `/aws/codepipeline/myapp-dev-docker-pipeline`.
+
+#### Next: deploy to ECS (V2 way)
+
+Add a stage that consumes the pinned `imagedefinitions.json`. The ECS standard deploy action works in V1 and V2. What's V2-specific here is how the file is produced.
+
+```yaml
+- Name: Deploy
+  Actions:
+    - Name: DeployToEcs
+      ActionTypeId: { Category: Deploy, Owner: AWS, Provider: ECS, Version: "1" }
+      Configuration:
+        ClusterName: <cluster>
+        ServiceName: <service>                    # container name in the task def must equal ContainerName
+        FileName: imagedefinitions.json
+      InputArtifacts:
+        - Name: ImageDefinitionsArtifact
+```
+
+The pipeline role also needs ECS permissions (`ecs:DescribeServices`, `ecs:UpdateService`, `ecs:RegisterTaskDefinition`, ...) and `iam:PassRole` for the task roles. For ECS-native blue/green, see [../ecs/ecs-blue-green/README.md](../ecs/ecs-blue-green/README.md).
+
+#### Delete
+
+```bash
+aws s3 rm s3://<artifact-bucket> --recursive
+aws cloudformation delete-stack --stack-name myapp-dev-docker-pipeline     # ECR repo is emptied (EmptyOnDelete)
+aws codecommit delete-repository --repository-name myapp-dev-docker-demo   # only if you want the code gone
+```
+
 ----------------------------------------------------------------------------------
 
 ## Migrating a V1 template to V2
@@ -569,10 +669,11 @@ Check the EventBridge rule. It must match `referenceName` = your branch and `res
 ## Roadmap (next V2 templates)
 
 - `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow / CloudWatchAlarm, `OnSuccess` rollback
-- `codepipeline-v2-ecr-build-publish.yaml`: `ECRBuildAndPublish`, then the ECS deploy action. Build and push an image with no CodeBuild project.
+- `codepipeline-v2-ecr-build-publish-ecs.yaml`: extend the Docker template with a Deploy stage using the ECS action and the pinned `imagedefinitions.json`
 - `codepipeline-v2-lambda-deploy.yaml`: Lambda deploy action with traffic shifting and no CodeDeploy
 - ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
 - ~~`codepipeline-v2-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.
+- ~~`codepipeline-v2-ecr-build-publish.yaml`~~: done. Dockerfile → ECR with `ECRBuildAndPublish`, then digest-pinned `imagedefinitions.json`.
 
 ## Resources
 
