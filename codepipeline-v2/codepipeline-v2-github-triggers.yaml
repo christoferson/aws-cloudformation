@@ -211,14 +211,41 @@ Resources:
   # Pipeline
   # ---------------------------------------------------------------
 
+  # STUDY NOTES - how to read a pipeline definition
+  #   Pipeline -> Stages (run top to bottom, one at a time)
+  #            -> Actions (inside a stage, ordered by RunOrder)
+  #   Actions pass FILES to each other as artifacts (zips in the artifact
+  #   bucket: OutputArtifacts of one action = InputArtifacts of a later one)
+  #   and pass VALUES as variables (#{Namespace.Key}).
+  #   Triggers (V2) decide WHEN the pipeline starts; Stages decide WHAT it does.
+  #
+  #   ActionTypeId = which action this is, identified by four fields together:
+  #     Category  the kind of step. Valid: Source | Build | Test | Deploy |
+  #               Approval | Invoke | Compute. Each category allows only
+  #               certain providers (CodeStarSourceConnection is a Source)
+  #     Owner     who implements it: AWS (built in), ThirdParty, or Custom
+  #               (your own job worker). Everything in this template is AWS
+  #     Provider  the service/action that does the work
+  #     Version   the version of the ACTION TYPE. Every AWS-owned action
+  #               reference in docs/codepipeline/ documents version "1" - it is
+  #               not something you bump. It is NOT the pipeline's version:
+  #               that one auto-increments on every pipeline update
+  #               (!GetAtt Pipeline.Version) and is used by rollback.
+  #               Written as a string ("1") like the AWS examples.
+  #   Docs: docs/codepipeline/ug-action-requirements.md
+
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn: PipelineCommandsLogGroup
     Properties:
+      # Changing Name REPLACES the pipeline (new pipeline, history lost).
       Name: !Sub "${Application}-${Environment}-github-pipeline" # Fixed so the log group name is known
+      # Role CodePipeline assumes to run every action that has no action-level
+      # RoleArn - here it also needs UseConnection on the connection.
       RoleArn: !GetAtt PipelineServiceRole.Arn
-      PipelineType: V2
-      ExecutionMode: !Ref PipelineExecutionMode # [V2]
+      PipelineType: V2                          # Triggers require V2
+      ExecutionMode: !Ref PipelineExecutionMode # [V2] PARALLEL lets each PR / branch run independently
+      # Where artifacts are stored between actions. One bucket per Region.
       ArtifactStore:
         Type: S3
         Location: !Ref ArtifactBucket
@@ -227,8 +254,8 @@ Resources:
       # Within one filter, Branches AND FilePaths must both match.
       # Within one criteria, Excludes win over Includes.
       Triggers:
-        - ProviderType: CodeStarSourceConnection
-          GitConfiguration:
+        - ProviderType: CodeStarSourceConnection # The only allowed value: triggers work only with connection sources
+          GitConfiguration:                      # Max 3 Push + 3 PullRequest filters; max 8 patterns per Includes/Excludes
             SourceActionName: GitSource # Must equal the source action Name below
             Push:
               # 1. Release tags. Tags can't be combined with Branches/FilePaths.
@@ -252,35 +279,42 @@ Resources:
 
       Stages:
 
-        - Name: Source
+        - Name: Source          # Stage names must be unique in the pipeline
           Actions:
-            - Name: GitSource
+            - Name: GitSource   # Action names must be unique within the stage; Triggers refer to it by this name
               ActionTypeId:
-                Category: Source
-                Owner: AWS
-                Provider: CodeStarSourceConnection
-                Version: "1"
+                Category: Source                     # Every pipeline needs a Source action; it has no input artifacts
+                Owner: AWS                           # AWS even for GitHub: the action is AWS's (via CodeConnections)
+                Provider: CodeStarSourceConnection   # GitHub, GitHub Enterprise Server, GitLab, Bitbucket Cloud
+                Version: "1"                         # Action type version - see STUDY NOTES above
+              # Namespace makes the output variables referenceable as #{SourceVariables.<key>}.
+              # Without a namespace the variables exist but cannot be referenced.
               Namespace: SourceVariables # BranchName, CommitId, CommitMessage, AuthorDate, FullRepositoryName, ConnectionArn
+              # Configuration keys are defined by the Provider
+              # (docs/codepipeline/ug-action-reference-codestar-connection-source.md)
               Configuration:
-                ConnectionArn: !Ref ConnectionArn
-                FullRepositoryId: !Ref FullRepositoryId
+                ConnectionArn: !Ref ConnectionArn       # Must be AVAILABLE (handshake done in the console)
+                FullRepositoryId: !Ref FullRepositoryId # owner/repo, case-sensitive
                 BranchName: !Ref SourceBranchName # Manual starts only
                 OutputArtifactFormat: CODE_ZIP    # CODEBUILD_CLONE_REF works only with CodeBuild actions
+                # DetectChanges omitted: with Triggers defined, default change detection is off anyway
+              # Repo contents at the commit, zipped. Artifact names must be unique in the pipeline.
               OutputArtifacts:
                 - Name: SourceArtifact
+              # Order within the stage: same number = parallel, higher = later. Default 1.
               RunOrder: 1
 
         - Name: Build
           Actions:
             - Name: BuildCommands
               ActionTypeId:
-                Category: Compute
+                Category: Compute   # Compute category: run your own commands (V2)
                 Owner: AWS
-                Provider: Commands
-                Version: "1"
+                Provider: Commands  # V2-only. Commands/EnvironmentVariables/OutputVariables
+                Version: "1"        # sit on the action itself, not under Configuration
               Configuration:
-                EnvironmentType: LINUX_CONTAINER
-                ComputeType: BUILD_GENERAL1_SMALL
+                EnvironmentType: LINUX_CONTAINER   # or WINDOWS_SERVER_2022_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL  # SMALL (default) | MEDIUM | LARGE
               # Pass source variables as env vars rather than inlining them into
               # commands (commit messages etc. can contain shell metacharacters)
               EnvironmentVariables:

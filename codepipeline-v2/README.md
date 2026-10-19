@@ -150,12 +150,49 @@ OnFailure:
 - Rollback isn't available in PARALLEL mode.
 - Manual retry from the CLI: `aws codepipeline retry-stage-execution --retry-mode FAILED_ACTIONS|ALL_ACTIONS ...`
 
-### 5. Stage conditions — `BeforeEntry` / `OnFailure.Conditions` / `OnSuccess` *(next template)*
+### 5. Stage conditions — `BeforeEntry` / `OnFailure.Conditions` / `OnSuccess`
 
-Gate a stage with **rules**: `CloudWatchAlarm`, `DeploymentWindow`, `LambdaInvoke`, `VariableCheck`, `Commands`, `CodeBuild`.
-Possible results: `FAIL` or `SKIP` (entry), `ROLLBACK` (on failure), `FAIL` / `ROLLBACK` (on success).
-For example, "skip Deploy outside business hours" or "roll back if this alarm fires within 10 minutes".
-See [docs/codepipeline/ug-stage-conditions.md](../docs/codepipeline/ug-stage-conditions.md).
+A **condition** attaches **rules** to a stage at one of three points. If any rule in the condition fails, the configured **result** is applied.
+
+| Point | CloudFormation | Runs | Results |
+|---|---|---|---|
+| Entry | `BeforeEntry` | Before the stage starts | `FAIL`, `SKIP` (`SKIP` only with `LambdaInvoke` / `VariableCheck` rules) |
+| On Success | `OnSuccess` | After all actions succeeded | `ROLLBACK`, `FAIL` |
+| On Failure | `OnFailure.Conditions` | After the stage failed | `ROLLBACK` (can't be combined with automatic `RETRY`) |
+
+Rules: `CloudWatchAlarm`, `DeploymentWindow`, `LambdaInvoke`, `VariableCheck`, `Commands`, `CodeBuild` (references in `docs/codepipeline/ug-rule-reference-*.md`).
+A condition holds up to 5 rules, and each `BeforeEntry` / `OnSuccess` / `OnFailure` takes one condition.
+
+**Stage rollback** re-runs the stage with the **artifacts and variables of the last execution that succeeded in that stage**, as a new execution of type **"rollback"**. Limits:
+- That execution must be in the **current pipeline structure version**, so there's nothing to roll back to on the first run or right after a pipeline update.
+- You can't roll back to an execution that was itself a rollback.
+- Rollback isn't available in `PARALLEL` mode.
+
+#### Use case: "the deployment succeeded" is not "the release is healthy"
+
+> *After each production deployment, if the error-rate alarm fires, automatically return production to the previous version.*
+>
+> Answer: an **On Success** condition on the deploy stage, with a **`CloudWatchAlarm`** rule and result **`ROLLBACK`**.
+
+The deploy action can succeed while users see errors. So the pipeline checks health **after** the stage and undoes the release without a human. The `CloudWatchAlarm` rule checks the alarm you name, and an alarm in `ALARM` makes the rule fail.
+
+```yaml
+- Name: Deploy
+  Actions: [ ... ECS deploy ... ]
+  OnSuccess:
+    Conditions:
+      - Result: ROLLBACK
+        Rules:
+          - Name: ErrorRateAlarm
+            RuleTypeId: { Category: Rule, Owner: AWS, Provider: CloudWatchAlarm, Version: "1" }
+            Configuration:
+              AlarmName: myapp-dev-target-5xx
+              WaitTime: "1"            # minutes to let an alarm already in ALARM recover
+```
+
+> **Timing gotcha.** The console guide says that if the alarm is **OK when the rule is first checked, the rule succeeds immediately**, and `WaitTime` only applies when it's already in ALARM. Elsewhere, the same guide describes a 60-minute wait as watching for ALARM within 60 minutes. The two statements conflict. Right after a deploy, the alarm usually hasn't seen the new version's errors yet. So the Docker template adds a **bake** step (a Commands action that waits N minutes after the ECS deploy) before the On Success check runs. See [docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md](../docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md) and [docs/codepipeline/ug-stage-conditions.md](../docs/codepipeline/ug-stage-conditions.md).
+
+Implemented in the [Docker template](#codepipeline-v2---docker-build-scan-and-deploy-ecrbuildandpublish-inspectorscan-ecs-codecommit) (`DeployRollbackAlarmName`).
 
 ### 6. Triggers and filters — `Triggers`
 
@@ -532,6 +569,9 @@ Build a Dockerfile, push it to ECR, optionally scan it with Amazon Inspector, an
               writes imagedefinitions.json → [{"name":"web","imageUri":"<repo>@sha256:..."}]
    Deploy : ECS standard action  (ContainerClusterName + ContainerServiceName set)
               new task definition revision with the pinned image → UpdateService
+            + Bake (Commands)    wait DeployBakeTimeInMinutes, print alarm state
+            On Success: CloudWatchAlarm rule (DeployRollbackAlarmName set)
+              ALARM → ROLLBACK: re-run Deploy with the last good imagedefinitions.json
 ```
 
 V2 features covered (marked `[V2]` in the template):
@@ -555,6 +595,9 @@ Also shown: `InspectorScan`. It's a managed-compute action, but the docs don't m
 | `ContainerClusterName` | blank | Existing ECS cluster. Blank = no Deploy stage |
 | `ContainerServiceName` | blank | Existing ECS service in that cluster. Blank = no Deploy stage |
 | `ContainerName` | `web` | Container name in the service's task definition (written to `imagedefinitions.json`) |
+| `DeployRollbackAlarmName` | blank | Existing CloudWatch alarm, such as an error rate. If set (and Deploy is on), an **On Success** condition rolls production back when it's in ALARM |
+| `DeployRollbackAlarmWaitTimeInMinutes` | `1` | `CloudWatchAlarm` rule `WaitTime`: how long an alarm already in ALARM gets to recover before rollback. Blank = rule default |
+| `DeployBakeTimeInMinutes` | `5` | Commands step after the ECS deploy that waits and prints the alarm state each minute. `0` = no bake. Max 50 (the Commands timeout is 55) |
 
 The CodeCommit repository and the ECR repository are both named `<Application>-<Environment>-app` (`myapp-dev-app`). The Dockerfile always goes in the repository root.
 
@@ -593,6 +636,48 @@ Docs: [../docs/codepipeline/ug-action-reference-inspector-scan.md](../docs/codep
 - **IAM:** added only when the stage exists. That's the action reference's minimum: `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition`, `ecs:UpdateService` / `ecs:DescribeServices` on that service, `ecs:TagResource` for new task definitions, and `iam:PassRole` for ECS. `PassRole` is on `*`, limited to `ecs` / `ecs-tasks`, so scope it to your task and execution role ARNs for production.
 
 Docs: [../docs/codepipeline/ug-action-reference-ecs.md](../docs/codepipeline/ug-action-reference-ecs.md), [../docs/codepipeline/ug-file-reference.md](../docs/codepipeline/ug-file-reference.md).
+
+#### About the post-deploy health check (automatic rollback)
+
+```
+ Deploy stage
+   1. DeployToContainerService   ECS: new task def revision with repo@sha256:<new> → service steady
+   2. BakeAndWatchAlarm          wait DeployBakeTimeInMinutes, print alarm state each minute
+ stage SUCCEEDED → On Success condition
+   CloudWatchAlarm rule  AlarmName = DeployRollbackAlarmName
+     OK     → rule succeeds → release stays
+     ALARM  → (WaitTime) → rule fails → ROLLBACK
+              new execution, type "rollback": re-runs Deploy with the last good
+              execution's ImageDefinitionsArtifact → repo@sha256:<previous> → ECS
+```
+
+- **Why rollback means "previous image":** the Deploy stage's only input is `imagedefinitions.json`, which is pinned to a digest. Re-running the stage with the last good execution's artifact redeploys exactly the previous image. With `:latest` this wouldn't work, because the old artifact would point at the new image.
+- **Bring your own alarm:** the template doesn't know which load balancer or metric your service uses. A typical error-rate alarm for an ALB-backed service:
+
+  ```bash
+  # LoadBalancer dimension = the part of the ALB ARN after "loadbalancer/", e.g. app/myapp-dev-alb/0123456789abcdef
+  aws cloudwatch put-metric-alarm --alarm-name myapp-dev-target-5xx \
+    --namespace AWS/ApplicationELB --metric-name HTTPCode_Target_5XX_Count \
+    --dimensions Name=LoadBalancer,Value=app/<alb-name>/<id> \
+    --statistic Sum --period 60 --evaluation-periods 1 --threshold 5 \
+    --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching
+  ```
+
+  Keep the alarm's period short (60s) and the bake at least one or two periods, so the alarm can react before the check.
+- **First deploy:** there's no earlier successful Deploy to roll back to, so the very first release can't be rolled back automatically. The same applies to the first deploy after any pipeline update.
+- **Mode:** works with `QUEUED` (this template). Rollback isn't available in `PARALLEL`.
+- **Permissions:** the rule runs as the pipeline role. The template adds `cloudwatch:DescribeAlarms` on that alarm, which the bake step also uses. The rule reference doesn't list permissions, so this one is inferred.
+- **Compared with ECS-native blue/green:** [../ecs/ecs-blue-green/](../ecs/ecs-blue-green/README.md) does this inside ECS (`DeploymentConfiguration.Alarms` + bake time, with traffic shifted back to blue). The pipeline approach works with any deploy action, but redeploys the previous version instead of flipping traffic.
+
+Try it:
+1. Deploy a healthy image once, so a good execution exists.
+2. Push a change that returns 5xx, or temporarily set the alarm to ALARM with `aws cloudwatch set-alarm-state --alarm-name myapp-dev-target-5xx --state-value ALARM --state-reason test` during the bake.
+3. The stage succeeds, the condition fails, and a rollback execution appears:
+
+```bash
+aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-docker-pipeline \
+  --query "pipelineExecutionSummaries[0:3].{id:pipelineExecutionId,type:executionType,status:status,rollback:rollbackMetadata}"
+```
 
 #### Deploy
 
@@ -716,7 +801,7 @@ Check the EventBridge rule. It must match `referenceName` = your branch and `res
 
 ## Roadmap (next V2 templates)
 
-- `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow / CloudWatchAlarm, `OnSuccess` rollback
+- `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow (deploy only in business hours), `SKIP` with `VariableCheck`. `OnSuccess` + `CloudWatchAlarm` + `ROLLBACK` is already in the Docker template.
 - `codepipeline-v2-lambda-deploy.yaml`: Lambda deploy action with traffic shifting and no CodeDeploy
 - ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
 - ~~`codepipeline-v2-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.

@@ -17,6 +17,12 @@ Tables and lists were converted automatically, so some formatting is rough (nota
 | [ug-stage-retry.md](ug-stage-retry.md) | Manual and automatic stage retry |
 | [ug-stage-conditions.md](ug-stage-conditions.md) | Entry / OnFailure / OnSuccess conditions and rules |
 | [ug-rule-reference.md](ug-rule-reference.md) | Rule providers for conditions (index only) |
+| [ug-rule-reference-cloudwatch-alarm.md](ug-rule-reference-cloudwatch-alarm.md) | Rule: CloudWatchAlarm (AlarmName, AlarmStates, WaitTime) |
+| [ug-rule-reference-deployment-window.md](ug-rule-reference-deployment-window.md) | Rule: DeploymentWindow (cron window) |
+| [ug-rule-reference-variable-check.md](ug-rule-reference-variable-check.md) | Rule: VariableCheck (compare a variable) |
+| [ug-rule-reference-lambda-invoke.md](ug-rule-reference-lambda-invoke.md) | Rule: LambdaInvoke |
+| [ug-rule-reference-commands.md](ug-rule-reference-commands.md) | Rule: Commands |
+| [ug-rule-reference-codebuild.md](ug-rule-reference-codebuild.md) | Rule: CodeBuild |
 | [ug-pipelines-filter.md](ug-pipelines-filter.md) | Triggers: Git tag / branch / file path / pull request filters |
 | [ug-pipelines-triggers.md](ug-pipelines-triggers.md) | Triggers: valid filter combinations, OR/AND logic, PR events by provider, examples |
 | [ug-pipelines-filter-cli.md](ug-pipelines-filter-cli.md) | Triggers: CLI walkthrough |
@@ -27,6 +33,8 @@ Tables and lists were converted automatically, so some formatting is rough (nota
 | [ug-connections-github.md](ug-connections-github.md) | Creating a GitHub connection |
 | [ug-tutorials-github-gitclone.md](ug-tutorials-github-gitclone.md) | Tutorial: full clone (`CODEBUILD_CLONE_REF`) |
 | [ug-pipeline-requirements.md](ug-pipeline-requirements.md) | Pipeline structure reference (field definitions) |
+| [ug-action-requirements.md](ug-action-requirements.md) | Action structure: `actionTypeId` (category / owner / provider / version), artifacts, `runOrder`, `namespace`, `region`, `roleArn` |
+| [ug-reference-action-artifacts.md](ug-reference-action-artifacts.md) | Valid input / output artifact counts per action type |
 | [ug-action-reference-pipeline-invoke.md](ug-action-reference-pipeline-invoke.md) | Invoke action: start another pipeline with source revisions + variables (V2) |
 | [ug-action-reference-codecommit.md](ug-action-reference-codecommit.md) | CodeCommit source action, output variables, permissions |
 | [ug-action-reference-ecr-build-and-publish.md](ug-action-reference-ecr-build-and-publish.md) | ECRBuildAndPublish build action (V2) |

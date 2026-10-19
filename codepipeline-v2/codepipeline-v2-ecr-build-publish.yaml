@@ -13,12 +13,16 @@ Description: CodePipeline V2 - Dockerfile -> ECRBuildAndPublish -> InspectorScan
 #                                                 fails above severity thresholds, outputs SBOM
 #              -> Verify   (Commands)             writes imagedefinitions.json = repo@sha256:...
 #              -> Deploy   (ECS standard action)  ContainerClusterName + ContainerServiceName set
+#                          (+ Bake, Commands)      DeployBakeTimeInMinutes > 0
+#                 On Success: CloudWatchAlarm rule  DeployRollbackAlarmName set
+#                             alarm in ALARM -> ROLLBACK to the last good deploy
 #
 #   V2-only features demonstrated (marked "[V2]" inline below):
 #     - ECRBuildAndPublish build action (managed CodeBuild compute)
 #     - Output variables ECRImageDigestId / ECRRepositoryName
 #     - Commands action consuming them + producing a Files output artifact
 #     - ExecutionMode QUEUED (every commit gets its own image, in order)
+#     - Stage condition OnSuccess + CloudWatchAlarm rule + ROLLBACK result
 #   Also shown (managed compute, not documented as V2-only):
 #     - InspectorScan ECRImageScan with severity thresholds + SBOM artifact
 #
@@ -51,6 +55,13 @@ Description: CodePipeline V2 - Dockerfile -> ECRBuildAndPublish -> InspectorScan
 #   - Deploy uses iam:PassRole on * limited to ecs / ecs-tasks; scope it to your
 #     task + execution role ARNs for production
 #   - The first execution at stack creation fails at Source (empty repository)
+#   - Rollback needs a previous execution that succeeded in the Deploy stage in
+#     the current pipeline structure version (none on the very first deploy, or
+#     right after a pipeline update). Not available with ExecutionMode PARALLEL
+#   - The CloudWatchAlarm rule succeeds immediately if the alarm is OK when first
+#     checked; WaitTime only applies when it is already in ALARM. Use the bake
+#     step so the alarm can react to new traffic first. The rollback alarm must
+#     already exist (e.g. ALB HTTPCode_Target_5XX_Count) - see README
 # -----------------------------------------------------------------------------
 
 Metadata:
@@ -79,6 +90,12 @@ Metadata:
           - ContainerClusterName
           - ContainerServiceName
           - ContainerName
+      - Label:
+          default: Post-deploy health check (On Success condition) - needs Deploy
+        Parameters:
+          - DeployRollbackAlarmName
+          - DeployRollbackAlarmWaitTimeInMinutes
+          - DeployBakeTimeInMinutes
 
 Parameters:
 
@@ -143,6 +160,24 @@ Parameters:
     Default: web
     Description: Container name in the ECS task definition (written to imagedefinitions.json)
 
+  DeployRollbackAlarmName:
+    Type: String
+    Default: ""
+    Description: "[V2] Existing CloudWatch alarm (e.g. error rate). If in ALARM after Deploy succeeds, roll production back. Blank = no On Success condition"
+
+  DeployRollbackAlarmWaitTimeInMinutes:
+    Type: String
+    Default: "1"
+    AllowedPattern: "^$|^[0-9]+$"
+    Description: "[V2] CloudWatchAlarm rule WaitTime - minutes to wait for an alarm already in ALARM to recover before rolling back. Blank = rule default"
+
+  DeployBakeTimeInMinutes:
+    Type: Number
+    Default: 5
+    MinValue: 0
+    MaxValue: 50
+    Description: Minutes to wait after the ECS deploy (Commands action) so the alarm sees new traffic before the On Success check. 0 = no bake
+
 Conditions:
 
   IsImageScanEnabled: !Equals [!Ref ImageScanEnabled, "true"]
@@ -153,6 +188,13 @@ Conditions:
   IsContainerDeployEnabled: !And
     - !Not [!Equals [!Ref ContainerClusterName, ""]]
     - !Not [!Equals [!Ref ContainerServiceName, ""]]
+  IsDeployRollbackEnabled: !And
+    - !Condition IsContainerDeployEnabled
+    - !Not [!Equals [!Ref DeployRollbackAlarmName, ""]]
+  HasDeployRollbackAlarmWaitTime: !Not [!Equals [!Ref DeployRollbackAlarmWaitTimeInMinutes, ""]]
+  IsDeployBakeEnabled: !And
+    - !Condition IsContainerDeployEnabled
+    - !Not [!Equals [!Ref DeployBakeTimeInMinutes, "0"]]
 
 Resources:
 
@@ -337,6 +379,16 @@ Resources:
                         - ecs.amazonaws.com
                         - ecs-tasks.amazonaws.com
                 - !Ref AWS::NoValue
+              # [V2] CloudWatchAlarm rule (runs as the pipeline role - RuleDeclaration
+              # RoleArn not set) + the bake step printing the alarm state.
+              # The rule reference does not list permissions; DescribeAlarms is inferred.
+              - !If
+                - IsDeployRollbackEnabled
+                - Sid: DeployRollbackAlarmRead
+                  Effect: Allow
+                  Action: cloudwatch:DescribeAlarms
+                  Resource: !Sub "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${DeployRollbackAlarmName}"
+                - !Ref AWS::NoValue
               - Sid: ManagedComputeLogs
                 Effect: Allow
                 Action:
@@ -390,35 +442,76 @@ Resources:
   # Pipeline
   # ---------------------------------------------------------------
 
+  # STUDY NOTES - how to read a pipeline definition
+  #   Pipeline -> Stages (run top to bottom, one at a time)
+  #            -> Actions (inside a stage, ordered by RunOrder)
+  #   Actions pass FILES to each other as artifacts (zips in the artifact
+  #   bucket: OutputArtifacts of one action = InputArtifacts of a later one)
+  #   and pass VALUES as variables (#{Namespace.Key}).
+  #
+  #   ActionTypeId = which action this is, identified by four fields together:
+  #     Category  the kind of step. Valid: Source | Build | Test | Deploy |
+  #               Approval | Invoke | Compute. Each category allows only
+  #               certain providers (CodeCommit is a Source, ECS is a Deploy)
+  #     Owner     who implements it: AWS (built in), ThirdParty, or Custom
+  #               (your own job worker). Everything in this template is AWS
+  #     Provider  the service/action that does the work (CodeCommit, ECS, ...)
+  #     Version   the version of the ACTION TYPE. Every AWS-owned action
+  #               reference in docs/codepipeline/ documents version "1" - it is
+  #               not something you bump. It is NOT the pipeline's version:
+  #               that one auto-increments on every pipeline update
+  #               (!GetAtt Pipeline.Version) and is used by rollback.
+  #               Written as a string ("1") like the AWS examples.
+  #   Docs: docs/codepipeline/ug-action-requirements.md
+
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn: PipelineManagedComputeLogGroup
     Properties:
+      # Changing Name REPLACES the pipeline (new pipeline, history lost).
       Name: !Sub "${Application}-${Environment}-docker-pipeline" # Fixed so the log group name is known
+      # Role CodePipeline assumes to run every action that has no action-level
+      # RoleArn. Managed compute actions (ECRBuildAndPublish, InspectorScan,
+      # Commands) also run their commands with this role.
       RoleArn: !GetAtt PipelineServiceRole.Arn
-      PipelineType: V2
-      ExecutionMode: QUEUED # [V2] Every commit builds its own image, in order
+      PipelineType: V2          # V1 | V2. Updating V1 -> V2 is in place (no replacement)
+      ExecutionMode: QUEUED     # [V2] SUPERSEDED (default) | QUEUED | PARALLEL. Every commit builds its own image, in order
+      # Where artifacts are stored between actions. One bucket per Region;
+      # use ArtifactStores (plural, per Region) for cross-Region actions.
       ArtifactStore:
         Type: S3
         Location: !Ref ArtifactBucket
 
       Stages:
 
-        - Name: Source
+        - Name: Source        # Stage names must be unique in the pipeline
           Actions:
-            - Name: Source
+            - Name: Source    # Action names must be unique within the stage
               ActionTypeId:
-                Category: Source
+                Category: Source      # Every pipeline needs a Source action; it has no input artifacts
                 Owner: AWS
-                Provider: CodeCommit
-                Version: "1"
+                Provider: CodeCommit  # Other Source providers: S3, ECR, CodeStarSourceConnection (GitHub/GitLab/Bitbucket)
+                Version: "1"          # Action type version - see STUDY NOTES above
+              # Namespace makes this action's output variables referenceable as
+              # #{SourceVariables.<key>}. CodeCommit outputs: CommitId, BranchName,
+              # RepositoryName, CommitMessage, AuthorDate, CommitterDate.
+              # Without a namespace the variables exist but cannot be referenced.
+              # Must be unique in the pipeline and not clash with an artifact name.
               Namespace: SourceVariables
+              # Configuration keys are defined by the Provider (see the action
+              # reference: docs/codepipeline/ug-action-reference-codecommit.md)
               Configuration:
                 RepositoryName: !GetAtt CodeCommitRepository.Name
                 BranchName: !Ref SourceBranchName
+                # Omitted = true = CodePipeline polls the repo. Set false when an
+                # EventBridge rule starts the pipeline, or every push runs twice.
                 PollForSourceChanges: false # Started by the EventBridge rule
+              # The repo contents at that commit, zipped (CODE_ZIP, the default).
+              # Artifact names must be unique in the pipeline.
               OutputArtifacts:
                 - Name: SourceArtifact
+              # Order within the stage: same number = run in parallel, higher = later.
+              # Default 1; gaps are fine (1, 3 runs 3 after 1).
               RunOrder: 1
 
         - Name: Build
@@ -427,18 +520,22 @@ Resources:
             #   docker login / docker build / docker tag / docker push
             - Name: BuildAndPublishImage
               ActionTypeId:
-                Category: Build
+                Category: Build              # Build category: CodeBuild, ECRBuildAndPublish, ...
                 Owner: AWS
-                Provider: ECRBuildAndPublish
+                Provider: ECRBuildAndPublish # V2-only managed compute action
                 Version: "1"
               Namespace: BuildVariables # -> ECRImageDigestId, ECRRepositoryName
               Configuration:
-                ECRRepositoryName: !Ref ContainerImageRepository
+                ECRRepositoryName: !Ref ContainerImageRepository # Repository must already exist
                 # DockerFilePath omitted -> Dockerfile in the repository root
+                # A variable from an EARLIER action: the referencing action must be
+                # in a later stage, or the same stage with a higher RunOrder.
                 ImageTags: "latest,#{SourceVariables.CommitId}" # Comma-delimited; default would be "latest"
-                RegistryType: private
+                RegistryType: private # private (default) | public
+              # Must exactly match an OutputArtifacts name from a preceding action
               InputArtifacts:
                 - Name: SourceArtifact
+              # No OutputArtifacts: this action outputs variables, not files
               RunOrder: 1
 
         # Optional gate: scan the image just pushed (by its commit tag) before
@@ -449,9 +546,9 @@ Resources:
             Actions:
               - Name: ScanImage
                 ActionTypeId:
-                  Category: Invoke
+                  Category: Invoke        # Invoke category: actions that call another service (InspectorScan, Lambda, StepFunctions, CodePipeline)
                   Owner: AWS
-                  Provider: InspectorScan
+                  Provider: InspectorScan # Managed compute; documented without a V2-only note
                   Version: "1"
                 Namespace: ScanVariables # -> HighestScannedSeverity
                 Configuration:
@@ -473,10 +570,13 @@ Resources:
             # imagedefinitions.json pinned to repo@sha256:... for the ECS deploy
             - Name: VerifyImage
               ActionTypeId:
-                Category: Compute
+                Category: Compute   # Compute category: run your own commands (V2)
                 Owner: AWS
-                Provider: Commands
-                Version: "1"
+                Provider: Commands  # V2-only. Commands/EnvironmentVariables/OutputVariables
+                Version: "1"        # sit on the action itself, not under Configuration
+              # Plain env vars for the shell. Values may be literals, !Ref/!Sub
+              # (resolved by CloudFormation at deploy time) or #{...} variables
+              # (resolved by CodePipeline at run time).
               EnvironmentVariables:
                 - Name: IMAGE_REGISTRY
                   Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}"
@@ -499,7 +599,7 @@ Resources:
                 - Name: SourceArtifact # Commands needs at least one input artifact
               OutputArtifacts:
                 - Name: ImageDefinitionsArtifact
-                  Files:
+                  Files:            # Commands only: which files from the workspace go into the artifact
                     - imagedefinitions.json
               RunOrder: 1
 
@@ -511,17 +611,65 @@ Resources:
             Actions:
               - Name: DeployToContainerService
                 ActionTypeId:
-                  Category: Deploy
+                  Category: Deploy   # Deploy actions have no output artifacts
                   Owner: AWS
-                  Provider: ECS
+                  Provider: ECS      # "ECS standard": updates the service; the service's own deployment config decides how it rolls out. V1 and V2
                   Version: "1"
                 Configuration:
                   ClusterName: !Ref ContainerClusterName
                   ServiceName: !Ref ContainerServiceName
-                  FileName: imagedefinitions.json
+                  FileName: imagedefinitions.json # Default name; read from the input artifact
                 InputArtifacts:
                   - Name: ImageDefinitionsArtifact
-                RunOrder: 1
+                RunOrder: 1          # Bake below has RunOrder 2, so it runs after the deploy
+              # Bake: "deploy action succeeded" != "release is healthy". Give the
+              # alarm time to see real traffic on the new version before the
+              # On Success check below runs (the rule itself does not watch over time
+              # when the alarm is OK - see README).
+              - !If
+                - IsDeployBakeEnabled
+                - Name: BakeAndWatchAlarm
+                  ActionTypeId:
+                    Category: Compute
+                    Owner: AWS
+                    Provider: Commands
+                    Version: "1"
+                  EnvironmentVariables:
+                    - Name: BAKE_MINUTES
+                      Value: !Ref DeployBakeTimeInMinutes
+                    - Name: ALARM_NAME
+                      Value: !If [IsDeployRollbackEnabled, !Ref DeployRollbackAlarmName, "none"]
+                  Commands:
+                    - "echo \"Baking for $BAKE_MINUTES minute(s), watching alarm $ALARM_NAME\""
+                    - "for i in $(seq 1 $BAKE_MINUTES); do sleep 60; if [ \"$ALARM_NAME\" != none ]; then echo minute $i: $(aws cloudwatch describe-alarms --alarm-names \"$ALARM_NAME\" --query 'MetricAlarms[0].StateValue' --output text); else echo minute $i; fi; done"
+                  InputArtifacts:
+                    - Name: ImageDefinitionsArtifact # Commands needs at least one input artifact
+                  RunOrder: 2
+                - !Ref AWS::NoValue
+            # [V2] On Success condition: the stage succeeded, now check health.
+            # Alarm in ALARM -> rule fails -> ROLLBACK: CodePipeline starts a new
+            # execution of type "rollback" that re-runs this stage with the artifacts
+            # (previous imagedefinitions.json = previous digest) and variables of the
+            # last execution that succeeded in this stage.
+            OnSuccess: !If
+              - IsDeployRollbackEnabled
+              - Conditions:
+                  - Result: ROLLBACK # On Success allows ROLLBACK or FAIL
+                    Rules:           # Up to 5; if ANY rule fails, Result is applied
+                      - Name: ErrorRateAlarm
+                        # Rules mirror ActionTypeId: same four fields, but the
+                        # Category is always "Rule" and Provider is the rule type
+                        # (CloudWatchAlarm, DeploymentWindow, VariableCheck,
+                        # LambdaInvoke, Commands, CodeBuild). Version "1" again.
+                        RuleTypeId:
+                          Category: Rule
+                          Owner: AWS
+                          Provider: CloudWatchAlarm
+                          Version: "1"
+                        Configuration:
+                          AlarmName: !Ref DeployRollbackAlarmName
+                          WaitTime: !If [HasDeployRollbackAlarmWaitTime, !Ref DeployRollbackAlarmWaitTimeInMinutes, !Ref AWS::NoValue]
+              - !Ref AWS::NoValue
           - !Ref AWS::NoValue
 
       Tags:

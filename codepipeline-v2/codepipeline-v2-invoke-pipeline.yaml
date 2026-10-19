@@ -294,14 +294,43 @@ Resources:
   # Deploy Pipeline (target)
   # ---------------------------------------------------------------
 
+  # STUDY NOTES - how to read a pipeline definition
+  #   Pipeline -> Stages (run top to bottom, one at a time)
+  #            -> Actions (inside a stage, ordered by RunOrder)
+  #   Actions pass FILES to each other as artifacts (zips in the artifact
+  #   bucket: OutputArtifacts of one action = InputArtifacts of a later one)
+  #   and pass VALUES as variables (#{Namespace.Key}). Artifacts never cross
+  #   between pipelines; the invoke action passes only a source revision and
+  #   variables, and the target fetches its own source.
+  #
+  #   ActionTypeId = which action this is, identified by four fields together:
+  #     Category  the kind of step. Valid: Source | Build | Test | Deploy |
+  #               Approval | Invoke | Compute. Each category allows only
+  #               certain providers (CodeCommit is a Source, CodePipeline is an Invoke)
+  #     Owner     who implements it: AWS (built in), ThirdParty, or Custom
+  #               (your own job worker). Everything in this template is AWS
+  #     Provider  the service/action that does the work
+  #     Version   the version of the ACTION TYPE. Every AWS-owned action
+  #               reference in docs/codepipeline/ documents version "1" - it is
+  #               not something you bump. It is NOT the pipeline's version:
+  #               that one auto-increments on every pipeline update
+  #               (!GetAtt DeployPipeline.Version) and is used by rollback.
+  #               Written as a string ("1") like the AWS examples.
+  #   Docs: docs/codepipeline/ug-action-requirements.md
+
   DeployPipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn: DeployPipelineCommandsLogGroup
     Properties:
+      # Changing Name REPLACES the pipeline (new pipeline, history lost).
       Name: !Sub "${Application}-${Environment}-deploy-pipeline" # Fixed: referenced by the build role + log group
+      # Role CodePipeline assumes to run every action that has no action-level
+      # RoleArn. The Commands action also runs its shell commands with this role.
       RoleArn: !GetAtt DeployPipelineServiceRole.Arn
-      PipelineType: V2
+      PipelineType: V2      # Both the invoking and the target pipeline must be V2
       ExecutionMode: QUEUED # [V2] Invoked releases deploy one at a time, in order
+      # Where artifacts are stored between actions. Shared bucket; each pipeline
+      # writes under its own prefix.
       ArtifactStore:
         Type: S3
         Location: !Ref ArtifactBucket
@@ -323,11 +352,15 @@ Resources:
             # Name must equal SourceRevisions[].actionName in the invoke action
             - Name: Source
               ActionTypeId:
-                Category: Source
+                Category: Source      # Every pipeline needs a Source action; it has no input artifacts
                 Owner: AWS
-                Provider: CodeCommit
-                Version: "1"
+                Provider: CodeCommit  # Other Source providers: S3, ECR, CodeStarSourceConnection (GitHub/GitLab/Bitbucket)
+                Version: "1"          # Action type version - see STUDY NOTES above
+              # Namespace makes the output variables referenceable as #{SourceVariables.<key>}.
+              # On an invoked run, CommitId is the PINNED commit (source revision override).
               Namespace: SourceVariables
+              # Configuration keys are defined by the Provider
+              # (docs/codepipeline/ug-action-reference-codecommit.md)
               Configuration:
                 RepositoryName: !If [IsCreateCodeCommitRepository, !GetAtt CodeCommitRepository.Name, !Ref CodeCommitRepositoryName]
                 BranchName: !Ref SourceBranchName
@@ -340,10 +373,12 @@ Resources:
           Actions:
             - Name: DeployCommands
               ActionTypeId:
-                Category: Compute
+                Category: Compute   # Compute category: run your own commands (V2)
                 Owner: AWS
-                Provider: Commands
-                Version: "1"
+                Provider: Commands  # V2-only. Commands/EnvironmentVariables/OutputVariables
+                Version: "1"        # sit on the action itself, not under Configuration
+              # #{variables.X} = pipeline-level variables (here: passed in by the invoke action)
+              # #{SourceVariables.X} = this pipeline's own source action outputs
               EnvironmentVariables:
                 - Name: RELEASE_VERSION
                   Value: "#{variables.ReleaseVersion}"
@@ -368,11 +403,15 @@ Resources:
   # Build Pipeline (invoking)
   # ---------------------------------------------------------------
 
+  # STUDY NOTES - see DeployPipeline above for the ActionTypeId fields
+
   BuildPipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn: BuildPipelineCommandsLogGroup
     Properties:
       Name: !Sub "${Application}-${Environment}-build-pipeline"
+      # This role also needs codepipeline:StartPipelineExecution on the TARGET
+      # pipeline - the invoke action runs as the invoking pipeline's role.
       RoleArn: !GetAtt BuildPipelineServiceRole.Arn
       PipelineType: V2
       ExecutionMode: QUEUED
@@ -407,6 +446,7 @@ Resources:
                 Owner: AWS
                 Provider: Commands
                 Version: "1"
+              # Namespace is what makes OutputVariables usable later as #{BuildVariables.<name>}
               Namespace: BuildVariables
               EnvironmentVariables:
                 - Name: GIT_COMMIT
@@ -417,6 +457,8 @@ Resources:
                 # Pipeline variable values allow only [A-Za-z0-9@-_]: timestamp-shortsha
                 - "export RELEASE_VERSION=$(date -u +%Y%m%d%H%M%S)-$(echo $GIT_COMMIT | cut -c1-7)"
                 - "echo Release version $RELEASE_VERSION"
+              # Shell env vars to export when the commands finish (max 15).
+              # The value is whatever the variable holds at the end of the run.
               OutputVariables:
                 - RELEASE_VERSION # -> #{BuildVariables.RELEASE_VERSION}
               InputArtifacts:
@@ -429,10 +471,12 @@ Resources:
             # SourceRevisions / Variables are JSON *strings* (serialized arrays).
             - Name: InvokeDeployPipeline
               ActionTypeId:
-                Category: Invoke
+                Category: Invoke        # Invoke category: actions that call another service (Lambda, StepFunctions, InspectorScan, CodePipeline)
                 Owner: AWS
-                Provider: CodePipeline
+                Provider: CodePipeline  # V2-only: "invoke another pipeline"
                 Version: "1"
+              # No InputArtifacts / OutputArtifacts: this action passes only a
+              # revision and variables, never files.
               Configuration:
                 PipelineName: !Ref DeployPipeline # The TARGET pipeline
                 # Pin the target's "Source" action to the commit this run built

@@ -217,15 +217,42 @@ Resources:
   # Pipeline
   # ---------------------------------------------------------------
 
+  # STUDY NOTES - how to read a pipeline definition
+  #   Pipeline -> Stages (run top to bottom, one at a time)
+  #            -> Actions (inside a stage, ordered by RunOrder)
+  #   Actions pass FILES to each other as artifacts (zips in the artifact
+  #   bucket: OutputArtifacts of one action = InputArtifacts of a later one)
+  #   and pass VALUES as variables (#{Namespace.Key}).
+  #
+  #   ActionTypeId = which action this is, identified by four fields together:
+  #     Category  the kind of step. Valid: Source | Build | Test | Deploy |
+  #               Approval | Invoke | Compute. Each category allows only
+  #               certain providers (S3 is a Source, Commands is a Compute)
+  #     Owner     who implements it: AWS (built in), ThirdParty, or Custom
+  #               (your own job worker). Everything in this template is AWS
+  #     Provider  the service/action that does the work (S3, Commands, ...)
+  #     Version   the version of the ACTION TYPE. Every AWS-owned action
+  #               reference in docs/codepipeline/ documents version "1" - it is
+  #               not something you bump. It is NOT the pipeline's version:
+  #               that one auto-increments on every pipeline update
+  #               (!GetAtt Pipeline.Version) and is used by rollback.
+  #               Written as a string ("1") like the AWS examples.
+  #   Docs: docs/codepipeline/ug-action-requirements.md
+
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn: PipelineCommandsLogGroup
     Properties:
+      # Changing Name REPLACES the pipeline (new pipeline, history lost).
       Name: !Sub "${Application}-${Environment}-pipeline" # Fixed so the log group name is known
+      # Role CodePipeline assumes to run every action that has no action-level
+      # RoleArn. The Commands action also runs its shell commands with this role.
       RoleArn: !GetAtt PipelineServiceRole.Arn
-      PipelineType: V2                          # [V2] Billed per action-execution minute
-      ExecutionMode: !Ref PipelineExecutionMode # [V2] QUEUED (V2 only) or SUPERSEDED
-      RestartExecutionOnUpdate: false
+      PipelineType: V2                          # [V2] V1 | V2. Billed per action-execution minute. V1 -> V2 updates in place
+      ExecutionMode: !Ref PipelineExecutionMode # [V2] QUEUED (V2 only) or SUPERSEDED (default)
+      RestartExecutionOnUpdate: false           # true = start a new run every time the pipeline definition is updated
+      # Where artifacts are stored between actions. One bucket per Region;
+      # use ArtifactStores (plural, per Region) for cross-Region actions.
       ArtifactStore:
         Type: S3
         Location: !Ref ArtifactBucket
@@ -244,21 +271,31 @@ Resources:
 
       Stages:
 
-        - Name: Source
+        - Name: Source        # Stage names must be unique in the pipeline
           Actions:
-            - Name: S3Source
+            - Name: S3Source  # Action names must be unique within the stage
               ActionTypeId:
-                Category: Source
+                Category: Source  # Every pipeline needs a Source action; it has no input artifacts
                 Owner: AWS
-                Provider: S3
-                Version: "1"
-              Namespace: SourceVariables # Exposes #{SourceVariables.ETag} and #{SourceVariables.VersionId}
+                Provider: S3      # Other Source providers: CodeCommit, ECR, CodeStarSourceConnection (GitHub/GitLab/Bitbucket)
+                Version: "1"      # Action type version - see STUDY NOTES above
+              # Namespace makes this action's output variables referenceable as
+              # #{SourceVariables.<key>}. S3 outputs only ETag and VersionId.
+              # Without a namespace the variables exist but cannot be referenced.
+              # Must be unique in the pipeline and not clash with an artifact name.
+              Namespace: SourceVariables
+              # Configuration keys are defined by the Provider (see its action reference)
               Configuration:
-                S3Bucket: !Ref SourceBucket
-                S3ObjectKey: !Ref SourceObjectKey
+                S3Bucket: !Ref SourceBucket       # Must be versioned
+                S3ObjectKey: !Ref SourceObjectKey # The zip that is the source
+                # Omitted = true = CodePipeline polls the object. Set false when an
+                # EventBridge rule starts the pipeline, or every upload runs twice.
                 PollForSourceChanges: false # Started by the EventBridge rule instead
+              # The zip itself. Artifact names must be unique in the pipeline.
               OutputArtifacts:
                 - Name: SourceArtifact
+              # Order within the stage: same number = run in parallel, higher = later.
+              # Default 1; gaps are fine (1, 3 runs 3 after 1).
               RunOrder: 1
 
         - Name: Build
@@ -267,15 +304,17 @@ Resources:
             # no AWS::CodeBuild::Project or buildspec needed.
             - Name: BuildCommands
               ActionTypeId:
-                Category: Compute
+                Category: Compute   # Compute category: run your own commands (V2)
                 Owner: AWS
-                Provider: Commands
-                Version: "1"
+                Provider: Commands  # V2-only. Commands/EnvironmentVariables/OutputVariables
+                Version: "1"        # sit on the action itself, not under Configuration
               Namespace: BuildVariables
               Configuration:
-                EnvironmentType: LINUX_CONTAINER
-                ComputeType: BUILD_GENERAL1_SMALL
-              # [V2] Plain env vars for the commands; values can reference variables
+                EnvironmentType: LINUX_CONTAINER   # or WINDOWS_SERVER_2022_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL  # SMALL (default) | MEDIUM | LARGE
+              # [V2] Plain env vars for the commands. Values may be literals,
+              # !Ref/!Sub (resolved by CloudFormation at deploy time) or #{...}
+              # variables (resolved by CodePipeline at run time).
               EnvironmentVariables:
                 - Name: RELEASE_VERSION
                   Value: "#{variables.ReleaseVersion}"
