@@ -1,51 +1,56 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CodePipeline V2 - ECRBuildAndPublish (Dockerfile -> ECR, no CodeBuild project) + image digest pinning (CodeCommit)
+Description: CodePipeline V2 - Dockerfile -> ECRBuildAndPublish -> InspectorScan (optional) -> digest-pinned ECS deploy (optional)
 
 # -----------------------------------------------------------------------------
 # Summary
-#   Docker build-and-push the V2 way. No AWS::CodeBuild::Project, no buildspec,
-#   no `docker login` / `docker push` scripts:
+#   Docker build, scan and deploy the V2 way. No AWS::CodeBuild::Project, no
+#   buildspec, no `docker login` / `docker push` scripts:
 #
-#     git push -> Source (CodeCommit) -> Build (ECRBuildAndPublish) -> Verify (Commands)
-#                                         | pushes  :latest + :<commit sha>
-#                                         | outputs #{BuildVariables.ECRImageDigestId}
-#                                         v
-#                         Verify looks the image up BY DIGEST and writes
-#                         imagedefinitions.json with repo@sha256:... (output artifact)
-#
-#   The imagedefinitions.json artifact is exactly what the ECS standard deploy
-#   action consumes, so a Deploy stage can be added later without committing
-#   imagedefinitions.json to the repository (as the AWS console tutorial does).
+#     git push -> Source   (CodeCommit, created by this stack)
+#              -> Build    (ECRBuildAndPublish)  pushes :latest + :<commit sha>
+#                                                 outputs ECRImageDigestId
+#              -> Scan     (InspectorScan)        ImageScanEnabled=true
+#                                                 fails above severity thresholds, outputs SBOM
+#              -> Verify   (Commands)             writes imagedefinitions.json = repo@sha256:...
+#              -> Deploy   (ECS standard action)  ContainerClusterName + ContainerServiceName set
 #
 #   V2-only features demonstrated (marked "[V2]" inline below):
 #     - ECRBuildAndPublish build action (managed CodeBuild compute)
 #     - Output variables ECRImageDigestId / ECRRepositoryName
 #     - Commands action consuming them + producing a Files output artifact
 #     - ExecutionMode QUEUED (every commit gets its own image, in order)
+#   Also shown (managed compute, not documented as V2-only):
+#     - InspectorScan ECRImageScan with severity thresholds + SBOM artifact
 #
 # Resources created
-#   - AWS::CodeCommit::Repository     (optional, CreateCodeCommitRepository=true)
+#   - AWS::CodeCommit::Repository     (Dockerfile goes in the repository root)
 #   - AWS::ECR::Repository            (scan on push, lifecycle policy, emptied on delete)
-#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::S3::Bucket                 (artifact store: source zip, SBOM, imagedefinitions.json)
 #   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
 #   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
 #   - AWS::CodePipeline::Pipeline
 #   - AWS::Events::Rule               (CodeCommit push to branch -> pipeline)
 #
 # Pre-requisites
-#   - None when CreateCodeCommitRepository=true. Push a Dockerfile after deploy
-#     (sample in codepipeline-v2/README.md)
+#   - None for build + scan. Push a Dockerfile to the repository root after deploy
+#   - For the Deploy stage: an existing ECS cluster + service whose task
+#     definition has a container named ContainerName (see ecs/ folder templates)
 #
 # Assumptions
-#   - The ECR repository must exist before the action runs; this stack creates it
-#   - ImageTags uses #{SourceVariables.CommitId}. Variables are allowed in action
-#     configuration fields in general; the action reference does not mention it
-#     specifically. If the tag is rejected, set ImageTags to "latest"
-#   - Tag "latest" is moved on every build, so ImageTagMutability is MUTABLE;
-#     deploy by digest (imagedefinitions.json) rather than by "latest"
+#   - CodeCommit and ECR repository names are <Application>-<Environment>-app.
+#     The CodeCommit repository is retained on stack delete (keeps your code);
+#     delete it manually before re-creating a stack with the same name
+#   - ImageTags / ImageTag use #{SourceVariables.CommitId}. Variables are allowed
+#     in action configuration fields in general; the action references do not
+#     mention it specifically. The scan relies on this commit tag
+#   - imagedefinitions.json uses a digest URI (repo@sha256:...). The file
+#     reference only shows repo:tag examples; a digest is a valid image
+#     reference, so this pins the deploy to the exact image that was scanned
+#   - Inspector: the only documented setup is IAM inspector-scan:ScanSbom (no
+#     account activation step). Scans are billed by Inspector + CodeBuild
+#   - Deploy uses iam:PassRole on * limited to ecs / ecs-tasks; scope it to your
+#     task + execution role ARNs for production
 #   - The first execution at stack creation fails at Source (empty repository)
-#   - Build runs on CodePipeline-managed CodeBuild compute (billed as CodeBuild)
-#   - Base images are pulled from public registries; no ECR pull-through cache
 # -----------------------------------------------------------------------------
 
 Metadata:
@@ -59,13 +64,20 @@ Metadata:
       - Label:
           default: Source
         Parameters:
-          - CreateCodeCommitRepository
-          - CodeCommitRepositoryName
           - SourceBranchName
       - Label:
-          default: Container
+          default: Image Scan (Amazon Inspector)
         Parameters:
-          - DockerFilePath
+          - ImageScanEnabled
+          - ImageScanCriticalThreshold
+          - ImageScanHighThreshold
+          - ImageScanMediumThreshold
+          - ImageScanLowThreshold
+      - Label:
+          default: Deploy (Amazon ECS) - leave blank to skip
+        Parameters:
+          - ContainerClusterName
+          - ContainerServiceName
           - ContainerName
 
 Parameters:
@@ -81,37 +93,66 @@ Parameters:
     AllowedValues: [dev, stg, prod]
     Description: Deployment environment
 
-  CreateCodeCommitRepository:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true", "false"]
-    Description: Create the CodeCommit repository (true) or use an existing one (false)
-
-  CodeCommitRepositoryName:
-    Type: String
-    Default: myapp-dev-docker-demo
-    AllowedPattern: "[\\w.-]+"
-    Description: CodeCommit repository name (created or existing)
-
   SourceBranchName:
     Type: String
     Default: main
     Description: Branch that starts the pipeline
 
-  DockerFilePath:
+  ImageScanEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Add a Scan stage (InspectorScan ECRImageScan) between Build and Verify
+
+  ImageScanCriticalThreshold:
+    Type: String
+    Default: "0"
+    AllowedPattern: "^$|^[0-9]+$"
+    Description: Fail the scan when CRITICAL findings exceed this count. Blank = not checked
+
+  ImageScanHighThreshold:
+    Type: String
+    Default: "0"
+    AllowedPattern: "^$|^[0-9]+$"
+    Description: Fail the scan when HIGH findings exceed this count. Blank = not checked
+
+  ImageScanMediumThreshold:
     Type: String
     Default: ""
-    Description: "[V2] Location of the Dockerfile relative to the repository root. Blank = repository root"
+    AllowedPattern: "^$|^[0-9]+$"
+    Description: Fail the scan when MEDIUM findings exceed this count. Blank = not checked
+
+  ImageScanLowThreshold:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[0-9]+$"
+    Description: Fail the scan when LOW findings exceed this count. Blank = not checked
+
+  ContainerClusterName:
+    Type: String
+    Default: ""
+    Description: Existing ECS cluster name. Blank (or blank ContainerServiceName) = no Deploy stage
+
+  ContainerServiceName:
+    Type: String
+    Default: ""
+    Description: Existing ECS service name in ContainerClusterName. Blank = no Deploy stage
 
   ContainerName:
     Type: String
     Default: web
-    Description: Container name written to imagedefinitions.json (must match the ECS task definition when you add a deploy)
+    Description: Container name in the ECS task definition (written to imagedefinitions.json)
 
 Conditions:
 
-  IsCreateCodeCommitRepository: !Equals [!Ref CreateCodeCommitRepository, "true"]
-  HasDockerFilePath: !Not [!Equals [!Ref DockerFilePath, ""]]
+  IsImageScanEnabled: !Equals [!Ref ImageScanEnabled, "true"]
+  HasImageScanCriticalThreshold: !Not [!Equals [!Ref ImageScanCriticalThreshold, ""]]
+  HasImageScanHighThreshold: !Not [!Equals [!Ref ImageScanHighThreshold, ""]]
+  HasImageScanMediumThreshold: !Not [!Equals [!Ref ImageScanMediumThreshold, ""]]
+  HasImageScanLowThreshold: !Not [!Equals [!Ref ImageScanLowThreshold, ""]]
+  IsContainerDeployEnabled: !And
+    - !Not [!Equals [!Ref ContainerClusterName, ""]]
+    - !Not [!Equals [!Ref ContainerServiceName, ""]]
 
 Resources:
 
@@ -121,12 +162,11 @@ Resources:
 
   CodeCommitRepository:
     Type: AWS::CodeCommit::Repository
-    Condition: IsCreateCodeCommitRepository
     DeletionPolicy: Retain # Keep code if the stack is deleted
     UpdateReplacePolicy: Retain
     Properties:
-      RepositoryName: !Ref CodeCommitRepositoryName
-      RepositoryDescription: CodePipeline V2 ECRBuildAndPublish demo
+      RepositoryName: !Sub "${Application}-${Environment}-app"
+      RepositoryDescription: CodePipeline V2 Docker build / scan / deploy demo - Dockerfile in the root
       Tags:
         - Key: Name
           Value: !Sub "${Application}-${Environment}-codecommit-repository"
@@ -136,9 +176,9 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub "${Application}-${Environment}-app"
-      ImageTagMutability: MUTABLE # "latest" moves on every build; pin deploys by digest
+      ImageTagMutability: MUTABLE # "latest" moves on every build; deploys are pinned by digest
       ImageScanningConfiguration:
-        ScanOnPush: true
+        ScanOnPush: true # ECR basic scan; InspectorScan below is the gate in the pipeline
       EncryptionConfiguration:
         EncryptionType: AES256
       EmptyOnDelete: true # Allows stack delete with images present
@@ -187,12 +227,12 @@ Resources:
   # IAM Roles
   # ---------------------------------------------------------------
 
-  # The pipeline role is the only compute role: ECRBuildAndPublish and the
-  # Commands action both run on managed CodeBuild compute as this role.
+  # The pipeline role is the only compute role: ECRBuildAndPublish, InspectorScan
+  # and the Commands action all run on managed CodeBuild compute as this role.
   PipelineServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      Description: CodePipeline V2 role - CodeCommit, artifacts, ECR push, managed compute logs
+      Description: CodePipeline V2 role - CodeCommit, artifacts, ECR push, Inspector scan, ECS deploy, logs
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -214,7 +254,7 @@ Resources:
                   - codecommit:GetRepository
                   - codecommit:GetUploadArchiveStatus
                   - codecommit:UploadArchive
-                Resource: !Sub "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+                Resource: !GetAtt CodeCommitRepository.Arn
               - Sid: ReadWriteArtifacts
                 Effect: Allow
                 Action:
@@ -235,9 +275,9 @@ Resources:
                   - ecr:DescribeRepositories
                   - sts:GetServiceBearerToken
                 Resource: "*"
-              # [V2] ECRBuildAndPublish - push to this repository only.
-              # DescribeImages is for the Verify (Commands) step.
-              - Sid: EcrPushImage
+              # [V2] ECRBuildAndPublish push + InspectorScan pull (GetDownloadUrlForLayer,
+              # BatchGetImage, BatchCheckLayerAvailability) + Verify DescribeImages
+              - Sid: EcrPushPullImage
                 Effect: Allow
                 Action:
                   - ecr:InitiateLayerUpload
@@ -249,6 +289,54 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:DescribeImages
                 Resource: !GetAtt ContainerImageRepository.Arn
+              - !If
+                - IsImageScanEnabled
+                - Sid: InspectorScanSbom
+                  Effect: Allow
+                  Action: inspector-scan:ScanSbom
+                  Resource: "*"
+                - !Ref AWS::NoValue
+              # ECS standard deploy action - minimum permissions per the action reference
+              - !If
+                - IsContainerDeployEnabled
+                - Sid: ContainerTaskDefinition
+                  Effect: Allow
+                  Action:
+                    - ecs:DescribeTaskDefinition
+                    - ecs:RegisterTaskDefinition
+                  Resource: "*"
+                - !Ref AWS::NoValue
+              - !If
+                - IsContainerDeployEnabled
+                - Sid: ContainerService
+                  Effect: Allow
+                  Action:
+                    - ecs:DescribeServices
+                    - ecs:UpdateService
+                  Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ContainerClusterName}/${ContainerServiceName}"
+                - !Ref AWS::NoValue
+              - !If
+                - IsContainerDeployEnabled
+                - Sid: ContainerTaskDefinitionTag
+                  Effect: Allow
+                  Action: ecs:TagResource
+                  Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/*"
+                  Condition:
+                    StringEquals:
+                      ecs:CreateAction: RegisterTaskDefinition
+                - !Ref AWS::NoValue
+              - !If
+                - IsContainerDeployEnabled
+                - Sid: ContainerTaskPassRole
+                  Effect: Allow
+                  Action: iam:PassRole
+                  Resource: "*" # Scope to your task + execution role ARNs for production
+                  Condition:
+                    StringEquals:
+                      iam:PassedToService:
+                        - ecs.amazonaws.com
+                        - ecs-tasks.amazonaws.com
+                - !Ref AWS::NoValue
               - Sid: ManagedComputeLogs
                 Effect: Allow
                 Action:
@@ -289,7 +377,7 @@ Resources:
   # Log Groups
   # ---------------------------------------------------------------
 
-  # Shared by ECRBuildAndPublish and Commands (both managed CodeBuild compute)
+  # Shared by ECRBuildAndPublish, InspectorScan and Commands (managed CodeBuild compute)
   PipelineManagedComputeLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
@@ -326,7 +414,7 @@ Resources:
                 Version: "1"
               Namespace: SourceVariables
               Configuration:
-                RepositoryName: !If [IsCreateCodeCommitRepository, !GetAtt CodeCommitRepository.Name, !Ref CodeCommitRepositoryName]
+                RepositoryName: !GetAtt CodeCommitRepository.Name
                 BranchName: !Ref SourceBranchName
                 PollForSourceChanges: false # Started by the EventBridge rule
               OutputArtifacts:
@@ -346,17 +434,43 @@ Resources:
               Namespace: BuildVariables # -> ECRImageDigestId, ECRRepositoryName
               Configuration:
                 ECRRepositoryName: !Ref ContainerImageRepository
-                DockerFilePath: !If [HasDockerFilePath, !Ref DockerFilePath, !Ref AWS::NoValue]
+                # DockerFilePath omitted -> Dockerfile in the repository root
                 ImageTags: "latest,#{SourceVariables.CommitId}" # Comma-delimited; default would be "latest"
                 RegistryType: private
               InputArtifacts:
-                - Name: SourceArtifact # Must contain the Dockerfile
+                - Name: SourceArtifact
               RunOrder: 1
+
+        # Optional gate: scan the image just pushed (by its commit tag) before
+        # imagedefinitions.json is produced, so a failing image is never deployed
+        - !If
+          - IsImageScanEnabled
+          - Name: Scan
+            Actions:
+              - Name: ScanImage
+                ActionTypeId:
+                  Category: Invoke
+                  Owner: AWS
+                  Provider: InspectorScan
+                  Version: "1"
+                Namespace: ScanVariables # -> HighestScannedSeverity
+                Configuration:
+                  InspectorRunMode: ECRImageScan # or SourceCodeScan (input artifact = source)
+                  ECRRepositoryName: !Ref ContainerImageRepository
+                  ImageTag: "#{SourceVariables.CommitId}" # Takes a tag, not a digest
+                  CriticalThreshold: !If [HasImageScanCriticalThreshold, !Ref ImageScanCriticalThreshold, !Ref AWS::NoValue]
+                  HighThreshold: !If [HasImageScanHighThreshold, !Ref ImageScanHighThreshold, !Ref AWS::NoValue]
+                  MediumThreshold: !If [HasImageScanMediumThreshold, !Ref ImageScanMediumThreshold, !Ref AWS::NoValue]
+                  LowThreshold: !If [HasImageScanLowThreshold, !Ref ImageScanLowThreshold, !Ref AWS::NoValue]
+                OutputArtifacts:
+                  - Name: ImageSbomArtifact # SBOM with vulnerability details (kept in the artifact bucket)
+                RunOrder: 1
+          - !Ref AWS::NoValue
 
         - Name: Verify
           Actions:
             # [V2] Consume the digest: look the image up by digest and produce
-            # imagedefinitions.json pinned to repo@sha256:... for an ECS deploy
+            # imagedefinitions.json pinned to repo@sha256:... for the ECS deploy
             - Name: VerifyImage
               ActionTypeId:
                 Category: Compute
@@ -372,20 +486,43 @@ Resources:
                   Value: "#{BuildVariables.ECRImageDigestId}"
                 - Name: CONTAINER_NAME
                   Value: !Ref ContainerName
+                - Name: HIGHEST_SCANNED_SEVERITY
+                  Value: !If [IsImageScanEnabled, "#{ScanVariables.HighestScannedSeverity}", "scan-disabled"]
               Commands:
                 # Docs say "the sha256 digest" without showing the format; ensure the sha256: prefix
                 - "case \"$IMAGE_DIGEST\" in sha256:*) ;; *) IMAGE_DIGEST=\"sha256:$IMAGE_DIGEST\" ;; esac"
-                - "echo Pushed $IMAGE_REGISTRY/$IMAGE_REPOSITORY@$IMAGE_DIGEST"
-                - "aws ecr describe-images --repository-name \"$IMAGE_REPOSITORY\" --image-ids imageDigest=\"$IMAGE_DIGEST\" --query \"imageDetails[0].{tags:imageTags,pushedAt:imagePushedAt,sizeBytes:imageSizeInBytes,scan:imageScanStatus.status}\""
+                - "echo Pushed $IMAGE_REGISTRY/$IMAGE_REPOSITORY@$IMAGE_DIGEST - highest scanned severity: $HIGHEST_SCANNED_SEVERITY"
+                - "aws ecr describe-images --repository-name \"$IMAGE_REPOSITORY\" --image-ids imageDigest=\"$IMAGE_DIGEST\" --query \"imageDetails[0].{tags:imageTags,pushedAt:imagePushedAt,sizeBytes:imageSizeInBytes}\""
                 - "printf '[{\"name\":\"%s\",\"imageUri\":\"%s\"}]' \"$CONTAINER_NAME\" \"$IMAGE_REGISTRY/$IMAGE_REPOSITORY@$IMAGE_DIGEST\" > imagedefinitions.json"
                 - "cat imagedefinitions.json"
               InputArtifacts:
                 - Name: SourceArtifact # Commands needs at least one input artifact
               OutputArtifacts:
-                - Name: ImageDefinitionsArtifact # Input for a future ECS deploy action
+                - Name: ImageDefinitionsArtifact
                   Files:
                     - imagedefinitions.json
               RunOrder: 1
+
+        # Optional: ECS standard deploy (registers a new task definition revision
+        # with the pinned image and updates the service)
+        - !If
+          - IsContainerDeployEnabled
+          - Name: Deploy
+            Actions:
+              - Name: DeployToContainerService
+                ActionTypeId:
+                  Category: Deploy
+                  Owner: AWS
+                  Provider: ECS
+                  Version: "1"
+                Configuration:
+                  ClusterName: !Ref ContainerClusterName
+                  ServiceName: !Ref ContainerServiceName
+                  FileName: imagedefinitions.json
+                InputArtifacts:
+                  - Name: ImageDefinitionsArtifact
+                RunOrder: 1
+          - !Ref AWS::NoValue
 
       Tags:
         - Key: Name
@@ -406,7 +543,7 @@ Resources:
         detail-type:
           - CodeCommit Repository State Change
         resources:
-          - !Sub "arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${CodeCommitRepositoryName}"
+          - !GetAtt CodeCommitRepository.Arn
         detail:
           event:
             - referenceCreated
@@ -422,9 +559,15 @@ Resources:
 
 Outputs:
 
+  CodeCommitRepositoryName:
+    Value: !GetAtt CodeCommitRepository.Name
+
+  CodeCommitCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
   CodeCommitCloneUrlGrc:
     Description: git-remote-codecommit URL (pip install git-remote-codecommit)
-    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepositoryName}"
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepository.Name}"
 
   ContainerImageRepositoryName:
     Value: !Ref ContainerImageRepository
@@ -442,5 +585,5 @@ Outputs:
     Value: !Ref ArtifactBucket
 
   PipelineManagedComputeLogGroupName:
-    Description: ECRBuildAndPublish + Commands logs
+    Description: ECRBuildAndPublish + InspectorScan + Commands logs
     Value: !Ref PipelineManagedComputeLogGroup

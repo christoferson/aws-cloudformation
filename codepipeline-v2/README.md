@@ -239,7 +239,13 @@ See [docs/codepipeline/ug-action-reference-pipeline-invoke.md](../docs/codepipel
 | Lambda deploy | `Deploy` / `Lambda` | CodeDeploy for Lambda. **Publishes a version and shifts alias traffic** with `DeployStrategy`: `AllAtOnce` (default), `Canary<N>Percent<M>Minutes` or `Linear<N>PercentEvery<M>Minute(s)`, maximum total wait 2 days. Shifting **requires `FunctionAlias`**, which must already point to a version (the rollback target). Without an alias it deploys to `$LATEST` and publishes a version. Up to **10 CloudWatch alarms**: the action fails if one goes to ALARM. Can also promote an existing version via `PublishedTargetVersion`. Output variable `FunctionVersion` |
 | EKS deploy | `Deploy` / `EKS` | CodeBuild running `kubectl` / `helm`. Takes a manifest or Helm chart, works with public and private clusters |
 
-Docs: [ECRBuildAndPublish](../docs/codepipeline/ug-action-reference-ecr-build-and-publish.md), [EC2Deploy](../docs/codepipeline/ug-action-reference-ec2-deploy.md), [LambdaDeploy](../docs/codepipeline/ug-action-reference-lambda-deploy.md), [EKS](../docs/codepipeline/ug-action-reference-eks.md).
+Related managed-compute action (the docs **don't** mark it V2-only, but it pairs naturally with ECRBuildAndPublish):
+
+| Action | Category / Provider | What it does |
+|---|---|---|
+| Inspector scan | `Invoke` / `InspectorScan` | **Scans source code or an ECR image** with Amazon Inspector. `InspectorRunMode`: `SourceCodeScan` (input artifact = source) or `ECRImageScan` (`ECRRepositoryName` + `ImageTag`, no input artifact). **Fails when findings exceed** `CriticalThreshold` / `HighThreshold` / `MediumThreshold` / `LowThreshold`. **Output artifact: an SBOM.** Output variable `HighestScannedSeverity` (`medium` / `high` / `critical`). Needs `inspector-scan:ScanSbom` (and ECR pull permissions for image scans). Runs on managed CodeBuild compute |
+
+Docs: [InspectorScan](../docs/codepipeline/ug-action-reference-inspector-scan.md), [ECRBuildAndPublish](../docs/codepipeline/ug-action-reference-ecr-build-and-publish.md), [EC2Deploy](../docs/codepipeline/ug-action-reference-ec2-deploy.md), [LambdaDeploy](../docs/codepipeline/ug-action-reference-lambda-deploy.md), [EKS](../docs/codepipeline/ug-action-reference-eks.md).
 
 ----------------------------------------------------------------------------------
 
@@ -505,21 +511,27 @@ aws cloudformation delete-stack --stack-name myapp-dev-invoke-pipeline
 aws codecommit delete-repository --repository-name myapp-dev-invoke-demo   # only if you want the code gone
 ```
 
-### CodePipeline V2 - Docker Build and Push (ECRBuildAndPublish, CodeCommit)
+### CodePipeline V2 - Docker Build, Scan and Deploy (ECRBuildAndPublish, InspectorScan, ECS, CodeCommit)
 
 [codepipeline-v2-ecr-build-publish.yaml](codepipeline-v2-ecr-build-publish.yaml)
 
-Build a Dockerfile and push it to ECR the V2 way: **no CodeBuild project, no buildspec, no `docker login` / `docker push` script**.
+Build a Dockerfile, push it to ECR, optionally scan it with Amazon Inspector, and optionally deploy it to ECS, all the V2 way: **no CodeBuild project, no buildspec, no `docker login` / `docker push` script**.
 
 ```
  git push main ──(EventBridge)──► Pipeline (V2, QUEUED)
-   Source : CodeCommit            namespace SourceVariables → CommitId
-   Build  : ECRBuildAndPublish    namespace BuildVariables
+   Source : CodeCommit (created by the stack)   namespace SourceVariables → CommitId
+   Build  : ECRBuildAndPublish                  namespace BuildVariables
+              Dockerfile in the repository root
               pushes  <repo>:latest  and  <repo>:<commit sha>
               outputs #{BuildVariables.ECRImageDigestId}, #{BuildVariables.ECRRepositoryName}
+   Scan   : InspectorScan  (ImageScanEnabled=true)          namespace ScanVariables
+              ECRImageScan of <repo>:<commit sha>
+              FAILS when findings exceed Critical/High/Medium/Low thresholds
+              output artifact ImageSbomArtifact (SBOM), variable HighestScannedSeverity
    Verify : Commands              describe-images BY DIGEST
               writes imagedefinitions.json → [{"name":"web","imageUri":"<repo>@sha256:..."}]
-              output artifact ImageDefinitionsArtifact (ready for an ECS deploy action)
+   Deploy : ECS standard action  (ContainerClusterName + ContainerServiceName set)
+              new task definition revision with the pinned image → UpdateService
 ```
 
 V2 features covered (marked `[V2]` in the template):
@@ -528,26 +540,79 @@ V2 features covered (marked `[V2]` in the template):
 - A Commands action consuming them and producing a `Files` output artifact
 - `QUEUED`, so every commit gets its own image, built in order
 
+Also shown: `InspectorScan`. It's a managed-compute action, but the docs don't mark it V2-only.
+
+#### Parameters
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `SourceBranchName` | `main` | Branch that starts the pipeline |
+| `ImageScanEnabled` | `true` | `false` removes the Scan stage and its IAM permission |
+| `ImageScanCriticalThreshold` | `0` | Fail if CRITICAL findings exceed this count. Blank = not checked |
+| `ImageScanHighThreshold` | `0` | Same for HIGH |
+| `ImageScanMediumThreshold` | blank | Same for MEDIUM |
+| `ImageScanLowThreshold` | blank | Same for LOW |
+| `ContainerClusterName` | blank | Existing ECS cluster. Blank = no Deploy stage |
+| `ContainerServiceName` | blank | Existing ECS service in that cluster. Blank = no Deploy stage |
+| `ContainerName` | `web` | Container name in the service's task definition (written to `imagedefinitions.json`) |
+
+The CodeCommit repository and the ECR repository are both named `<Application>-<Environment>-app` (`myapp-dev-app`). The Dockerfile always goes in the repository root.
+
 #### V1 way vs V2 way
 
 | Step | V1 (e.g. [../codepipeline/code-codepipeline-ecs.yaml](../codepipeline/code-codepipeline-ecs.yaml)) | V2 (this template) |
 |---|---|---|
 | Build resource | `AWS::CodeBuild::Project` + its own service role | Nothing. `ECRBuildAndPublish` runs as the pipeline role |
-| Build script | `buildspec.yml` with `aws ecr get-login-password \| docker login`, `docker build`, `docker tag`, `docker push` | `ECRRepositoryName` (+ optional `DockerFilePath`, `ImageTags`) |
+| Build script | `buildspec.yml` with `aws ecr get-login-password \| docker login`, `docker build`, `docker tag`, `docker push` | `ECRRepositoryName` (+ optional `ImageTags`) |
 | Privileged mode | Must enable `PrivilegedMode: true` on the project for Docker | Handled by the action |
-| Image reference passed on | `imagedefinitions.json` written by the buildspec, usually `:latest` | Output variable `ECRImageDigestId` → pin `repo@sha256:...` |
 | Tag per commit | `IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION \| cut -c1-7)` in the buildspec | `ImageTags: "latest,#{SourceVariables.CommitId}"` |
+| Vulnerability gate | Extra CodeBuild step installing and running a scanner | `InspectorScan` action with severity thresholds + SBOM artifact |
+| Image reference passed to deploy | `imagedefinitions.json` written by the buildspec, usually `:latest` | Output variable `ECRImageDigestId` → `repo@sha256:...` |
+| Deploy | ECS standard action | Same ECS standard action, fed the digest-pinned file |
 
 #### Why pin by digest?
 
-Tags are mutable, and `latest` moves on every build. A digest names exactly one image. If you pass `#{BuildVariables.ECRImageDigestId}` downstream, the image that was built and scanned is the one that gets deployed, even if another build moves `latest` in between. The Verify stage writes that pinned URI into `imagedefinitions.json`. That file is the input artifact the ECS standard deploy action expects, so a later Deploy stage can use the `ImageDefinitionsArtifact` artifact directly. You don't need a hand-maintained `imagedefinitions.json` in the repo, which is what the AWS console tutorial uses.
+Tags are mutable, and `latest` moves on every build. A digest names exactly one image. The Verify stage writes `repo@sha256:<digest>` into `imagedefinitions.json`, so the image that was built **and scanned** is the one ECS deploys, even if another build moves `latest` in between. You don't need a hand-maintained `imagedefinitions.json` in the repo, which is what the AWS console tutorial uses.
+
+> The `imagedefinitions.json` reference only shows `repo:tag` examples. A digest URI is a valid image reference, but confirm it on your first deploy.
+
+#### About the Inspector scan
+
+- **Enable / disable:** `ImageScanEnabled`. The only documented account setup is the IAM permission `inspector-scan:ScanSbom`, which the template adds. There's no "activate Inspector" step. Scans are billed by Inspector, plus CodeBuild minutes for the managed compute.
+- **Thresholds:** the action fails when the count at a severity is above its threshold, so `0` means "fail on any". The defaults block any CRITICAL or HIGH finding and ignore MEDIUM and LOW.
+- **Scan by tag:** `ImageTag` takes a tag, not a digest, so the scan uses the `<commit sha>` tag that Build pushed. If you change `ImageTags`, keep the commit tag.
+- **Output:** the SBOM is kept as `ImageSbomArtifact` in the artifact bucket (30-day lifecycle). `HighestScannedSeverity` is printed by Verify.
+- `SourceCodeScan` mode scans the repository instead of the image. Use `InputArtifacts: SourceArtifact` and leave out `ECRRepositoryName` / `ImageTag`.
+
+Docs: [../docs/codepipeline/ug-action-reference-inspector-scan.md](../docs/codepipeline/ug-action-reference-inspector-scan.md), [../docs/codepipeline/inspector-configure-cicd-account.md](../docs/codepipeline/inspector-configure-cicd-account.md).
+
+#### About the ECS deploy
+
+- **Leave it off at first:** use blank cluster and service to get build and scan working. Then update the stack with an existing cluster and service. The `ecs/` folder templates can create them, for example [../ecs-managed-instance/](../ecs-managed-instance/) or the [blue/green example](../ecs/ecs-blue-green/README.md).
+- **Container name:** the service's task definition must have a container named `ContainerName`. The action registers a new task definition revision with only that container's image replaced, then updates the service.
+- **IAM:** added only when the stage exists. That's the action reference's minimum: `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition`, `ecs:UpdateService` / `ecs:DescribeServices` on that service, `ecs:TagResource` for new task definitions, and `iam:PassRole` for ECS. `PassRole` is on `*`, limited to `ecs` / `ecs-tasks`, so scope it to your task and execution role ARNs for production.
+
+Docs: [../docs/codepipeline/ug-action-reference-ecs.md](../docs/codepipeline/ug-action-reference-ecs.md), [../docs/codepipeline/ug-file-reference.md](../docs/codepipeline/ug-file-reference.md).
 
 #### Deploy
+
+Build and scan only:
 
 ```bash
 aws cloudformation create-stack --stack-name myapp-dev-docker-pipeline \
   --template-body file://codepipeline-v2-ecr-build-publish.yaml \
   --capabilities CAPABILITY_IAM
+```
+
+Add the ECS deploy later, or disable the scan:
+
+```bash
+aws cloudformation update-stack --stack-name myapp-dev-docker-pipeline \
+  --template-body file://codepipeline-v2-ecr-build-publish.yaml --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ContainerClusterName,ParameterValue=myapp-dev \
+               ParameterKey=ContainerServiceName,ParameterValue=myapp-dev-service \
+               ParameterKey=ContainerName,ParameterValue=myapp-dev-container \
+               ParameterKey=ImageScanEnabled,ParameterValue=true
 ```
 
 The first run fails at Source, because the repository is empty. This is expected.
@@ -557,7 +622,7 @@ The first run fails at Source, because the repository is empty. This is expected
 Push a Dockerfile to the repository root (sample from the AWS tutorial, [../docs/codepipeline/ug-tutorials-ecr-build-publish.md](../docs/codepipeline/ug-tutorials-ecr-build-publish.md)):
 
 ```bash
-git clone codecommit::<region>://myapp-dev-docker-demo && cd myapp-dev-docker-demo && git switch -c main
+git clone codecommit::<region>://myapp-dev-app && cd myapp-dev-app && git switch -c main
 cat > Dockerfile <<'EOF'
 FROM public.ecr.aws/amazonlinux/amazonlinux:latest
 RUN yum update -y && yum install -y httpd && echo 'Hello World!' > /var/www/html/index.html
@@ -571,38 +636,21 @@ Check the result:
 
 ```bash
 aws ecr describe-images --repository-name myapp-dev-app \
-  --query "sort_by(imageDetails,&imagePushedAt)[-1].{digest:imageDigest,tags:imageTags,scan:imageScanStatus.status}"
+  --query "sort_by(imageDetails,&imagePushedAt)[-1].{digest:imageDigest,tags:imageTags}"
 aws codepipeline list-action-executions --pipeline-name myapp-dev-docker-pipeline \
-  --query "actionExecutionDetails[?actionName=='BuildAndPublishImage'].output.outputVariables"
+  --query "actionExecutionDetails[?actionName=='BuildAndPublishImage' || actionName=='ScanImage'].{action:actionName,status:status,vars:output.outputVariables}"
 ```
 
-Build and Verify logs are in the log group `/aws/codepipeline/myapp-dev-docker-pipeline`.
+To see the scan gate fail, set `ImageScanLowThreshold=0`, or use an old base image such as `FROM public.ecr.aws/docker/library/python:3.8` (likely to have known HIGH findings), and push again. If a threshold is exceeded, Scan fails, so Verify and Deploy never run.
 
-#### Next: deploy to ECS (V2 way)
-
-Add a stage that consumes the pinned `imagedefinitions.json`. The ECS standard deploy action works in V1 and V2. What's V2-specific here is how the file is produced.
-
-```yaml
-- Name: Deploy
-  Actions:
-    - Name: DeployToEcs
-      ActionTypeId: { Category: Deploy, Owner: AWS, Provider: ECS, Version: "1" }
-      Configuration:
-        ClusterName: <cluster>
-        ServiceName: <service>                    # container name in the task def must equal ContainerName
-        FileName: imagedefinitions.json
-      InputArtifacts:
-        - Name: ImageDefinitionsArtifact
-```
-
-The pipeline role also needs ECS permissions (`ecs:DescribeServices`, `ecs:UpdateService`, `ecs:RegisterTaskDefinition`, ...) and `iam:PassRole` for the task roles. For ECS-native blue/green, see [../ecs/ecs-blue-green/README.md](../ecs/ecs-blue-green/README.md).
+Build, Scan and Verify logs are in the log group `/aws/codepipeline/myapp-dev-docker-pipeline`.
 
 #### Delete
 
 ```bash
 aws s3 rm s3://<artifact-bucket> --recursive
-aws cloudformation delete-stack --stack-name myapp-dev-docker-pipeline     # ECR repo is emptied (EmptyOnDelete)
-aws codecommit delete-repository --repository-name myapp-dev-docker-demo   # only if you want the code gone
+aws cloudformation delete-stack --stack-name myapp-dev-docker-pipeline   # ECR repo is emptied (EmptyOnDelete)
+aws codecommit delete-repository --repository-name myapp-dev-app         # retained by the stack; delete to reuse the name
 ```
 
 ----------------------------------------------------------------------------------
@@ -669,11 +717,10 @@ Check the EventBridge rule. It must match `referenceName` = your branch and `res
 ## Roadmap (next V2 templates)
 
 - `codepipeline-v2-stage-conditions.yaml`: `BeforeEntry` DeploymentWindow / CloudWatchAlarm, `OnSuccess` rollback
-- `codepipeline-v2-ecr-build-publish-ecs.yaml`: extend the Docker template with a Deploy stage using the ECS action and the pinned `imagedefinitions.json`
 - `codepipeline-v2-lambda-deploy.yaml`: Lambda deploy action with traffic shifting and no CodeDeploy
 - ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
 - ~~`codepipeline-v2-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.
-- ~~`codepipeline-v2-ecr-build-publish.yaml`~~: done. Dockerfile → ECR with `ECRBuildAndPublish`, then digest-pinned `imagedefinitions.json`.
+- ~~`codepipeline-v2-ecr-build-publish.yaml`~~: done. Dockerfile → ECR with `ECRBuildAndPublish`, optional `InspectorScan` gate, digest-pinned `imagedefinitions.json`, optional ECS deploy.
 
 ## Resources
 
