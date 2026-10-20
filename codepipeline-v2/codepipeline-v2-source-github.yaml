@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 source - GitHub / GitHub Enterprise Cloud via CodeConnections (push to branch)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Source: GitHub or GitHub Enterprise Cloud through an AWS CodeConnections
+#   connection (provider type GitHub).
+#     git push to SourceBranchName -> Source (CodeStarSourceConnection) -> ShowSource (Commands)
+#   No EventBridge rule: the connection's GitHub App webhook detects pushes.
+#   No Triggers: this is the default "any push to BranchName" behaviour.
+#   For tag / branch / file path / pull request filters see
+#   codepipeline-v2-feature-git-triggers.yaml.
+#
+# Resources created
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role                  (pipeline service role)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#
+# Pre-requisites
+#   - An AVAILABLE connection with provider type GitHub. Created by CLI /
+#     CloudFormation it starts PENDING and must be completed once in the console
+#     (install the AWS Connector for GitHub app); a PENDING connection never
+#     triggers the pipeline
+#   - You must be the GitHub organization owner (or the repository owner for
+#     repositories outside an organization) to create the connection
+#
+# Assumptions
+#   - GitHub Enterprise Server is a different provider type (GitHubEnterpriseServer)
+#     and is not covered here
+#   - Not available in some Regions (see docs/codepipeline/ug-connections-github.md)
+#   - CommitMessage is not printed: it can be long and contain shell characters
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - ConnectionArn
+          - FullRepositoryId
+          - SourceBranchName
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  ConnectionArn:
+    Type: String
+    AllowedPattern: "arn:aws[a-z-]*:(codestar-connections|codeconnections):[a-z0-9-]+:[0-9]{12}:connection/.+"
+    Description: ARN of an AVAILABLE connection, provider type GitHub (codeconnections or codestar-connections prefix)
+
+  FullRepositoryId:
+    Type: String
+    Default: my-org/my-repo
+    Description: Repository as owner/name (case-sensitive)
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch whose pushes start the pipeline
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # S3 Buckets
+  # ---------------------------------------------------------------
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-github-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - CodeConnections source, artifacts, Commands logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Both actions are required regardless of the ARN prefix (per the action reference)
+              - Sid: UseConnection
+                Effect: Allow
+                Action:
+                  - codeconnections:UseConnection
+                  - codestar-connections:UseConnection
+                Resource: !Ref ConnectionArn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-source-github-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-source-github-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-github-pipeline-service-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  PipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-source-github-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-source-github-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity the Commands action runs as
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS                           # AWS even for GitHub: the action is AWS's (via CodeConnections)
+                Provider: CodeStarSourceConnection   # Same provider for GitHub, GHES, GitLab, Bitbucket; the connection decides which
+                Version: "1"                         # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference the output variables below
+              Configuration:
+                ConnectionArn: !Ref ConnectionArn
+                FullRepositoryId: !Ref FullRepositoryId # owner/repo, case-sensitive
+                BranchName: !Ref SourceBranchName
+                DetectChanges: "true" # Default: start on every push to BranchName. Ignored once Triggers are defined
+                OutputArtifactFormat: CODE_ZIP # Default. CODEBUILD_CLONE_REF (full clone) works only with CodeBuild actions
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: ShowSource
+          Actions:
+            - Name: PrintSourceVariables
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands  # [V2] Commands / EnvironmentVariables are action properties, not Configuration
+                Version: "1"
+              EnvironmentVariables: # Connection source output variables (CommitMessage also exists)
+                - Name: COMMIT_ID
+                  Value: "#{SourceVariables.CommitId}"
+                - Name: BRANCH_NAME
+                  Value: "#{SourceVariables.BranchName}"
+                - Name: FULL_REPOSITORY_NAME
+                  Value: "#{SourceVariables.FullRepositoryName}"
+                - Name: AUTHOR_DATE
+                  Value: "#{SourceVariables.AuthorDate}"
+                - Name: CONNECTION_ARN
+                  Value: "#{SourceVariables.ConnectionArn}"
+              Commands:
+                - "echo \"$FULL_REPOSITORY_NAME $BRANCH_NAME $COMMIT_ID authored $AUTHOR_DATE via $CONNECTION_ARN\""
+                - "ls -la"
+              InputArtifacts:
+                - Name: SourceArtifact # Commands requires at least one input artifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-github-pipeline"
+
+Outputs:
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

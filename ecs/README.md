@@ -44,9 +44,9 @@ Cluster Service & Task
 
 Provision a Cluster and Service. HTTP Only, No Custom Domain
 
-[ecs-fargate-cluster](ecs-fargate-cluster/01-ecs-fargate-cluster.yaml)
+[ecs-fargate-cluster](ecs-fargate-cluster/10-ecs-fargate-cluster.yaml)
 
-[ecs-fargate-cluster-service](ecs-fargate-cluster/02-ecs-fargate-cluster-service.yaml)
+[ecs-fargate-cluster-service](ecs-fargate-cluster/20-ecs-fargate-cluster-service.yaml)
 
 -------------------------------------
 
@@ -55,6 +55,18 @@ Provision a Cluster and Service. HTTP Only, No Custom Domain
 Fargate + ALB using `DeploymentController: ECS` + `Strategy: BLUE_GREEN` (no CodeDeploy), with a Lambda test hook, optional pause hook and alarm rollback.
 
 [ecs-blue-green/README.md](ecs-blue-green/README.md)
+
+### ECS - Native Linear and Canary Deployments
+
+Fargate + ALB using `Strategy: LINEAR` (equal traffic steps) and `Strategy: CANARY` (small slice, then the rest), with alarm rollback.
+
+[ecs-linear-canary/README.md](ecs-linear-canary/README.md)
+
+### ECS - Rolling Deployment Controls
+
+Fargate + ALB rolling update with circuit breaker threshold / reset, early success criteria, alarm rollback with bake time, 20-second service metrics, AZ rebalancing and container restart policy.
+
+[ecs-rolling-deployment/README.md](ecs-rolling-deployment/README.md)
 
 -------------------------------------
 

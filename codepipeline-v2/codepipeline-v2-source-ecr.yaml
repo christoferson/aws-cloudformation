@@ -1,0 +1,286 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 source - ECR image push (EventBridge ECR Image Action), imageDetail.json + output variables
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Source: an Amazon ECR image.
+#     docker push <repo>:<SourceImageTag> -> "ECR Image Action" event -> EventBridge rule
+#       -> Source (ECR) -> ShowSource (Commands)
+#   The source artifact is imageDetail.json (the pushed image's URI); ShowSource
+#   prints it and the ECR action's output variables.
+#
+# Resources created
+#   - AWS::ECR::Repository            (emptied on stack delete)
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (successful PUSH of SourceImageTag -> pipeline)
+#
+# Pre-requisites
+#   - None. Push an image with tag SourceImageTag after deploy
+#
+# Assumptions
+#   - The ECR source action has no PollForSourceChanges setting; the EventBridge
+#     rule is what starts the pipeline on push
+#   - The ImageTag output variable is not produced when the source revision is
+#     overridden (IMAGE_DIGEST), so ShowSource does not reference it
+#   - The first execution at stack creation fails at Source (no image pushed yet)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - SourceImageTag
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceImageTag:
+    Type: String
+    Default: latest
+    Description: Image tag that starts the pipeline when pushed (the action's default is latest)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Container Image Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  ContainerImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-source-ecr"
+      ImageTagMutability: MUTABLE # The same SourceImageTag is pushed again for each new image
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      EmptyOnDelete: true # Allows stack delete with images present
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-ecr-container-image-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-ecr-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - ECR source, artifacts, Commands logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # ECR source action - the only permission listed in the action reference
+              - Sid: EcrSource
+                Effect: Allow
+                Action: ecr:DescribeImages
+                Resource: !GetAtt ContainerImageRepository.Arn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-source-ecr-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-source-ecr-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-ecr-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-ecr-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  PipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-source-ecr-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-source-ecr-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity the Commands action runs as
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: ECR
+                Version: "1"   # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference the output variables below
+              Configuration:
+                RepositoryName: !Ref ContainerImageRepository
+                ImageTag: !Ref SourceImageTag # Omitted = latest
+              OutputArtifacts:
+                - Name: SourceArtifact # Contains imageDetail.json (ImageURI of the pushed image)
+              RunOrder: 1
+
+        - Name: ShowSource
+          Actions:
+            - Name: PrintSourceVariables
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands  # [V2] Commands / EnvironmentVariables are action properties, not Configuration
+                Version: "1"
+              EnvironmentVariables: # ECR output variables (ImageTag also exists, but not on overridden runs)
+                - Name: REGISTRY_ID
+                  Value: "#{SourceVariables.RegistryId}"
+                - Name: REPOSITORY_NAME
+                  Value: "#{SourceVariables.RepositoryName}"
+                - Name: IMAGE_DIGEST
+                  Value: "#{SourceVariables.ImageDigest}" # sha256 digest of the image manifest
+                - Name: IMAGE_URI
+                  Value: "#{SourceVariables.ImageURI}"
+              Commands:
+                - "echo \"$IMAGE_URI digest $IMAGE_DIGEST (registry $REGISTRY_ID, repository $REPOSITORY_NAME)\""
+                - "cat imageDetail.json"
+              InputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-ecr-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (ECR image push -> pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline when SourceImageTag is pushed
+      State: ENABLED
+      EventPattern: # Same pattern as the AWS CloudFormation example for an ECR source
+        source:
+          - aws.ecr
+        detail-type:
+          - ECR Image Action
+        detail:
+          action-type:
+            - PUSH
+          result:
+            - SUCCESS
+          repository-name:
+            - !Ref ContainerImageRepository
+          image-tag:
+            - !Ref SourceImageTag
+      Targets:
+        - Id: pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  ContainerImageRepositoryUri:
+    Description: docker push <uri>:<SourceImageTag> to start the pipeline
+    Value: !GetAtt ContainerImageRepository.RepositoryUri
+
+  PipelineName:
+    Value: !Ref Pipeline
+
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket

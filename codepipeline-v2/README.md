@@ -192,7 +192,7 @@ The deploy action can succeed while users see errors. So the pipeline checks hea
 
 > **Timing gotcha.** The console guide says that if the alarm is **OK when the rule is first checked, the rule succeeds immediately**, and `WaitTime` only applies when it's already in ALARM. Elsewhere, the same guide describes a 60-minute wait as watching for ALARM within 60 minutes. The two statements conflict. Right after a deploy, the alarm usually hasn't seen the new version's errors yet. So the alarm-rollback and all-features templates add a **bake** step (a Commands action that waits N minutes after the ECS deploy) before the On Success check runs. See [docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md](../docs/codepipeline/ug-rule-reference-cloudwatch-alarm.md) and [docs/codepipeline/ug-stage-conditions.md](../docs/codepipeline/ug-stage-conditions.md).
 
-Implemented in [codepipeline-v2-ecr-ecs-alarm-rollback.yaml](codepipeline-v2-ecr-ecs-alarm-rollback.yaml) and the [Docker series](#codepipeline-v2---docker-series) all-features template.
+Implemented in [codepipeline-v2-feature-alarm-rollback.yaml](codepipeline-v2-feature-alarm-rollback.yaml) and the [Docker series](#codepipeline-v2---docker-series) all-features template.
 
 ### 6. Triggers and filters — `Triggers`
 
@@ -288,9 +288,61 @@ Docs: [InspectorScan](../docs/codepipeline/ug-action-reference-inspector-scan.md
 
 ## Templates
 
+File names follow `codepipeline-v2-<group>-<topic>.yaml`:
+
+| Group | Shows | Templates |
+|---|---|---|
+| `source-` | How to connect one source provider | `source-codecommit`, `source-s3`, `source-ecr`, `source-github` |
+| `feature-` | One V2 feature | `feature-stage-retry-rollback`, `feature-pipeline-variables`, `feature-git-triggers`, `feature-invoke-pipeline`, `feature-inspector-scan`, `feature-deployment-window`, `feature-alarm-rollback` |
+| `docker-` | Docker build → ECS, end to end | `docker-ecs-deploy`, `docker-all-features` |
+
+### Source providers
+
+Each `source-` template is the minimum: Source → one Commands step that prints that provider's output variables.
+
+| Template | Provider (`ActionTypeId.Provider`) | Change detection | Pipeline role needs | Output variables |
+|---|---|---|---|---|
+| [codepipeline-v2-source-codecommit.yaml](codepipeline-v2-source-codecommit.yaml) | `CodeCommit` | EventBridge rule on `CodeCommit Repository State Change` + `PollForSourceChanges: false` | `codecommit:GetBranch`, `GetCommit`, `GetRepository`, `UploadArchive`, `GetUploadArchiveStatus`, `CancelUploadArchive` | `CommitId`, `BranchName`, `RepositoryName`, `CommitMessage`, `AuthorDate`, `CommitterDate` |
+| [codepipeline-v2-source-s3.yaml](codepipeline-v2-source-s3.yaml) | `S3` | Bucket with EventBridge notifications + rule on `Object Created` (no CloudTrail trail) + `PollForSourceChanges: false` | `s3:GetObject`, `GetObjectVersion`, `GetBucketVersioning`, `GetBucketAcl`, `GetBucketLocation`, `GetObjectTagging`, `GetObjectVersionTagging` | `BucketName`, `ObjectKey`, `ETag`, `VersionId` |
+| [codepipeline-v2-source-ecr.yaml](codepipeline-v2-source-ecr.yaml) | `ECR` | EventBridge rule on `ECR Image Action`, `PUSH`, `SUCCESS`, repository + tag (the action has no polling setting) | `ecr:DescribeImages` | `RegistryId`, `RepositoryName`, `ImageTag`, `ImageDigest`, `ImageURI` |
+| [codepipeline-v2-source-github.yaml](codepipeline-v2-source-github.yaml) | `CodeStarSourceConnection` | The connection's GitHub App webhook (`DetectChanges: "true"`); no EventBridge rule | `codeconnections:UseConnection` + `codestar-connections:UseConnection` | `CommitId`, `BranchName`, `FullRepositoryName`, `CommitMessage`, `AuthorDate`, `ConnectionArn` |
+
+Notes:
+- **Source artifacts:** CodeCommit and GitHub output the commit as a zip (`CODE_ZIP`), S3 outputs the object itself, and ECR outputs `imageDetail.json` with the pushed image's URI.
+- **ECR `ImageTag`:** this output variable isn't produced when the source revision is overridden (`IMAGE_DIGEST`). The ECR template doesn't use it.
+- **S3 `AllowOverrideForS3ObjectKey: true`:** lets a manual run use another object key: `--source-revisions actionName=Source,revisionType=S3_OBJECT_KEY,revisionValue=<key>`. Omitted, it defaults to `false`.
+- **GitHub:** the `GitHub` connection provider type covers GitHub.com and GitHub Enterprise Cloud. The connection must be `AVAILABLE`: one console handshake installs the AWS Connector app, and you must be the organization owner, or the repository owner outside an organization. See [Pre-requisite: an AVAILABLE connection](#pre-requisite-an-available-connection).
+- **GitHub Enterprise Server and GitLab self-managed:** separate provider types (`GitHubEnterpriseServer`, `GitLabSelfManaged`) that also need a connections **host** (`HostArn`). They aren't covered here.
+
+```bash
+# CodeCommit
+aws cloudformation create-stack --stack-name myapp-dev-source-codecommit \
+  --template-body file://codepipeline-v2-source-codecommit.yaml --capabilities CAPABILITY_IAM
+git clone codecommit::<region>://myapp-dev-source-codecommit   # push to main to start it
+
+# S3
+aws cloudformation create-stack --stack-name myapp-dev-source-s3 \
+  --template-body file://codepipeline-v2-source-s3.yaml --capabilities CAPABILITY_IAM
+aws s3 cp source.zip s3://<SourceBucketName>/source.zip
+
+# ECR
+aws cloudformation create-stack --stack-name myapp-dev-source-ecr \
+  --template-body file://codepipeline-v2-source-ecr.yaml --capabilities CAPABILITY_IAM
+aws ecr get-login-password | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
+docker tag myimage <ContainerImageRepositoryUri>:latest && docker push <ContainerImageRepositoryUri>:latest
+
+# GitHub (connection must already be AVAILABLE)
+aws cloudformation create-stack --stack-name myapp-dev-source-github \
+  --template-body file://codepipeline-v2-source-github.yaml --capabilities CAPABILITY_IAM \
+  --parameters ParameterKey=ConnectionArn,ParameterValue=<connection-arn> \
+               ParameterKey=FullRepositoryId,ParameterValue=<owner>/<repo>
+```
+
+The CodeCommit, S3 and ECR stacks fail their first run at Source because nothing has been pushed or uploaded yet. This is expected.
+
 ### CodePipeline V2 - Basic (S3 Source → Commands Build → Commands Release)
 
-[codepipeline-v2-basic.yaml](codepipeline-v2-basic.yaml)
+[codepipeline-v2-feature-stage-retry-rollback.yaml](codepipeline-v2-feature-stage-retry-rollback.yaml)
 
 A small V2 pipeline that needs nothing set up in advance: **no Git connection, no CodeBuild project, no CodeDeploy**. Upload a zip and the pipeline runs.
 
@@ -324,7 +376,7 @@ Differences from the V1 basic template ([../codepipeline/code-codepipeline-basic
 
 ```bash
 aws cloudformation create-stack --stack-name myapp-dev-pipeline-v2 \
-  --template-body file://codepipeline-v2-basic.yaml \
+  --template-body file://codepipeline-v2-feature-stage-retry-rollback.yaml \
   --capabilities CAPABILITY_IAM
 ```
 
@@ -375,7 +427,7 @@ aws cloudformation delete-stack --stack-name myapp-dev-pipeline-v2
 
 ### CodePipeline V2 - GitHub Triggers (tags / branch + paths / pull requests)
 
-[codepipeline-v2-github-triggers.yaml](codepipeline-v2-github-triggers.yaml)
+[codepipeline-v2-feature-git-triggers.yaml](codepipeline-v2-feature-git-triggers.yaml)
 
 A GitHub (or GitLab / Bitbucket) source through CodeConnections. The pipeline starts **only** on filtered Git events:
 
@@ -421,7 +473,7 @@ You need to be the repository owner, or the organization owner if the repository
 
 ```bash
 aws cloudformation create-stack --stack-name myapp-dev-github-pipeline \
-  --template-body file://codepipeline-v2-github-triggers.yaml \
+  --template-body file://codepipeline-v2-feature-git-triggers.yaml \
   --capabilities CAPABILITY_IAM \
   --parameters ParameterKey=ConnectionArn,ParameterValue=<connection-arn> \
                ParameterKey=FullRepositoryId,ParameterValue=<owner>/<repo>
@@ -466,7 +518,7 @@ The connection isn't part of the stack, so it remains.
 
 ### CodePipeline V2 - Invoke Pipeline (build → deploy, CodeCommit)
 
-[codepipeline-v2-invoke-pipeline.yaml](codepipeline-v2-invoke-pipeline.yaml)
+[codepipeline-v2-feature-invoke-pipeline.yaml](codepipeline-v2-feature-invoke-pipeline.yaml)
 
 Two pipelines in one stack, chained with the invoke action. The deploy pipeline deploys **exactly the commit** the build pipeline built, along with the version the build produced.
 
@@ -505,7 +557,7 @@ Why pin the commit? If two pushes land close together, a deploy pipeline without
 
 ```bash
 aws cloudformation create-stack --stack-name myapp-dev-invoke-pipeline \
-  --template-body file://codepipeline-v2-invoke-pipeline.yaml \
+  --template-body file://codepipeline-v2-feature-invoke-pipeline.yaml \
   --capabilities CAPABILITY_IAM
 ```
 
@@ -554,12 +606,12 @@ Each template builds a Dockerfile with **`ECRBuildAndPublish`** (no CodeBuild pr
 
 | Template | Feature | Pipeline |
 |---|---|---|
-| [codepipeline-v2-ecr-ecs-deploy.yaml](codepipeline-v2-ecr-ecs-deploy.yaml) | ECS deploy, digest-pinned | Source → Build → Verify → Deploy |
-| [codepipeline-v2-ecr-inspector-scan.yaml](codepipeline-v2-ecr-inspector-scan.yaml) | Inspector scan gate + SBOM | Source → Build → Scan |
-| [codepipeline-v2-ecr-ecs-alarm-rollback.yaml](codepipeline-v2-ecr-ecs-alarm-rollback.yaml) | **[V2]** On Success alarm → ROLLBACK | Source → Build → Verify → Deploy + Bake |
-| [codepipeline-v2-ecr-ecs-deployment-window.yaml](codepipeline-v2-ecr-ecs-deployment-window.yaml) | **[V2]** Entry DeploymentWindow → FAIL | Source → Build → Verify → Deploy |
-| [codepipeline-v2-ecr-pipeline-variables.yaml](codepipeline-v2-ecr-pipeline-variables.yaml) | **[V2]** pipeline variables + Entry VariableCheck → SKIP | Source → Build → SmokeTest |
-| [codepipeline-v2-ecr-ecs-all-features.yaml](codepipeline-v2-ecr-ecs-all-features.yaml) | All of the above + **[V2]** automatic retry | Source → Build → Scan → Verify → Deploy + Bake |
+| [codepipeline-v2-docker-ecs-deploy.yaml](codepipeline-v2-docker-ecs-deploy.yaml) | ECS deploy, digest-pinned | Source → Build → Verify → Deploy |
+| [codepipeline-v2-feature-inspector-scan.yaml](codepipeline-v2-feature-inspector-scan.yaml) | Inspector scan gate + SBOM | Source → Build → Scan |
+| [codepipeline-v2-feature-alarm-rollback.yaml](codepipeline-v2-feature-alarm-rollback.yaml) | **[V2]** On Success alarm → ROLLBACK | Source → Build → Verify → Deploy + Bake |
+| [codepipeline-v2-feature-deployment-window.yaml](codepipeline-v2-feature-deployment-window.yaml) | **[V2]** Entry DeploymentWindow → FAIL | Source → Build → Verify → Deploy |
+| [codepipeline-v2-feature-pipeline-variables.yaml](codepipeline-v2-feature-pipeline-variables.yaml) | **[V2]** pipeline variables + Entry VariableCheck → SKIP | Source → Build → SmokeTest |
+| [codepipeline-v2-docker-all-features.yaml](codepipeline-v2-docker-all-features.yaml) | All of the above + **[V2]** automatic retry | Source → Build → Scan → Verify → Deploy + Bake |
 
 All-features pipeline:
 
@@ -585,11 +637,11 @@ Mapped to the V1 / V2 table in [../docs/codepipeline/pipeline-types-planning.md]
 
 | V2 feature | Showcased in |
 |---|---|
-| QUEUED execution mode | all Docker-series templates, [basic](codepipeline-v2-basic.yaml), [invoke](codepipeline-v2-invoke-pipeline.yaml) |
-| PARALLEL execution mode | [github-triggers](codepipeline-v2-github-triggers.yaml) (can't be combined with ROLLBACK, so it's not in all-features) |
-| Pipeline-level variables | [ecr-pipeline-variables](codepipeline-v2-ecr-pipeline-variables.yaml), all-features, basic, invoke |
-| Rollback for pipeline stages | [ecr-ecs-alarm-rollback](codepipeline-v2-ecr-ecs-alarm-rollback.yaml) (On Success), all-features, basic (On Failure) |
-| Stage conditions | alarm-rollback (On Success), [ecr-ecs-deployment-window](codepipeline-v2-ecr-ecs-deployment-window.yaml) (Entry), pipeline-variables (Entry), all-features |
+| QUEUED execution mode | all Docker-series templates, [feature-stage-retry-rollback](codepipeline-v2-feature-stage-retry-rollback.yaml), [feature-invoke-pipeline](codepipeline-v2-feature-invoke-pipeline.yaml) |
+| PARALLEL execution mode | [feature-git-triggers](codepipeline-v2-feature-git-triggers.yaml) (can't be combined with ROLLBACK, so it's not in all-features) |
+| Pipeline-level variables | [feature-pipeline-variables](codepipeline-v2-feature-pipeline-variables.yaml), all-features, basic, invoke |
+| Rollback for pipeline stages | [feature-alarm-rollback](codepipeline-v2-feature-alarm-rollback.yaml) (On Success), all-features, basic (On Failure) |
+| Stage conditions | alarm-rollback (On Success), [feature-deployment-window](codepipeline-v2-feature-deployment-window.yaml) (Entry), pipeline-variables (Entry), all-features |
 | Entry conditions with Skip result | pipeline-variables (`RunSmokeTest`), all-features (`RunImageScan`) |
 | Automatic retry on failure | all-features (Build), basic (Build) |
 | Commands action | all |
@@ -616,7 +668,7 @@ Tags are mutable, and `latest` moves on every build. A digest names exactly one 
 
 > The `imagedefinitions.json` reference only shows `repo:tag` examples. A digest URI is a valid image reference, but confirm it on your first deploy.
 
-#### Inspector scan ([ecr-inspector-scan](codepipeline-v2-ecr-inspector-scan.yaml), all-features)
+#### Inspector scan ([feature-inspector-scan](codepipeline-v2-feature-inspector-scan.yaml), all-features)
 
 - **Setup:** the only documented account setup is the IAM permission `inspector-scan:ScanSbom`, which the templates add. There's no "activate Inspector" step. Scans are billed by Inspector, plus CodeBuild minutes for the managed compute.
 - **Thresholds:** the action fails when the count at a severity is **above** its threshold, so `0` means "fail on any". The template defaults are Critical `0`, High `0`, Medium `10` and Low `50`. These are the templates' choice; AWS doesn't recommend values.
@@ -628,7 +680,7 @@ To see the gate fail, set `ImageScanLowThreshold=0`, or use an old base image su
 
 Docs: [../docs/codepipeline/ug-action-reference-inspector-scan.md](../docs/codepipeline/ug-action-reference-inspector-scan.md), [../docs/codepipeline/inspector-configure-cicd-account.md](../docs/codepipeline/inspector-configure-cicd-account.md).
 
-#### ECS deploy ([ecr-ecs-deploy](codepipeline-v2-ecr-ecs-deploy.yaml), and every template with a Deploy stage)
+#### ECS deploy ([docker-ecs-deploy](codepipeline-v2-docker-ecs-deploy.yaml), and every template with a Deploy stage)
 
 - **Required parameters:** `ContainerClusterName`, `ContainerServiceName`, `ContainerName`. The `ecs/` folder templates can create a cluster and service, for example [../ecs-managed-instance/](../ecs-managed-instance/) or the [blue/green example](../ecs/ecs-blue-green/README.md).
 - **Container name:** the service's task definition must have a container named `ContainerName`. The action registers a new task definition revision with only that container's image replaced, then updates the service.
@@ -636,7 +688,7 @@ Docs: [../docs/codepipeline/ug-action-reference-inspector-scan.md](../docs/codep
 
 Docs: [../docs/codepipeline/ug-action-reference-ecs.md](../docs/codepipeline/ug-action-reference-ecs.md), [../docs/codepipeline/ug-file-reference.md](../docs/codepipeline/ug-file-reference.md).
 
-#### Alarm rollback ([ecr-ecs-alarm-rollback](codepipeline-v2-ecr-ecs-alarm-rollback.yaml), all-features)
+#### Alarm rollback ([feature-alarm-rollback](codepipeline-v2-feature-alarm-rollback.yaml), all-features)
 
 ```
  Deploy stage
@@ -674,7 +726,7 @@ aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-alarm-rollba
   --query "pipelineExecutionSummaries[0:3].{id:pipelineExecutionId,type:executionType,status:status,rollback:rollbackMetadata}"
 ```
 
-#### Deployment window ([ecr-ecs-deployment-window](codepipeline-v2-ecr-ecs-deployment-window.yaml), all-features)
+#### Deployment window ([feature-deployment-window](codepipeline-v2-feature-deployment-window.yaml), all-features)
 
 ```yaml
 - Name: Deploy
@@ -696,7 +748,7 @@ aws codepipeline list-pipeline-executions --pipeline-name myapp-dev-alarm-rollba
 
 Docs: [../docs/codepipeline/ug-rule-reference-deployment-window.md](../docs/codepipeline/ug-rule-reference-deployment-window.md).
 
-#### Pipeline variables + SKIP ([ecr-pipeline-variables](codepipeline-v2-ecr-pipeline-variables.yaml), all-features)
+#### Pipeline variables + SKIP ([feature-pipeline-variables](codepipeline-v2-feature-pipeline-variables.yaml), all-features)
 
 - **`ImageTag`:** default from `ImageTagDefault`, used in `ImageTags: "#{variables.ImageTag},#{SourceVariables.CommitId}"`.
 - **`RunSmokeTest`** (all-features: **`RunImageScan`**): an Entry condition with a `VariableCheck` rule (`EQ "true"`) and result **`SKIP`**. Any other value skips the stage: its status is Skipped and its actions show "Didn't Run". A skipped stage can't be retried or rolled back to, and a `SKIP` condition can't be overridden.
@@ -714,11 +766,11 @@ Docs: [../docs/codepipeline/ug-rule-reference-variable-check.md](../docs/codepip
 ```bash
 # Build + scan only (no ECS needed)
 aws cloudformation create-stack --stack-name myapp-dev-inspector-scan \
-  --template-body file://codepipeline-v2-ecr-inspector-scan.yaml --capabilities CAPABILITY_IAM
+  --template-body file://codepipeline-v2-feature-inspector-scan.yaml --capabilities CAPABILITY_IAM
 
 # Everything (needs an ECS service and an alarm)
 aws cloudformation create-stack --stack-name myapp-dev-all-features \
-  --template-body file://codepipeline-v2-ecr-ecs-all-features.yaml --capabilities CAPABILITY_IAM \
+  --template-body file://codepipeline-v2-docker-all-features.yaml --capabilities CAPABILITY_IAM \
   --parameters ParameterKey=ContainerClusterName,ParameterValue=myapp-dev \
                ParameterKey=ContainerServiceName,ParameterValue=myapp-dev-service \
                ParameterKey=ContainerName,ParameterValue=myapp-dev-container \
@@ -825,9 +877,9 @@ Check the EventBridge rule. It must match `referenceName` = your branch and `res
 ## Roadmap (next V2 templates)
 
 - `codepipeline-v2-lambda-deploy.yaml`: Lambda deploy action with traffic shifting and no CodeDeploy
-- ~~`codepipeline-v2-github-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
-- ~~`codepipeline-v2-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.
-- ~~Docker series~~: done. `codepipeline-v2-ecr-*.yaml`: ECS deploy, Inspector scan, alarm rollback, deployment window, pipeline variables + SKIP, all-features.
+- ~~`codepipeline-v2-feature-git-triggers.yaml`~~: done. It also covers PARALLEL mode for PR / feature-branch runs.
+- ~~`codepipeline-v2-feature-invoke-pipeline.yaml`~~: done. Build pipeline invokes deploy pipeline with a pinned commit and variables.
+- ~~Docker series~~: done. `codepipeline-v2-feature-*.yaml` + `codepipeline-v2-docker-*.yaml`: ECS deploy, Inspector scan, alarm rollback, deployment window, pipeline variables + SKIP, all-features.
 
 ## Resources
 

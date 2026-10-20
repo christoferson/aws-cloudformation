@@ -1,0 +1,293 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CodePipeline V2 source - CodeCommit repository, EventBridge change detection, source output variables
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Source: AWS CodeCommit.
+#     git push -> EventBridge rule -> Source (CodeCommit) -> ShowSource (Commands)
+#   ShowSource prints the CodeCommit action's output variables.
+#
+# Resources created
+#   - AWS::CodeCommit::Repository     (retained on stack delete)
+#   - AWS::S3::Bucket                 (artifact store)
+#   - AWS::IAM::Role x2               (pipeline service role, EventBridge)
+#   - AWS::Logs::LogGroup             (/aws/codepipeline/<pipeline-name>)
+#   - AWS::CodePipeline::Pipeline
+#   - AWS::Events::Rule               (CodeCommit push to branch -> pipeline)
+#
+# Pre-requisites
+#   - None. Push to the created repository after deploy
+#
+# Assumptions
+#   - Change detection is EventBridge (PollForSourceChanges false), as the docs
+#     recommend over polling
+#   - CommitMessage is not printed: it can be long and contain shell characters
+#   - The first execution at stack creation fails at Source (empty repository)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Source
+        Parameters:
+          - SourceBranchName
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SourceBranchName:
+    Type: String
+    Default: main
+    Description: Branch that starts the pipeline
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Source Repository + S3 Buckets
+  # ---------------------------------------------------------------
+
+  CodeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    DeletionPolicy: Retain # Keep code if the stack is deleted
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub "${Application}-${Environment}-source-codecommit"
+      RepositoryDescription: CodePipeline V2 CodeCommit source demo
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-codecommit-repository"
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-codecommit-pipeline-artifact-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: CodePipeline V2 role - CodeCommit source, artifacts, Commands logs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline-service-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # CodeCommit source action - permissions per the action reference
+              - Sid: CodeCommitSource
+                Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetRepository
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive # CodePipeline uploads the commit as a zip archive
+                Resource: !GetAtt CodeCommitRepository.Arn
+              - Sid: ReadWriteArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Sid: CommandsActionLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-source-codecommit-pipeline"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codepipeline/${Application}-${Environment}-source-codecommit-pipeline:*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-codecommit-pipeline-service-role"
+
+  PipelineTriggerEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Allows EventBridge to start the pipeline
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-pipeline-execution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-codecommit-pipeline-trigger-event-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  PipelineCommandsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/codepipeline/${Application}-${Environment}-source-codecommit-pipeline"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn: PipelineCommandsLogGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-source-codecommit-pipeline" # Fixed so the log group name is known. Changing it replaces the pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn # Also the identity the Commands action runs as
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"   # Action type version (every AWS action is "1"), not the pipeline's version
+              Namespace: SourceVariables # Required to reference the output variables below
+              Configuration:
+                RepositoryName: !GetAtt CodeCommitRepository.Name
+                BranchName: !Ref SourceBranchName
+                PollForSourceChanges: false # Omitted = true (polling). False because EventBridge starts it; both = duplicate runs
+                OutputArtifactFormat: CODE_ZIP # Default. CODEBUILD_CLONE_REF (full clone) works only with CodeBuild actions
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+
+        - Name: ShowSource
+          Actions:
+            - Name: PrintSourceVariables
+              ActionTypeId:
+                Category: Compute
+                Owner: AWS
+                Provider: Commands  # [V2] Commands / EnvironmentVariables are action properties, not Configuration
+                Version: "1"
+              EnvironmentVariables: # CodeCommit output variables (CommitMessage also exists)
+                - Name: COMMIT_ID
+                  Value: "#{SourceVariables.CommitId}" # Full SHA
+                - Name: BRANCH_NAME
+                  Value: "#{SourceVariables.BranchName}"
+                - Name: REPOSITORY_NAME
+                  Value: "#{SourceVariables.RepositoryName}"
+                - Name: AUTHOR_DATE
+                  Value: "#{SourceVariables.AuthorDate}"
+                - Name: COMMITTER_DATE
+                  Value: "#{SourceVariables.CommitterDate}"
+              Commands:
+                - "echo \"$REPOSITORY_NAME $BRANCH_NAME $COMMIT_ID authored $AUTHOR_DATE committed $COMMITTER_DATE\""
+                - "ls -la"
+              InputArtifacts:
+                - Name: SourceArtifact # Commands requires at least one input artifact
+              RunOrder: 1
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-source-codecommit-pipeline"
+
+  # ---------------------------------------------------------------
+  # EventBridge Trigger (CodeCommit push -> pipeline)
+  # ---------------------------------------------------------------
+
+  PipelineTriggerEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start the pipeline on push to the source branch
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt CodeCommitRepository.Arn
+        detail:
+          event:
+            - referenceCreated # First push of the branch
+            - referenceUpdated # Later pushes
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref SourceBranchName
+      Targets:
+        - Id: pipeline
+          Arn: !Sub "arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}"
+          RoleArn: !GetAtt PipelineTriggerEventRole.Arn
+
+Outputs:
+
+  CodeCommitCloneUrlGrc:
+    Description: git-remote-codecommit URL (pip install git-remote-codecommit)
+    Value: !Sub "codecommit::${AWS::Region}://${CodeCommitRepository.Name}"
+
+  CodeCommitCloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  PipelineName:
+    Value: !Ref Pipeline

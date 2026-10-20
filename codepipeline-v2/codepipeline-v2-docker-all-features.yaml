@@ -13,9 +13,9 @@ Description: CodePipeline V2 - all features - variables, retry, Inspector scan +
 #              -> Deploy  (ECS + Bake)
 #                         Entry: DeploymentWindow, else FAIL
 #                         On Success: CloudWatchAlarm in ALARM -> ROLLBACK
-#   Single-feature versions: codepipeline-v2-ecr-*.yaml. PARALLEL mode and Git
+#   Single-feature versions: codepipeline-v2-feature-*.yaml. PARALLEL mode and Git
 #   triggers are not here (PARALLEL rules out ROLLBACK; triggers need a
-#   CodeConnections source) - see codepipeline-v2-github-triggers.yaml.
+#   CodeConnections source) - see codepipeline-v2-feature-git-triggers.yaml.
 #
 # Resources created
 #   - AWS::CodeCommit::Repository     (Dockerfile in the repository root)

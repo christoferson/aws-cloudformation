@@ -1,0 +1,458 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS Fargate + ALB + native ECS CANARY deployment (small slice first, then the rest) + alarm rollback
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Fargate service using the native Amazon ECS canary deployment strategy
+#   (DeploymentController ECS + Strategy CANARY). On each deployment ECS starts
+#   the new (green) revision next to the current (blue) one, then shifts traffic
+#   in two phases by changing the listener rule weights:
+#     1. CanaryPercent (e.g. 10%) to green, wait CanaryBakeTimeInMinutes
+#     2. the remaining traffic to green at once
+#   After 100% it waits BakeTimeInMinutes, then stops blue. The 5XX alarm rolls
+#   the deployment back (traffic returns to blue) at any point until then.
+#   To deploy: change ContainerImageName and update the stack.
+#
+# Resources created
+#   - Security groups for the load balancer and the container service
+#   - Internet-facing ALB, two target groups (primary / alternate)
+#   - Production listener (:80) + production listener rule (weighted 1/0)
+#   - ECS Cluster, Task Definition, Service (Fargate, CANARY)
+#   - IAM: task execution role, ECS infrastructure role for load balancers
+#   - Log group, CloudWatch alarm (ALB target 5XX) used for automatic rollback
+#
+# Pre-requisites
+#   - A VPC with at least 2 public subnets (IGW route) in different AZs
+#
+# Assumptions
+#   - ALB and tasks share the same public subnets; tasks get public IPs to pull
+#     images without NAT. Security Hub [ECS.2] flags public IPs; use private
+#     subnets with NAT / VPC endpoints for production
+#   - ECS updates the listener *rule*, not the listener default action, so the
+#     listener defaults to a fixed 404 and a catch-all "/*" rule carries the
+#     weighted forward. Do not edit the rule weights out-of-band
+#   - CloudFormation rejects canary deployments whose calculated time
+#     (BakeTimeInMinutes + CanaryBakeTimeInMinutes) exceeds 33 hours; the
+#     parameter limits here keep it far below that
+#   - Test listener and lifecycle hooks work the same as for BLUE_GREEN; see
+#     ../ecs-blue-green/ecs-fargate-alb-blue-green.yaml
+#   - The first stack create is not a canary deployment (no previous revision)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network"
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+      - Label:
+          default: "Container"
+        Parameters:
+          - ContainerImageName
+          - ContainerPort
+          - TaskCpu
+          - TaskMemory
+      - Label:
+          default: "Service / Canary Deployment"
+        Parameters:
+          - TaskDesiredCount
+          - DeploymentCanaryPercent
+          - DeploymentCanaryBakeTimeInMinutes
+          - DeploymentBakeTimeInMinutes
+
+# ---------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy into
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnet IDs (min 2 AZs) for the ALB and tasks
+
+  ContainerImageName:
+    Type: String
+    Default: "public.ecr.aws/docker/library/nginx:1.27"
+    Description: Container image URI. Change it (e.g. to ...nginx:1.28) and update the stack to trigger a canary deployment
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port the container listens on
+
+  TaskCpu:
+    Type: Number
+    Default: 256
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+    Description: Task CPU units (256 = 0.25 vCPU)
+
+  TaskMemory:
+    Type: Number
+    Default: 512
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+    Description: Task memory in MiB (must be a valid Fargate combination with TaskCpu)
+
+  TaskDesiredCount:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: Desired number of running tasks (blue and green each run this many during a deployment)
+
+  DeploymentCanaryPercent:
+    Type: Number
+    Default: 10
+    MinValue: 0.1
+    MaxValue: 100
+    Description: Percent of production traffic sent to green in the canary phase (multiples of 0.1; ECS default 5.0)
+
+  DeploymentCanaryBakeTimeInMinutes:
+    Type: Number
+    Default: 5
+    MinValue: 0
+    MaxValue: 60
+    Description: Minutes the canary slice runs before the rest shifts (ECS allows 0-1440, default 10; capped at 60 here)
+
+  DeploymentBakeTimeInMinutes:
+    Type: Number
+    Default: 5
+    MinValue: 0
+    MaxValue: 60
+    Description: Minutes blue keeps running after 100% of traffic is on green (ECS default 15)
+
+# ---------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Allow HTTP to the load balancer
+      SecurityGroupIngress:
+        - Description: Production listener
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer-securitygroup"
+
+  ContainerServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Allow inbound from the load balancer to ECS task ENIs
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containerservice-securitygroup"
+
+  # ---------------------------------------------------------------
+  # Load Balancer + Listener + Target Groups
+  # ---------------------------------------------------------------
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets: !Ref VpcSubnetList
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: "false"
+        - Key: idle_timeout.timeout_seconds
+          Value: "60"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer"
+
+  # Primary / alternate are roles, not fixed colors: ECS alternates which
+  # target group holds production on every deployment.
+  PrimaryTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30" # Default 300s slows every traffic shift
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-primary-targetgroup"
+
+  AlternateTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-alternate-targetgroup"
+
+  ProductionListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: fixed-response # Never hit while the catch-all rule exists
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: "No matching rule"
+
+  # Must forward to BOTH target groups. ECS moves the weights to the canary
+  # split (e.g. 90/10), then to 0/100, and moves them back on rollback.
+  ProductionListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ProductionListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values: ["/*"]
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref PrimaryTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref AlternateTargetGroup
+                Weight: 0
+
+  # ---------------------------------------------------------------
+  # Cluster / Compute
+  # ---------------------------------------------------------------
+
+  ContainerCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${Application}-${Environment}-canary"
+      CapacityProviders:
+        - FARGATE
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containercluster"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  ContainerTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-task-execution-role"
+
+  # ECS assumes this role to change listener rule weights and register targets
+  LoadBalancerInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAccessToECSForInfrastructureManagement
+            Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer-infrastructure-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  ContainerTaskLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/ecs/${Application}/${Environment}/canary"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Task Definition
+  # ---------------------------------------------------------------
+
+  ContainerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${Application}-${Environment}-canary-task"
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ContainerTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub "${Application}-${Environment}-container"
+          Image: !Ref ContainerImageName
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ContainerTaskLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-taskdefinition"
+
+  # ---------------------------------------------------------------
+  # Service
+  # ---------------------------------------------------------------
+
+  ContainerService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ContainerCluster
+      ServiceName: !Sub "${Application}-${Environment}-canary-service"
+      LaunchType: FARGATE
+      DesiredCount: !Ref TaskDesiredCount
+      TaskDefinition: !Ref ContainerTaskDefinition
+      HealthCheckGracePeriodSeconds: 60
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ContainerServiceSecurityGroup
+          Subnets: !Ref VpcSubnetList
+      DeploymentController:
+        Type: ECS # Native ECS controller (LINEAR / CANARY / BLUE_GREEN / ROLLING all use it)
+      DeploymentConfiguration:
+        Strategy: CANARY
+        CanaryConfiguration: # Only valid when Strategy is CANARY
+          CanaryPercent: !Ref DeploymentCanaryPercent
+          CanaryBakeTimeInMinutes: !Ref DeploymentCanaryBakeTimeInMinutes # Then the remaining traffic shifts at once
+        BakeTimeInMinutes: !Ref DeploymentBakeTimeInMinutes # After 100%, before blue is stopped
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        # Roll back (weights back to blue) if the alarm fires during the canary phase or the bake time.
+        # DeploymentCircuitBreaker is rolling-only.
+        Alarms:
+          Enable: true
+          Rollback: true
+          AlarmNames:
+            - !Ref LoadBalancerTarget5xxAlarm
+      LoadBalancers:
+        - ContainerName: !Sub "${Application}-${Environment}-container"
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref PrimaryTargetGroup
+          AdvancedConfiguration: # Same as BLUE_GREEN: alternate target group + rule + role
+            AlternateTargetGroupArn: !Ref AlternateTargetGroup
+            ProductionListenerRule: !Ref ProductionListenerRule
+            RoleArn: !GetAtt LoadBalancerInfrastructureRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containerservice"
+
+  # ---------------------------------------------------------------
+  # Rollback alarm
+  # ---------------------------------------------------------------
+
+  LoadBalancerTarget5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Target 5XX on the load balancer - triggers ECS deployment rollback
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+# ---------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------
+Outputs:
+
+  ProductionUrl:
+    Value: !Sub "http://${LoadBalancer.DNSName}/"
+
+  ContainerClusterName:
+    Value: !Ref ContainerCluster
+
+  ContainerClusterArn:
+    Value: !GetAtt ContainerCluster.Arn
+
+  ContainerServiceArn:
+    Value: !Ref ContainerService
+
+  ContainerServiceName:
+    Value: !GetAtt ContainerService.Name
