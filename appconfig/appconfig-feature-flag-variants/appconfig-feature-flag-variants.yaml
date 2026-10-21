@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::LanguageExtensions # For Fn::ToJsonString (flag data written as YAML)
+Description: AppConfig multi-variant feature flags - targets (allow list, tier), 15% split, default variant + Lambda reading them with context
+
+# -----------------------------------------------------------------------------
+# Summary
+#   AppConfig feature flag targets, variants and splits (July 2024):
+#     premium_feature  AllowList  (in $userId ["user-1","user-2"])   -> discount 20
+#                      GoldTier   (eq $tier "gold")                  -> discount 10
+#                      Default    (no rule, disabled)
+#     new_checkout     Express15  (split by::$userId pct::15 seed::"new_checkout") -> layout express
+#                      Default    (no rule, enabled)                 -> layout classic
+#   Variants are evaluated in order; the first matching rule wins; Default is
+#   returned when nothing matches. Rules are evaluated CLIENT-SIDE by the
+#   AppConfig Agent against the context the caller sends.
+#   The demo Lambda runs the AppConfig Agent Lambda extension and passes the
+#   invocation's userId / tier as context:
+#     aws lambda invoke --function-name <fn> --payload '{"userId":"user-1"}' out.json
+#
+# Resources created
+#   - AWS::AppConfig::Application, Environment, ConfigurationProfile (AWS.AppConfig.FeatureFlags)
+#   - AWS::AppConfig::HostedConfigurationVersion (flag data with _variants)
+#   - AWS::AppConfig::DeploymentStrategy (all at once, no bake) + Deployment
+#   - AWS::IAM::Role, AWS::Logs::LogGroup, AWS::Lambda::Function (with AppConfig extension layer)
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - The extension layer ARN comes from the AWS public SSM parameter
+#     /aws/service/aws-appconfig/lambda-extension/x86/latest (latest version, any
+#     commercial Region). Use .../arm64/latest for an arm64 function
+#   - Variants need a recent AppConfig Agent; ?flag= single-flag retrieval needs
+#     agent 2.0.45+. The public parameter always resolves to the latest
+#   - The default variant must be last and have no rule, otherwise AppConfig
+#     returns BadRequestException
+#   - The Lambda role allows StartConfigurationSession / GetLatestConfiguration on
+#     "*"; scope it to this configuration's ARN for production
+#   - Changing the flag data creates a new hosted version and a new deployment
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Demo Lambda
+        Parameters:
+          - AppConfigExtensionLayerArn
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  AppConfigExtensionLayerArn:
+    Type: AWS::SSM::Parameter::Value<String> # Resolved from the public parameter at deploy time
+    Default: /aws/service/aws-appconfig/lambda-extension/x86/latest # "x86", not "x86_64"
+    Description: Public SSM parameter holding the latest AppConfig Agent Lambda extension layer ARN
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # AppConfig
+  # ---------------------------------------------------------------
+
+  AppConfigApplication:
+    Type: AWS::AppConfig::Application
+    Properties:
+      Name: !Sub "${Application}-${Environment}-variants"
+      Description: Multi-variant feature flag demo
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-appconfig-application"
+
+  AppConfigEnvironment:
+    Type: AWS::AppConfig::Environment
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      Name: !Ref Environment
+      Description: !Sub "${Application} ${Environment}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-appconfig-environment"
+
+  FeatureFlagConfigurationProfile:
+    Type: AWS::AppConfig::ConfigurationProfile
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      Name: features
+      LocationUri: hosted # Data stored in AppConfig (HostedConfigurationVersion)
+      Type: AWS.AppConfig.FeatureFlags # Feature flag schema; required for variants
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-appconfig-features-profile"
+
+  # Flag data in the AWS.AppConfig.FeatureFlags format:
+  #   flags  = definitions (name, description, attribute constraints)
+  #   values = per-flag values; _variants is an ordered list (max 32)
+  FeatureFlagHostedConfigurationVersion:
+    Type: AWS::AppConfig::HostedConfigurationVersion
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      ConfigurationProfileId: !Ref FeatureFlagConfigurationProfile
+      ContentType: application/json
+      VersionLabel: v1-variants
+      Content:
+        Fn::ToJsonString:
+          version: "1" # Only valid value
+          flags:
+            premium_feature: # Key pattern ^[a-z][a-zA-Z\d_-]{0,63}$
+              name: Premium feature
+              description: Targets - allow-listed users first, then gold tier customers
+              attributes:
+                discount_percent:
+                  constraints:
+                    type: number
+                    minimum: 0
+                    maximum: 50
+            new_checkout:
+              name: New checkout
+              description: Split - about 15% of users (by userId) get the express layout
+              attributes:
+                layout:
+                  constraints:
+                    type: string
+                    enum: [classic, express]
+          values:
+            premium_feature:
+              _variants: # Evaluated top to bottom; first matching rule wins
+                - name: AllowList
+                  enabled: true
+                  rule: '(in $userId ["user-1", "user-2"])' # $key = value from the request context
+                  attributeValues:
+                    discount_percent: 20
+                - name: GoldTier
+                  enabled: true
+                  rule: '(eq $tier "gold")'
+                  attributeValues:
+                    discount_percent: 10
+                - name: Default # Must be last, no rule; returned when nothing matches
+                  enabled: false
+            new_checkout:
+              _variants:
+                - name: Express15
+                  enabled: true
+                  # Consistent hash of userId: the same user always lands in the same bucket.
+                  # seed makes the split consistent across flags, profiles and accounts too.
+                  rule: '(split by::$userId pct::15 seed::"new_checkout")'
+                  attributeValues:
+                    layout: express
+                - name: Default
+                  enabled: true
+                  attributeValues:
+                    layout: classic
+
+  # Demo: deploy at once. For gradual rollouts use DeploymentDurationInMinutes > 0
+  # and a GrowthFactor < 100 (or an AppConfig predefined strategy)
+  ImmediateDeploymentStrategy:
+    Type: AWS::AppConfig::DeploymentStrategy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-immediate"
+      Description: Deploy to all targets at once, no bake time
+      DeploymentDurationInMinutes: 0
+      FinalBakeTimeInMinutes: 0
+      GrowthFactor: 100
+      GrowthType: LINEAR
+      ReplicateTo: NONE
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-appconfig-deployment-strategy"
+
+  FeatureFlagDeployment:
+    Type: AWS::AppConfig::Deployment
+    Properties:
+      ApplicationId: !Ref AppConfigApplication
+      EnvironmentId: !Ref AppConfigEnvironment
+      ConfigurationProfileId: !Ref FeatureFlagConfigurationProfile
+      ConfigurationVersion: !Ref FeatureFlagHostedConfigurationVersion # Ref = version number
+      DeploymentStrategyId: !Ref ImmediateDeploymentStrategy
+      Description: Deploy the multi-variant flags
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-appconfig-deployment"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  FlagReaderLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-feature-flags
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Required by the AppConfig Agent Lambda extension
+              - Sid: AppConfigDataPlane
+                Effect: Allow
+                Action:
+                  - appconfig:StartConfigurationSession
+                  - appconfig:GetLatestConfiguration
+                Resource: "*" # Scope to this configuration's ARN for production
+              - Sid: WriteLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt FlagReaderLambdaLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-flagreader-lambda-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  FlagReaderLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/flag-reader"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Function
+  # ---------------------------------------------------------------
+
+  FlagReaderLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: FeatureFlagDeployment # Flags are deployed before the first invoke
+    Properties:
+      Description: Reads multi-variant flags from the AppConfig Agent with the caller's context
+      Runtime: python3.13
+      Architectures:
+        - x86_64 # Must match the extension layer (x86 parameter)
+      Handler: index.handler
+      Timeout: 10
+      MemorySize: 128
+      Role: !GetAtt FlagReaderLambdaExecutionRole.Arn
+      Layers:
+        - !Ref AppConfigExtensionLayerArn # AppConfig Agent runs as a Lambda extension on localhost:2772
+      LoggingConfig:
+        LogGroup: !Ref FlagReaderLambdaLogGroup
+      Environment:
+        Variables:
+          # Agent URL path, by name (same form as the AWS samples)
+          APPCONFIG_PATH: !Sub "/applications/${Application}-${Environment}-variants/environments/${Environment}/configurations/features"
+          # Fetch the profile during init instead of on the first request. Format App:Env:Config
+          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: !Sub "${Application}-${Environment}-variants:${Environment}:features"
+      Code:
+        ZipFile: |
+          import json, os, urllib.request
+
+          PORT = os.environ.get("AWS_APPCONFIG_EXTENSION_HTTP_PORT", "2772")
+          URL = f"http://localhost:{PORT}{os.environ['APPCONFIG_PATH']}"
+          CONTEXT_KEYS = ("userId", "tier")
+
+          def handler(event, context):
+              # Context header: key=value, several values comma-separated
+              ctx = [f"{k}={event[k]}" for k in CONTEXT_KEYS if k in event]
+              headers = {"Context": ",".join(ctx)} if ctx else {}
+              with urllib.request.urlopen(urllib.request.Request(URL, headers=headers), timeout=5) as r:
+                  flags = json.loads(r.read())
+              # Each flag carries "_variant" = name of the variant that matched
+              result = {"context": ctx, "flags": flags}
+              print(json.dumps(result))
+              return result
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-flagreader-lambda"
+
+Outputs:
+
+  AppConfigApplicationId:
+    Value: !Ref AppConfigApplication
+
+  AppConfigEnvironmentId:
+    Value: !Ref AppConfigEnvironment
+
+  FeatureFlagConfigurationProfileId:
+    Value: !Ref FeatureFlagConfigurationProfile
+
+  FlagReaderLambdaFunctionName:
+    Description: aws lambda invoke --function-name <this> --payload '{"userId":"user-1"}' --cli-binary-format raw-in-base64-out out.json
+    Value: !Ref FlagReaderLambdaFunction

@@ -31,6 +31,12 @@ Provision a complete AppConfig Application, Environment, Config
 
 [appconfig-basic](appconfig-basic.yaml)
 
+### AppConfig - Multi-Variant Feature Flags (targets, variants, splits)
+
+Feature flags with variants and rules: an allow list of users, a tier target, a 15% split and a default variant, plus a Lambda that reads them through the AppConfig Agent extension with the caller's context.
+
+[appconfig-feature-flag-variants/README.md](appconfig-feature-flag-variants/README.md)
+
 
 ### Links
 
