@@ -1,0 +1,237 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations SCPs - IAM policy language in SCPs (Allow + Condition, NotAction, specific ARNs, NotResource)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Service control policies showing the policy elements SCPs support today.
+#   Per the SCP syntax reference, Condition, NotAction and NotResource are
+#   supported in both Allow and Deny statements:
+#     RegionGuardrail       Deny + NotAction + Condition (aws:RequestedRegion,
+#                           aws:PrincipalArn)        -> attached to TargetId
+#     ProtectPlatformRole   Deny + specific role ARN + Condition -> attached
+#     BedrockModelAllowList Deny + NotResource (allowed model ARNs) -> attached
+#     AllowListExample      Allow + Condition (aws:PrincipalArn) -> NOT attached
+#   Content is written as a JSON object (not a JSON string) so CloudFormation
+#   drift detection works on the policies.
+#
+# Resources created
+#   - AWS::Organizations::Policy x4 (SERVICE_CONTROL_POLICY)
+#
+# Pre-requisites
+#   - Deploy in the organization's management account (or a delegated
+#     administrator for policy management)
+#   - SCPs enabled on the root (one-time, CloudFormation cannot do this):
+#       aws organizations enable-policy-type --root-id r-xxxx --policy-type SERVICE_CONTROL_POLICY
+#   - The default FullAWSAccess SCP stays attached (deny-list strategy)
+#
+# Assumptions
+#   - Attach to a test OU first (TargetId). SCPs do not affect the management
+#     account, and they do not affect service-linked roles
+#   - Every statement has Resource or NotResource and every SCP has
+#     Version 2012-10-17 (both required). Allow statements may only use
+#     Resource "*"; specific ARNs and NotResource are used in Deny statements
+#   - Principal / NotPrincipal are not supported in SCPs; use aws:PrincipalArn
+#     in a Condition instead
+#   - Maximum SCP size is 5,120 characters per policy
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Target
+        Parameters:
+          - TargetId
+      - Label:
+          default: Guardrail settings
+        Parameters:
+          - AllowedRegionList
+          - BreakGlassRoleName
+          - PlatformRoleName
+          - BedrockAllowedModelArnList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  TargetId:
+    Type: String
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: Root (r-...), OU (ou-...-...) or account ID (12 digits) to attach the Deny SCPs to. Use a test OU first
+
+  AllowedRegionList:
+    Type: CommaDelimitedList
+    Default: "us-east-1,us-west-2"
+    Description: Regions where regional actions are allowed
+
+  BreakGlassRoleName:
+    Type: String
+    Default: OrganizationAccountAccessRole
+    Description: Role name (in any member account) exempt from the region and platform-role guardrails
+
+  PlatformRoleName:
+    Type: String
+    Default: platform-admin
+    Description: Shared administrative role, present in every account, that member accounts must not modify
+
+  BedrockAllowedModelArnList:
+    Type: CommaDelimitedList
+    Default: "arn:aws:bedrock:*::foundation-model/amazon.titan-text-*"
+    Description: Foundation model ARNs (wildcards allowed) that may still be invoked; everything else is denied
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Deny + NotAction + Condition
+  # ---------------------------------------------------------------
+
+  RegionGuardrailServiceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-scp-region-guardrail"
+      Description: Deny regional actions outside the allowed Regions, except global services and the break-glass role
+      Type: SERVICE_CONTROL_POLICY # Update requires replacement
+      TargetIds:
+        - !Ref TargetId
+      Content: # JSON object (not a string) so drift detection works
+        Version: "2012-10-17" # Required in every SCP
+        Statement:
+          - Sid: DenyOutsideAllowedRegions
+            Effect: Deny
+            NotAction: # Exempt global services (AWS doc example list; extend for your org)
+              - "cloudfront:*"
+              - "iam:*"
+              - "route53:*"
+              - "support:*"
+            Resource: "*" # Every statement needs Resource or NotResource
+            Condition: # All operators must match (AND) for the Deny to apply
+              StringNotEquals:
+                aws:RequestedRegion: !Ref AllowedRegionList
+              ArnNotLike: # SCPs don't support Principal; exempt principals with aws:PrincipalArn
+                aws:PrincipalArn: !Sub "arn:${AWS::Partition}:iam::*:role/${BreakGlassRoleName}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-scp-region-guardrail"
+
+  # ---------------------------------------------------------------
+  # Deny + specific resource ARN
+  # ---------------------------------------------------------------
+
+  ProtectPlatformRoleServiceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-scp-protect-platform-role"
+      Description: Deny changes to the shared platform admin role, except by the break-glass role
+      Type: SERVICE_CONTROL_POLICY
+      TargetIds:
+        - !Ref TargetId
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyPlatformRoleChanges
+            Effect: Deny
+            Action:
+              - "iam:AttachRolePolicy"
+              - "iam:DeleteRole"
+              - "iam:DeleteRolePermissionsBoundary"
+              - "iam:DeleteRolePolicy"
+              - "iam:DetachRolePolicy"
+              - "iam:PutRolePermissionsBoundary"
+              - "iam:PutRolePolicy"
+              - "iam:UpdateAssumeRolePolicy"
+              - "iam:UpdateRole"
+              - "iam:UpdateRoleDescription"
+            Resource: # Specific ARNs are only allowed in Deny statements ("*" only for Allow)
+              - !Sub "arn:${AWS::Partition}:iam::*:role/${PlatformRoleName}"
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Sub "arn:${AWS::Partition}:iam::*:role/${BreakGlassRoleName}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-scp-protect-platform-role"
+
+  # ---------------------------------------------------------------
+  # Deny + NotResource
+  # ---------------------------------------------------------------
+
+  BedrockModelAllowListServiceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-scp-bedrock-model-allow-list"
+      Description: Deny invoking any Bedrock foundation model except the allowed ones
+      Type: SERVICE_CONTROL_POLICY
+      TargetIds:
+        - !Ref TargetId
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyNonAllowedModels
+            Effect: Deny
+            Action:
+              - "bedrock:InvokeModel"
+              - "bedrock:InvokeModelWithResponseStream"
+            NotResource: !Ref BedrockAllowedModelArnList # Everything EXCEPT these ARNs
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-scp-bedrock-model-allow-list"
+
+  # ---------------------------------------------------------------
+  # Allow + Condition (allow-list strategy) - created but not attached
+  # ---------------------------------------------------------------
+
+  # An Allow SCP only narrows access where FullAWSAccess has been detached
+  # (allow-list strategy). Where FullAWSAccess is attached it has no effect.
+  # No TargetIds = created but not attached; attach it deliberately.
+  AllowListExampleServiceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-scp-allow-list-example"
+      Description: Allow-list example - only the platform role may use these services (attach only with FullAWSAccess detached)
+      Type: SERVICE_CONTROL_POLICY
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowServicesForPlatformRole
+            Effect: Allow
+            Action:
+              - "ec2:*"
+              - "s3:*"
+              - "cloudformation:*"
+              - "iam:*"
+              - "cloudwatch:*"
+            Resource: "*" # Allow statements may only use "*"
+            Condition: # Conditions in Allow statements are supported in SCPs
+              ArnLike:
+                aws:PrincipalArn: !Sub "arn:${AWS::Partition}:iam::*:role/${PlatformRoleName}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-scp-allow-list-example"
+
+Outputs:
+
+  RegionGuardrailServiceControlPolicyId:
+    Value: !GetAtt RegionGuardrailServiceControlPolicy.Id
+
+  ProtectPlatformRoleServiceControlPolicyId:
+    Value: !GetAtt ProtectPlatformRoleServiceControlPolicy.Id
+
+  BedrockModelAllowListServiceControlPolicyId:
+    Value: !GetAtt BedrockModelAllowListServiceControlPolicy.Id
+
+  AllowListExampleServiceControlPolicyId:
+    Description: Not attached - attach with aws organizations attach-policy once FullAWSAccess is detached from the target
+    Value: !GetAtt AllowListExampleServiceControlPolicy.Id

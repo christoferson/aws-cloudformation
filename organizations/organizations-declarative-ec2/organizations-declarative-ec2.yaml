@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations declarative policy for EC2 - block public AMI / snapshot sharing, disable serial console, enforce IMDSv2
+
+# -----------------------------------------------------------------------------
+# Summary
+#   An EC2 declarative policy (DECLARATIVE_POLICY_EC2) that sets EC2 / EBS
+#   account attributes for every account in scope and keeps them set:
+#     image_block_public_access     block_new_sharing (no new public AMIs)
+#     snapshot_block_public_access  block_new_sharing (no new public EBS snapshots)
+#     serial_console_access         disabled
+#     instance_metadata_defaults    IMDSv2 required + enforced, hop limit 2
+#   Unlike an SCP (which denies API calls), a declarative policy declares the
+#   desired configuration. Account administrators cannot change it locally, and
+#   it keeps applying as the service adds new features or APIs.
+#
+# Resources created
+#   - AWS::Organizations::Policy (DECLARATIVE_POLICY_EC2)
+#
+# Pre-requisites
+#   - Deploy in the organization's management account (or a delegated
+#     administrator for policy management)
+#   - Declarative policies for EC2 enabled on the root (one-time, CloudFormation
+#     cannot do this):
+#       aws organizations enable-policy-type --root-id r-xxxx --policy-type DECLARATIVE_POLICY_EC2
+#   - Recommended: generate the account status report first to see the current
+#     value of each attribute across accounts and Regions
+#
+# Assumptions
+#   - Attach to a test OU first. Noncompliant API calls fail with the custom
+#     ExceptionMessage
+#   - block_new_sharing leaves already-public AMIs / snapshots public; use
+#     block_all_sharing (snapshots only) to make existing public snapshots private
+#   - IMDSv2 required + enforced: launches or changes that would allow IMDSv1
+#     fail. Audit IMDSv1 usage before attaching
+#   - VPC Block Public Access is not included: block_ingress would cut internet
+#     access for existing VPCs in scope
+#   - Maximum declarative policy size is 10,000 characters
+#   - Do not put personal or sensitive information in ExceptionMessage
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Target
+        Parameters:
+          - TargetId
+          - ExceptionMessage
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  TargetId:
+    Type: String
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: Root (r-...), OU (ou-...-...) or account ID (12 digits) to attach the policy to. Use a test OU first
+
+  ExceptionMessage:
+    Type: String
+    Default: "Blocked by the organization EC2 baseline policy. See the internal cloud wiki."
+    Description: Custom error returned when an API call conflicts with the policy (no personal or sensitive data)
+
+Resources:
+
+  Ec2BaselineDeclarativePolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-declarative-ec2-baseline"
+      Description: Block new public AMI and snapshot sharing, disable serial console, enforce IMDSv2
+      Type: DECLARATIVE_POLICY_EC2 # Update requires replacement
+      TargetIds:
+        - !Ref TargetId
+      Content: # JSON object so drift detection works. Declarative syntax: values are set with @@assign
+        ec2_attributes: # Fixed top-level key for EC2 declarative policies
+          exception_message:
+            "@@assign": !Ref ExceptionMessage
+          image_block_public_access:
+            state:
+              "@@assign": block_new_sharing # unblocked | block_new_sharing
+          snapshot_block_public_access:
+            state:
+              "@@assign": block_new_sharing # unblocked | block_new_sharing | block_all_sharing
+          serial_console_access:
+            status:
+              "@@assign": disabled # enabled | disabled
+          instance_metadata_defaults: # Applies to new instance launches
+            http_tokens:
+              "@@assign": required # no_preference | required (IMDSv2) | optional
+            http_tokens_enforced:
+              "@@assign": enabled # IMDSv1 launches / changes fail. Needs http_tokens required, or launches fail
+            http_put_response_hop_limit:
+              "@@assign": "2" # -1 (no preference) to 64; docs recommend >= 2 with IMDSv2 required
+            http_endpoint:
+              "@@assign": enabled # no_preference | enabled | disabled
+            instance_metadata_tags:
+              "@@assign": no_preference # no_preference | enabled | disabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-declarative-ec2-baseline"
+
+Outputs:
+
+  Ec2BaselineDeclarativePolicyId:
+    Value: !GetAtt Ec2BaselineDeclarativePolicy.Id
+
+  Ec2BaselineDeclarativePolicyArn:
+    Value: !GetAtt Ec2BaselineDeclarativePolicy.Arn

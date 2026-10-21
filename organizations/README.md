@@ -41,6 +41,24 @@ Provision OU Infrastructure and Security
 
 [organizations-unit](organizations-unit.yaml)
 
+### Organization - Service Control Policies (SCP)
+
+SCPs using the IAM policy elements now supported in both Allow and Deny statements: `Condition`, `NotAction`, specific ARNs and `NotResource`. Includes an allow-list example that is created unattached.
+
+[organizations-scp/README.md](organizations-scp/README.md)
+
+### Organization - Resource Control Policies (RCP)
+
+Data perimeter RCP: deny non-TLS access and access by principals outside the organization, while letting AWS service principals through.
+
+[organizations-rcp/README.md](organizations-rcp/README.md)
+
+### Organization - Declarative Policies for EC2
+
+`DECLARATIVE_POLICY_EC2` baseline: block new public AMI and snapshot sharing, disable the serial console, enforce IMDSv2.
+
+[organizations-declarative-ec2/README.md](organizations-declarative-ec2/README.md)
+
 ------------------------------------------------------------------------------------------------------
 
 ## Links
