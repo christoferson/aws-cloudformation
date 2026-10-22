@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Hooks demo - compliant template (Description, Application/Environment parameters, no IAM users)
+
+# Deploy as stack "hooks-demo" (the Hooks' StackFilters Include). Passes both Hooks.
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+
+  Environment:
+    Type: String
+    Default: dev
+
+Resources:
+
+  DemoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-hooks-demo"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+
+  DemoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-hooks-demo"

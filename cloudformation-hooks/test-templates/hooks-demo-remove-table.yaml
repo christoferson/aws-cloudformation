@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Hooks demo - compliant template that removes the DynamoDB table (change set DELETE)
+
+# Create a change set for stack "hooks-demo" with this template. The template
+# itself passes, but the change set deletes DemoTable -> CHANGE_SET rule fails.
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+
+  Environment:
+    Type: String
+    Default: dev
+
+Resources:
+
+  DemoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-hooks-demo"

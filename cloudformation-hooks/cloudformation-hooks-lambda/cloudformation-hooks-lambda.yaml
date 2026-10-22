@@ -1,0 +1,283 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation Lambda Hook - evaluates whole stack templates and change sets with a Python function that returns annotations
+
+# -----------------------------------------------------------------------------
+# Summary
+#   AWS::CloudFormation::LambdaHook with TargetOperations STACK + CHANGE_SET
+#   (stack-level Hooks, November 2024). Same policy as the Guard Hook example:
+#     - template has a Description
+#     - template declares Application and Environment parameters
+#     - template has no AWS::IAM::User
+#     - change set deletes no DynamoDB table / S3 bucket / RDS / EFS
+#   For STACK and CHANGE_SET targets the event carries an S3 presigned URL
+#   (requestData.payload); the function downloads it:
+#     STACK       { template, previousTemplate }
+#     CHANGE_SET  { template, changedResources: [{ action, resourceType, ... }] }
+#   The template is a YAML or JSON string. The function calls GetTemplateSummary
+#   to parse it (no YAML library in the Lambda runtime).
+#   The response carries annotations (status, remediation, severity) - shown in
+#   the console Invocation summary and get-hook-result.
+#   The Hook only runs for the stack named DemoStackName (StackFilters Include).
+#
+# Resources created
+#   - Lambda function (Python, inline) + execution role + log group
+#   - IAM execution role for the Hook (hooks.cloudformation.amazonaws.com -> lambda:InvokeFunction)
+#   - AWS::CloudFormation::LambdaHook (activated private Hook in this account + Region)
+#
+# Pre-requisites
+#   - Permissions to activate Hooks (cloudformation:ActivateType, SetTypeConfiguration, ...)
+#
+# Assumptions
+#   - Hooks wait up to 30 seconds per invocation (3 retries); Lambda Timeout is 25
+#   - GetTemplateSummary accepts a TemplateBody up to 51,200 bytes; larger
+#     templates are reported as SKIPPED
+#   - Alias segments allow letters and digits only (no hyphens in Application)
+#   - CHANGE_SET targets only support the CREATE action (= create-change-set)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Hook"
+        Parameters:
+          - HookFailureMode
+          - DemoStackName
+
+# ---------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    AllowedPattern: "^[A-Za-z0-9]{2,32}$" # Part of the Hook alias: letters and digits only
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  HookFailureMode:
+    Type: String
+    Default: FAIL
+    AllowedValues: [FAIL, WARN]
+    Description: FAIL blocks the operation; WARN lets it continue with a warning (start with WARN on real accounts)
+
+  DemoStackName:
+    Type: String
+    Default: hooks-demo
+    Description: Only this stack invokes the Hook - keeps the demo away from the rest of the account
+
+# ---------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  StackPolicyLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: stack-policy-hook-function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ParseTemplates
+                Effect: Allow
+                Action:
+                  - cloudformation:GetTemplateSummary
+                Resource: "*" # Called with TemplateBody, not a stack
+              - Sid: WriteLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt StackPolicyLambdaLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-stackpolicy-lambda-execution-role"
+
+  # The Hook assumes this role to invoke the function (no Lambda resource policy needed)
+  LambdaHookExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: hooks.cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-hook-function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt StackPolicyLambdaFunction.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-lambdahook-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  StackPolicyLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/stack-policy-hook"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Function
+  # ---------------------------------------------------------------
+
+  StackPolicyLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda Hook - stack template and change set policy checks
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 25 # The Hook waits up to 30 seconds
+      MemorySize: 128
+      Role: !GetAtt StackPolicyLambdaExecutionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref StackPolicyLambdaLogGroup
+      Code:
+        ZipFile: |
+          import json, urllib.request
+          import boto3
+
+          cfn = boto3.client("cloudformation")
+
+          REQUIRED_PARAMETERS = ("Application", "Environment")
+          DENIED_RESOURCE_TYPES = {"AWS::IAM::User"}
+          PROTECTED_RESOURCE_TYPES = {
+              "AWS::DynamoDB::Table", "AWS::S3::Bucket",
+              "AWS::RDS::DBInstance", "AWS::RDS::DBCluster", "AWS::EFS::FileSystem",
+          }
+          TEMPLATE_BODY_MAX_BYTES = 51200  # GetTemplateSummary limit
+
+          def annotation(name, failed, message, fix=None, severity=None):
+              result = {"annotationName": name, "status": "FAILED" if failed else "PASSED", "statusMessage": message}
+              if failed:
+                  result.update(remediationMessage=fix, severityLevel=severity)
+              return result
+
+          def check_template(template):
+              if len(template.encode()) > TEMPLATE_BODY_MAX_BYTES:
+                  return [{"annotationName": "TemplateChecks", "status": "SKIPPED",
+                           "statusMessage": "Template larger than 51,200 bytes; not evaluated."}]
+              # Parses YAML (short-form intrinsics too) or JSON on the CloudFormation side
+              summary = cfn.get_template_summary(TemplateBody=template)
+              parameters = {p["ParameterKey"] for p in summary.get("Parameters", [])}
+              missing = [p for p in REQUIRED_PARAMETERS if p not in parameters]
+              denied = sorted(DENIED_RESOURCE_TYPES & set(summary.get("ResourceTypes", [])))
+              return [
+                  annotation("TemplateHasDescription", not summary.get("Description"),
+                             "Template has no Description." if not summary.get("Description") else "Description present.",
+                             "Add a one-line Description to the template.", "LOW"),
+                  annotation("TemplateHasApplicationEnvironmentParameters", bool(missing),
+                             f"Missing parameters: {', '.join(missing)}." if missing else "Application and Environment present.",
+                             "Add Application and Environment to Parameters.", "MEDIUM"),
+                  annotation("TemplateHasNoIamUsers", bool(denied),
+                             f"Denied resource types: {', '.join(denied)}." if denied else "No IAM users.",
+                             "Use an IAM role, or IAM Identity Center for people.", "HIGH"),
+              ]
+
+          def check_changes(changes):
+              # changedResources[].beforeContext / afterContext are JSON strings (numbers and booleans as strings)
+              deletes = [f"{c['logicalResourceId']} ({c['resourceType']})" for c in changes
+                         if c.get("action") == "DELETE" and c.get("resourceType") in PROTECTED_RESOURCE_TYPES]
+              return [annotation("ChangeSetHasNoStatefulDeletes", bool(deletes),
+                                 f"Change set deletes: {', '.join(deletes)}." if deletes else "No stateful resources deleted.",
+                                 "Keep the resource in the template, or exclude the stack from the Hook for a planned removal.",
+                                 "CRITICAL")]
+
+          def handler(event, context):
+              request = event.get("requestData", {})
+              target_type = request.get("targetType")  # STACK | CHANGE_SET (RESOURCE / CLOUD_CONTROL: resource type)
+              response = {"clientRequestToken": event.get("clientRequestToken")}
+              try:
+                  with urllib.request.urlopen(request["payload"], timeout=10) as r:  # S3 presigned URL
+                      payload = json.loads(r.read())
+                  template = payload.get("template")  # Empty on delete-stack
+                  annotations = check_template(template) if template else []
+                  if target_type == "CHANGE_SET":
+                      annotations += check_changes(payload.get("changedResources") or [])
+              except Exception as error:
+                  print(f"InternalFailure: {error!r}")
+                  return {**response, "hookStatus": "FAILED", "errorCode": "InternalFailure",
+                          "message": f"Could not evaluate the {target_type}: {error}"[:4096]}
+
+              print(json.dumps({"targetType": target_type, "targetLogicalId": request.get("targetLogicalId"),
+                                "annotations": annotations}))
+              failed = [a["statusMessage"] for a in annotations if a["status"] == "FAILED"]
+              if failed:
+                  return {**response, "hookStatus": "FAILED", "errorCode": "NonCompliant",
+                          "message": " ".join(failed)[:4096], "annotations": annotations}
+              return {**response, "hookStatus": "SUCCESS", "message": f"{target_type} is compliant.",
+                      "annotations": annotations}
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-stackpolicy-lambda"
+
+  # ---------------------------------------------------------------
+  # Hook
+  # ---------------------------------------------------------------
+
+  StackPolicyLambdaHook:
+    Type: AWS::CloudFormation::LambdaHook
+    Properties:
+      Alias: !Sub "${Application}${Environment}::Lambda::StackPolicy" # Name1::Name2::Name3, must not start with AWS. Immutable
+      LambdaFunction: !GetAtt StackPolicyLambdaFunction.Arn # Unqualified, or with a version / alias suffix
+      ExecutionRole: !GetAtt LambdaHookExecutionRole.Arn
+      HookStatus: ENABLED
+      FailureMode: !Ref HookFailureMode # Applies when the function returns hookStatus FAILED
+      TargetOperations: # STACK | RESOURCE | CHANGE_SET | CLOUD_CONTROL
+        - STACK
+        - CHANGE_SET
+      TargetFilters:
+        Actions: # CHANGE_SET uses only CREATE. Delete-stack payload has no template, so DELETE is not targeted
+          - CREATE
+          - UPDATE
+      StackFilters:
+        FilteringCriteria: ALL # ALL = every filter must match; ANY = at least one
+        StackNames:
+          Include: # Max 50. Exclude is also available; StackRoles filters by the stack's IAM role
+            - !Ref DemoStackName
+
+# ---------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------
+Outputs:
+
+  LambdaHookArn:
+    Value: !Ref StackPolicyLambdaHook
+
+  StackPolicyLambdaFunctionName:
+    Value: !Ref StackPolicyLambdaFunction

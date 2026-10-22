@@ -1,0 +1,9 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Deploy as stack "hooks-demo". Fails all three template rules:
+# no Description, no Application/Environment parameters, an AWS::IAM::User.
+
+Resources:
+
+  DemoUser:
+    Type: AWS::IAM::User

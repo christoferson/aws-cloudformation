@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation Guard Hook - evaluates whole stack templates and change sets with Guard rules stored in S3
+
+# -----------------------------------------------------------------------------
+# Summary
+#   AWS::CloudFormation::GuardHook with TargetOperations STACK + CHANGE_SET
+#   (stack-level Hooks, November 2024):
+#     STACK       runs before create-stack / update-stack and gets the whole
+#                 proposed template + the previous template
+#     CHANGE_SET  runs on create-change-set and gets the template + the list of
+#                 resource changes (Changes)
+#   Rules: hook-rules.guard (upload after the stack is created, see README)
+#     - template has a Description
+#     - template declares Application and Environment parameters
+#     - template has no AWS::IAM::User
+#     - change set deletes no DynamoDB table / S3 bucket / RDS / EFS
+#   The Hook only runs for the stack named DemoStackName (StackFilters Include).
+#
+# Resources created
+#   - S3 bucket for the Guard rules (versioned), S3 bucket for the Guard output reports
+#   - IAM execution role for the Hook (hooks.cloudformation.amazonaws.com)
+#   - AWS::CloudFormation::GuardHook (activated private Hook in this account + Region)
+#
+# Pre-requisites
+#   - Permissions to activate Hooks (cloudformation:ActivateType, SetTypeConfiguration, ...)
+#
+# Assumptions
+#   - The Hook downloads the rules from S3 on every invocation, so the rules can
+#     be uploaded or changed after the stack exists. Until hook-rules.guard is
+#     uploaded, invocations for DemoStackName fail
+#   - Alias segments allow letters and digits only (no hyphens in Application)
+#   - CHANGE_SET targets only support the CREATE action (= create-change-set)
+#   - Hooks have a 30-second timeout per invocation and 3 retries
+#   - Empty both buckets before deleting this stack
+# -----------------------------------------------------------------------------
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Hook"
+        Parameters:
+          - HookFailureMode
+          - DemoStackName
+
+# ---------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    AllowedPattern: "^[a-z0-9]{2,16}$" # Hook alias (letters, digits) + bucket names (lowercase)
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  HookFailureMode:
+    Type: String
+    Default: FAIL
+    AllowedValues: [FAIL, WARN]
+    Description: FAIL blocks the operation; WARN lets it continue with a warning (start with WARN on real accounts)
+
+  DemoStackName:
+    Type: String
+    Default: hooks-demo
+    Description: Only this stack invokes the Hook - keeps the demo away from the rest of the account
+
+# ---------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------
+  # S3 Buckets
+  # ---------------------------------------------------------------
+
+  GuardRulesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Application}-${Environment}-guard-rules-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Enabled # Lets RuleLocation.VersionId pin a rules version
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guard-rules-bucket"
+
+  GuardReportBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Application}-${Environment}-guard-reports-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-reports
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guard-reports-bucket"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  GuardHookExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: hooks.cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: guard-hook
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadGuardRules
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource:
+                  - !GetAtt GuardRulesBucket.Arn
+                  - !Sub "${GuardRulesBucket.Arn}/*"
+              - Sid: WriteGuardReports
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "${GuardReportBucket.Arn}/*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardhook-execution-role"
+
+  # ---------------------------------------------------------------
+  # Hook
+  # ---------------------------------------------------------------
+
+  StackPolicyGuardHook:
+    Type: AWS::CloudFormation::GuardHook
+    Properties:
+      Alias: !Sub "${Application}${Environment}::Guard::StackPolicy" # Name1::Name2::Name3, must not start with AWS. Immutable
+      ExecutionRole: !GetAtt GuardHookExecutionRole.Arn # Immutable
+      HookStatus: ENABLED
+      FailureMode: !Ref HookFailureMode
+      TargetOperations: # STACK | RESOURCE | CHANGE_SET | CLOUD_CONTROL
+        - STACK
+        - CHANGE_SET
+      TargetFilters:
+        Actions: # CHANGE_SET uses only CREATE. Delete-stack input has no template, so DELETE is not targeted
+          - CREATE
+          - UPDATE
+      StackFilters:
+        FilteringCriteria: ALL # ALL = every filter must match; ANY = at least one
+        StackNames:
+          Include: # Max 50. Exclude is also available; StackRoles filters by the stack's IAM role
+            - !Ref DemoStackName
+      RuleLocation:
+        Uri: !Sub "s3://${GuardRulesBucket}/hook-rules.guard" # .guard, .zip or .tar.gz
+        # VersionId: <object version>   # Pin a version so an S3 change can't alter the rules
+      LogBucket: !Ref GuardReportBucket # Guard output report (Violation / Fix messages)
+      # Options:
+      #   InputParams: { Uri: s3://.../params.yaml }   # Input parameter files for the rules (.yaml/.json/.zip/.tar.gz)
+
+# ---------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------
+Outputs:
+
+  GuardHookArn:
+    Value: !Ref StackPolicyGuardHook
+
+  GuardRulesBucketName:
+    Description: aws s3 cp hook-rules.guard s3://<this>/hook-rules.guard
+    Value: !Ref GuardRulesBucket
+
+  GuardReportBucketName:
+    Value: !Ref GuardReportBucket

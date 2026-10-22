@@ -1,0 +1,69 @@
+#
+# Guard rules for a Guard Hook with TargetOperations STACK + CHANGE_SET.
+#
+# Input for STACK and CHANGE_SET targets: the proposed template at the root
+# (Resources, Parameters, Description, ...) plus HookContext and Previous.
+# CHANGE_SET input also has Changes: [{ logicalResourceId, resourceType,
+# action, lineNumber, beforeContext, afterContext }].
+# Delete-stack input has no template, so the "when Resources exists" rules skip.
+#
+# Local test of the template rules (template = root, same as the Hook input):
+#   cfn-guard validate --rules hook-rules.guard --data ../test-templates/hooks-demo-noncompliant.yaml
+#
+
+# ---------------------------------------------------------------
+# Template rules (STACK, and the template inside a CHANGE_SET)
+# Whole-template checks: not possible with a RESOURCE target
+# ---------------------------------------------------------------
+
+rule TEMPLATE_HAS_DESCRIPTION when Resources exists {
+    Description exists
+    <<
+        Violation: The template has no Description.
+        Fix: Add a one-line Description to the template.
+    >>
+}
+
+rule TEMPLATE_HAS_APPLICATION_ENVIRONMENT_PARAMETERS when Resources exists {
+    Parameters.Application exists
+    Parameters.Environment exists
+    <<
+        Violation: The template must declare the Application and Environment parameters.
+        Fix: Add Application and Environment to Parameters.
+    >>
+}
+
+let iam_users = Resources.*[ Type == 'AWS::IAM::User' ]
+
+rule TEMPLATE_HAS_NO_IAM_USERS when %iam_users !empty {
+    %iam_users empty
+    <<
+        Violation: AWS::IAM::User creates long-term credentials.
+        Fix: Use an IAM role, or IAM Identity Center for people.
+    >>
+}
+
+# ---------------------------------------------------------------
+# Change set rules (CHANGE_SET only: Changes exists)
+# ---------------------------------------------------------------
+
+let protected_resource_types = [
+    'AWS::DynamoDB::Table',
+    'AWS::S3::Bucket',
+    'AWS::RDS::DBInstance',
+    'AWS::RDS::DBCluster',
+    'AWS::EFS::FileSystem'
+]
+
+let stateful_deletes = Changes[
+    action == 'DELETE'
+    resourceType in %protected_resource_types
+]
+
+rule CHANGE_SET_HAS_NO_STATEFUL_DELETES when %stateful_deletes !empty {
+    %stateful_deletes empty
+    <<
+        Violation: The change set deletes a stateful resource (DynamoDB table, S3 bucket, RDS, EFS).
+        Fix: Keep the resource in the template, or exclude the stack from the Hook for a planned removal.
+    >>
+}
