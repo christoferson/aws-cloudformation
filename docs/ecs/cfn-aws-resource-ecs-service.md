@@ -1,5 +1,5 @@
 > Source: https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html
-> Downloaded: 2026-10-18
+> Downloaded: 2026-10-21
 
 # AWS::ECS::Service
 
@@ -55,6 +55,7 @@ To declare this entity in your CloudFormation template, use the following syntax
       "EnableECSManagedTags" : Boolean,
       "EnableExecuteCommand" : Boolean,
       "ForceNewDeployment" : ForceNewDeployment,
+      "GatewayConnectors" : [ GatewayConnector, ... ],
       "HealthCheckGracePeriodSeconds" : Integer,
       "LaunchType" : String,
       "LoadBalancers" : [ LoadBalancer, ... ],
@@ -96,6 +97,8 @@ Properties:
   EnableExecuteCommand: Boolean
   ForceNewDeployment: 
     ForceNewDeployment
+  GatewayConnectors: 
+    - GatewayConnector
   HealthCheckGracePeriodSeconds: Integer
   LaunchType: String
   LoadBalancers: 
@@ -237,6 +240,20 @@ Determines whether to force a new deployment of the service. By default, deploym
 Required: No
 
 Type: ForceNewDeployment
+
+Update requires: No interruption
+
+**`GatewayConnectors`** 
+
+The gateway connectors that attach the service to a gateway ingress path. You can specify at most one gateway connector. 
+
+Required: No
+
+Type: Array of GatewayConnector
+
+Minimum: `0`
+
+Maximum: `1`
 
 Update requires: No interruption
 

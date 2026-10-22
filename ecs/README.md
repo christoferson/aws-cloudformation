@@ -68,6 +68,12 @@ Fargate + ALB rolling update with circuit breaker threshold / reset, early succe
 
 [ecs-rolling-deployment/README.md](ecs-rolling-deployment/README.md)
 
+### ECS - Gateway (managed shared ALB ingress)
+
+ECS Gateway + cluster association + two Fargate services with gateway connectors. ECS provisions the shared ALB, HTTPS listener, certificates and an `https://<id>.ecs.<region>.on.aws` hostname per service.
+
+[ecs-gateway/README.md](ecs-gateway/README.md)
+
 -------------------------------------
 
 ## EC2

@@ -1,0 +1,400 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Amazon ECS Gateway - managed shared ALB ingress (host-based routing, HTTPS hostname per service) for two Fargate services
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Amazon ECS Gateway (October 2026): ECS provisions and manages the
+#   Application Load Balancers, listeners, target groups, security groups,
+#   ACM certificates and DNS hostnames for the services that opt in.
+#     Platform team:    Gateway (HostSharedAlb) + GatewayClusterAssociations
+#     Application team: Service.GatewayConnectors (PortName = named container port)
+#   Each connected service gets its own HTTPS hostname
+#   https://<unique-id>.ecs.<region>.on.aws on a shared ALB (up to 25 services
+#   per ALB). Nothing is provisioned until the first service connects.
+#
+# Resources created
+#   - IAM infrastructure role for the gateway (AmazonECSInfrastructureRoleForGatewayHostSharedALB)
+#   - AWS::ECS::Gateway, AWS::ECS::GatewayClusterAssociations
+#   - ECS Cluster, Task Definition (named port "web"), 2 Services (web, api)
+#   - Security group for the tasks, task execution role, log group
+#   Managed by ECS (not in this stack): ALB, HTTPS:443 listener, ALB security
+#   group, per-service listener rules, target groups, certificates, hostnames,
+#   service security groups - tagged AmazonECSManaged=true + aws:ecs:gateway-arn
+#
+# Pre-requisites
+#   - A VPC with at least 2 public subnets (IGW route) in different AZs
+#
+# Assumptions
+#   - HTTPS on 443 only; services must use awsvpc. Gateway and cluster in the same
+#     account; services connect only to gateways in the same VPC that cover every
+#     AZ the service runs in (here both use VpcSubnetList)
+#   - Immutable after creation: GatewayName, scheme, port, protocol, subnets,
+#     IP address type -> changing them replaces the gateway (new hostnames)
+#   - Gateway deletion protection is ON by default in ECS and is propagated to
+#     the managed ALBs; this demo sets it from GatewayDeletionProtection (false)
+#     so the stack can be deleted
+#   - The task security group must allow the load balancer on the container port
+#     (troubleshooting guide). The managed ALB security group ID is unknown before
+#     the first service connects, so this template allows the VPC CIDR
+#   - IpAddressType ipv4 (ECS default is dualstack, which needs IPv6 subnets)
+#   - Service URLs are not CloudFormation outputs; read them with
+#     describe-service-revisions (see README)
+#   - Gateway connector health check changes replace the target group and fail
+#     with the ROLLING strategy; set them on first connect (as here)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Application"
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: "Network"
+        Parameters:
+          - VpcId
+          - VpcCidr
+          - VpcSubnetList
+      - Label:
+          default: "Gateway (platform team)"
+        Parameters:
+          - GatewayScheme
+          - GatewayTestTrafficHeaderName
+          - GatewayTestTrafficHeaderValue
+          - GatewayMaxAlbCount
+          - GatewayDeletionProtection
+      - Label:
+          default: "Services (application team)"
+        Parameters:
+          - ContainerImageName
+          - ContainerPort
+          - TaskCpu
+          - TaskMemory
+          - TaskDesiredCount
+
+# ---------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the gateway and the services (must be the same VPC)
+
+  VpcCidr:
+    Type: String
+    Default: "10.0.0.0/16"
+    Description: CIDR of VpcId - lets the managed ALBs reach the container port
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets (min 2 AZs) used by both the gateway ALBs and the tasks
+
+  GatewayScheme:
+    Type: String
+    Default: internet-facing
+    AllowedValues: [internet-facing, internal]
+    Description: internet-facing = access type PUBLIC, internal = PRIVATE (immutable)
+
+  GatewayTestTrafficHeaderName:
+    Type: String
+    Default: x-ecs-test-traffic
+    Description: Header that routes test traffic to the new revision during blue/green, linear or canary deployments
+
+  GatewayTestTrafficHeaderValue:
+    Type: String
+    Default: "true"
+    Description: Value of the test traffic header
+
+  GatewayMaxAlbCount:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 200
+    Description: Maximum ALBs the gateway may create (ECS default 10, max 200; 25 services per ALB)
+
+  GatewayDeletionProtection:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: ECS default is true (also set on the managed ALBs); false lets the demo stack be deleted
+
+  ContainerImageName:
+    Type: String
+    Default: "public.ecr.aws/docker/library/nginx:1.27"
+    Description: Container image URI (must answer HTTP 200 on / for the default health check)
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: Port the container listens on
+
+  TaskCpu:
+    Type: Number
+    Default: 256
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+    Description: Task CPU units (256 = 0.25 vCPU)
+
+  TaskMemory:
+    Type: Number
+    Default: 512
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+    Description: Task memory in MiB (must be a valid Fargate combination with TaskCpu)
+
+  TaskDesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Tasks per service
+
+# ---------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  ContainerServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: ECS Gateway services - container port from inside the VPC (gateway ALBs live in this VPC)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          CidrIp: !Ref VpcCidr # The managed ALB security group ID is not known in advance
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containerservice-securitygroup"
+
+  # ---------------------------------------------------------------
+  # Gateway (platform team)
+  # ---------------------------------------------------------------
+
+  # ECS assumes this role to create and manage the ALBs, listeners, target groups,
+  # security groups and ACM certificates. Application teams need no ELB permissions.
+  GatewayInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECSInfrastructureRoleForGatewayHostSharedALB
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-gateway-infrastructure-role"
+
+  ContainerGateway:
+    Type: AWS::ECS::Gateway
+    Properties:
+      GatewayName: !Sub "${Application}-${Environment}-gateway" # Unique per account + Region; immutable
+      InfrastructureRoleArn: !GetAtt GatewayInfrastructureRole.Arn
+      DeletionProtection: !Ref GatewayDeletionProtection
+      PropagateTags: GATEWAY # Copy these tags to the managed ALBs etc. (NONE = keep them on the gateway)
+      Configuration:
+        HostSharedAlb: # Shared ALBs + host-based routing; one hostname per service
+          Scheme: !Ref GatewayScheme # Immutable. Decides AccessType PUBLIC / PRIVATE
+          NetworkConfiguration:
+            Subnets: !Ref VpcSubnetList # Immutable. Decide which VPC + AZs the gateway can serve (default: default VPC)
+            IpAddressType: ipv4 # Immutable. ipv4 | dualstack (default) | dualstack-without-public-ipv4
+            # InboundSecurityGroup: sg-...   # Own the ALB inbound rules instead of ECS
+          MaxAlbCount: !Ref GatewayMaxAlbCount
+          HttpDesync: defensive # monitor | defensive (default) | strictest
+          TestTrafficRules: # Used by BLUE_GREEN / LINEAR / CANARY service deployments
+            Header:
+              Name: !Ref GatewayTestTrafficHeaderName
+              Values:
+                - !Ref GatewayTestTrafficHeaderValue
+          # WebACLArn: arn:aws:wafv2:...      # Attach a WAF web ACL to every managed ALB
+          # AccessLogs: { Destination: { S3: { Bucket: <bucket>, Prefix: gateway } } }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-gateway"
+
+  ContainerCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${Application}-${Environment}-gateway"
+      CapacityProviders:
+        - FARGATE
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-containercluster"
+
+  # Makes the gateway available to the services in this cluster. Associating alone
+  # routes nothing; services connect on their next deployment.
+  # Max 5 gateways per cluster, 10,000 clusters per gateway.
+  GatewayClusterAssociation:
+    Type: AWS::ECS::GatewayClusterAssociations
+    Properties:
+      Gateway: !GetAtt ContainerGateway.Arn
+      Cluster: !Ref ContainerCluster
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  ContainerTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-task-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  ContainerTaskLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/ecs/${Application}/${Environment}/gateway"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Task Definition
+  # ---------------------------------------------------------------
+
+  ContainerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${Application}-${Environment}-gateway-task"
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc # Required to connect to a gateway
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ContainerTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub "${Application}-${Environment}-container"
+          Image: !Ref ContainerImageName
+          Essential: true
+          PortMappings:
+            - Name: web # GatewayConnector.PortName refers to this name; ECS takes port + protocol from it
+              ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+              AppProtocol: http
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ContainerTaskLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-container-taskdefinition"
+
+  # ---------------------------------------------------------------
+  # Services (application team) - both share one managed ALB
+  # ---------------------------------------------------------------
+
+  WebContainerService:
+    Type: AWS::ECS::Service
+    DependsOn: GatewayClusterAssociation # The association must be ACTIVE or the request is rejected
+    Properties:
+      Cluster: !Ref ContainerCluster
+      ServiceName: !Sub "${Application}-${Environment}-web"
+      LaunchType: FARGATE
+      DesiredCount: !Ref TaskDesiredCount
+      TaskDefinition: !Ref ContainerTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ContainerServiceSecurityGroup
+          Subnets: !Ref VpcSubnetList # The gateway must cover every AZ used here
+      # Opt in. Connects to EVERY compatible gateway on the cluster (no gateway name/ARN here):
+      # same VPC + covers all service AZs + matches Filters.AccessTypes (omitted = PUBLIC and PRIVATE)
+      GatewayConnectors: # At most one connector per service
+        - PortName: web
+          HealthCheck: # Defaults: HTTP GET / every 30s, 5s timeout, expects 200. Set on first connect
+            HealthCheckPath: /
+            HealthCheckIntervalSeconds: 15
+            HealthyThresholdCount: 2
+            Matcher:
+              HttpCode: "200"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-web-containerservice"
+
+  ApiContainerService:
+    Type: AWS::ECS::Service
+    DependsOn: GatewayClusterAssociation
+    Properties:
+      Cluster: !Ref ContainerCluster
+      ServiceName: !Sub "${Application}-${Environment}-api"
+      LaunchType: FARGATE
+      DesiredCount: !Ref TaskDesiredCount
+      TaskDefinition: !Ref ContainerTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ContainerServiceSecurityGroup
+          Subnets: !Ref VpcSubnetList
+      GatewayConnectors:
+        - PortName: web
+          # Accept only gateways with this access type. Use [PRIVATE] for a service that must never
+          # be internet-reachable: without the filter, a public gateway associated later would expose it
+          Filters:
+            AccessTypes:
+              - !GetAtt ContainerGateway.AccessType # PUBLIC or PRIVATE, derived from GatewayScheme
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-api-containerservice"
+
+# ---------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------
+Outputs:
+
+  ContainerGatewayArn:
+    Value: !GetAtt ContainerGateway.Arn
+
+  ContainerGatewayAccessType:
+    Value: !GetAtt ContainerGateway.AccessType
+
+  ContainerClusterName:
+    Value: !Ref ContainerCluster
+
+  WebContainerServiceName:
+    Description: Service URL - see README (describe-service-revisions ... gatewayConnections[].serviceUrl)
+    Value: !GetAtt WebContainerService.Name
+
+  ApiContainerServiceName:
+    Value: !GetAtt ApiContainerService.Name

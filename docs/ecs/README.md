@@ -1,7 +1,7 @@
 
 ## ECS - Local Documentation Snapshot
 
-Offline copies of the AWS docs used to build the templates in [ecs/ecs-blue-green](../../ecs/ecs-blue-green/), [ecs/ecs-linear-canary](../../ecs/ecs-linear-canary/) and [ecs/ecs-rolling-deployment](../../ecs/ecs-rolling-deployment/), converted from HTML to Markdown.
+Offline copies of the AWS docs used to build the templates in [ecs/ecs-blue-green](../../ecs/ecs-blue-green/), [ecs/ecs-linear-canary](../../ecs/ecs-linear-canary/), [ecs/ecs-rolling-deployment](../../ecs/ecs-rolling-deployment/) and [ecs/ecs-gateway](../../ecs/ecs-gateway/), converted from HTML to Markdown.
 Downloaded 2026-10-18 (blue/green) and 2026-10-20 (everything else). Each file starts with its source URL. Check the live page if something looks off.
 
 ### Developer Guide — Blue/Green
@@ -57,6 +57,35 @@ Downloaded 2026-10-18 (blue/green) and 2026-10-20 (everything else). Each file s
 | [ug-deployment-circuit-breaker.md](ug-deployment-circuit-breaker.md) | Circuit breaker: threshold, resetOnHealthyTask, rollback |
 | [ug-container-restart-policy.md](ug-container-restart-policy.md) | Container restart policies |
 | [ug-service-rebalancing.md](ug-service-rebalancing.md) | Availability Zone rebalancing (on by default since 2025-09-05) |
+
+### Developer Guide — ECS Gateway
+
+Used by [ecs/ecs-gateway](../../ecs/ecs-gateway/). Downloaded 2026-10-21.
+
+| File | Topic |
+|---|---|
+| [ug-gateway-overview.md](ug-gateway-overview.md) | Concepts (gateway, association, connector, route), shared vs service-specific infrastructure, quotas, constraints |
+| [ug-gateway-managing.md](ug-gateway-managing.md) | Infrastructure role, create / update / delete a gateway, inbound security group, WAF, access logs, MaxAlbCount, associations |
+| [ug-gateway-connect-service.md](ug-gateway-connect-service.md) | Gateway connector, access type filters, health checks, test traffic, service URL, disconnect |
+| [ug-gateway-troubleshooting.md](ug-gateway-troubleshooting.md) | Connection, provisioning and update failures |
+
+| File | Type |
+|---|---|
+| [cfn-aws-resource-ecs-gateway.md](cfn-aws-resource-ecs-gateway.md) | `AWS::ECS::Gateway` |
+| [cfn-aws-properties-ecs-gateway-gatewayconfiguration.md](cfn-aws-properties-ecs-gateway-gatewayconfiguration.md) | GatewayConfiguration |
+| [cfn-aws-properties-ecs-gateway-hostsharedalbconfiguration.md](cfn-aws-properties-ecs-gateway-hostsharedalbconfiguration.md) | HostSharedAlbConfiguration |
+| [cfn-aws-properties-ecs-gateway-gatewayelbnetworkconfiguration.md](cfn-aws-properties-ecs-gateway-gatewayelbnetworkconfiguration.md) | GatewayElbNetworkConfiguration |
+| [cfn-aws-properties-ecs-gateway-gatewayalbtesttrafficrules.md](cfn-aws-properties-ecs-gateway-gatewayalbtesttrafficrules.md) | GatewayAlbTestTrafficRules |
+| [cfn-aws-properties-ecs-gateway-gatewaytesttrafficheader.md](cfn-aws-properties-ecs-gateway-gatewaytesttrafficheader.md) | GatewayTestTrafficHeader |
+| [cfn-aws-properties-ecs-gateway-gatewayelbaccesslogconfiguration.md](cfn-aws-properties-ecs-gateway-gatewayelbaccesslogconfiguration.md) | GatewayElbAccessLogConfiguration |
+| [cfn-aws-properties-ecs-gateway-gatewayelbaccesslogdestination.md](cfn-aws-properties-ecs-gateway-gatewayelbaccesslogdestination.md) | GatewayElbAccessLogDestination |
+| [cfn-aws-properties-ecs-gateway-gatewayelbaccesslogs3destination.md](cfn-aws-properties-ecs-gateway-gatewayelbaccesslogs3destination.md) | GatewayElbAccessLogS3Destination |
+| [cfn-aws-properties-ecs-gateway-tag.md](cfn-aws-properties-ecs-gateway-tag.md) | Tag |
+| [cfn-aws-resource-ecs-gatewayclusterassociations.md](cfn-aws-resource-ecs-gatewayclusterassociations.md) | `AWS::ECS::GatewayClusterAssociations` |
+| [cfn-aws-properties-ecs-service-gatewayconnector.md](cfn-aws-properties-ecs-service-gatewayconnector.md) | Service GatewayConnector |
+| [cfn-aws-properties-ecs-service-gatewayconnectorfilters.md](cfn-aws-properties-ecs-service-gatewayconnectorfilters.md) | GatewayConnectorFilters (AccessTypes) |
+| [cfn-aws-properties-ecs-service-gatewayconnectorhealthcheck.md](cfn-aws-properties-ecs-service-gatewayconnectorhealthcheck.md) | GatewayConnectorHealthCheck |
+| [cfn-aws-properties-ecs-service-gatewayconnectorhealthcheckmatcher.md](cfn-aws-properties-ecs-service-gatewayconnectorhealthcheckmatcher.md) | GatewayConnectorHealthCheckMatcher |
 
 ### Developer Guide — Other features reviewed (no template yet)
 
