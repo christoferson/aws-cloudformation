@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations RCP - OU boundary (production resources only usable by principals in the Production or Security OU)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   The identity perimeter trusts the WHOLE organization: a role in a dev
+#   sandbox account can still read a production bucket if someone adds it to
+#   the bucket policy. Attached to the Production OU, this RCP denies any
+#   principal outside ProductionOrgPath / SecurityOrgPath, so
+#     dev / sandbox roles -> production S3, KMS, SQS, Secrets Manager,
+#     DynamoDB, CloudWatch Logs, ECR                                    denied
+#     production workloads, security / audit tooling                    allowed
+#     AWS service principals (CloudTrail, Config, ...)                  allowed
+#   Based on "Deny access to resources in an organizational unit, except for
+#   principals from the same or specified organizational unit"
+#   (aws-samples/resource-control-policy-examples).
+#
+# Resources created
+#   - AWS::Organizations::Policy (RESOURCE_CONTROL_POLICY), attached to ProductionOuId
+#
+# Pre-requisites
+#   - Deploy in the management account (or a delegated administrator for policies)
+#   - RCPs enabled on the root (one-time; CloudFormation cannot do it)
+#   - Org paths: aws organizations list-parents / list-organizational-units-for-parent
+#     Path format: o-<org>/r-<root>/ou-<ou>/   (trailing slash; nested OUs append ou-.../)
+#
+# Assumptions
+#   - Principals OUTSIDE the organization have no aws:PrincipalOrgPaths, so this
+#     statement does not deny them - use it together with the identity perimeter RCP
+#   - Cross-OU shared services (CI/CD account deploying to prod, central backup)
+#     must sit in an allowed OU or be added to the path list
+#   - Maximum RCP size is 5,120 characters
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Organization
+        Parameters:
+          - ProductionOuId
+          - ProductionOrgPath
+          - SecurityOrgPath
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  ProductionOuId:
+    Type: String
+    AllowedPattern: "^ou-[0-9a-z]{4,32}-[a-z0-9]{8,32}$"
+    Description: The Production OU (ou-...-...) - the policy is attached here
+
+  ProductionOrgPath:
+    Type: String
+    AllowedPattern: "^o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}/(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32}/)+$"
+    Description: Org path of the Production OU, e.g. o-a1b2c3d4e5/r-ab12/ou-ab12-11111111/
+
+  SecurityOrgPath:
+    Type: String
+    AllowedPattern: "^o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}/(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32}/)+$"
+    Description: Org path of the Security OU (audit, log archive, security tooling), e.g. o-a1b2c3d4e5/r-ab12/ou-ab12-22222222/
+
+Resources:
+
+  ProductionBoundaryResourceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-rcp-production-boundary"
+      Description: Production resources only for principals in the Production or Security OU
+      Type: RESOURCE_CONTROL_POLICY
+      TargetIds:
+        - !Ref ProductionOuId
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnforceProductionOuBoundary
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - "s3:*"
+              - "kms:*"
+              - "sqs:*"
+              - "secretsmanager:*"
+              - "dynamodb:*"
+              - "logs:*"
+              - "ecr:*"
+            Resource: "*"
+            Condition:
+              ForAllValues:StringLikeIfExists: # The resource is in the Production OU (guard if attached elsewhere)
+                aws:ResourceOrgPaths: !Sub "${ProductionOrgPath}*"
+              ForAllValues:StringNotLikeIfExists: # ... and the caller is in neither allowed OU
+                aws:PrincipalOrgPaths:
+                  - !Sub "${ProductionOrgPath}*"
+                  - !Sub "${SecurityOrgPath}*"
+              BoolIfExists:
+                aws:PrincipalIsAWSService: "false"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rcp-production-boundary"
+
+Outputs:
+
+  ProductionBoundaryResourceControlPolicyId:
+    Value: !GetAtt ProductionBoundaryResourceControlPolicy.Id

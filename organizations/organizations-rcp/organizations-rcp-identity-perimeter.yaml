@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations RCP - identity perimeter (only our organization, trusted partners and our GitHub org can use our resources)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   "Only trusted identities can access my resources" - enforced on the resource
+#   side, so it holds even when a bucket / key / queue / secret policy is wrong.
+#     EnforceOrgIdentities              a principal outside the organization is denied,
+#                                       even if a resource policy grants it access
+#                                       (e.g. a bucket policy with Principal "*" or
+#                                       a developer's personal account)
+#     EnforceConfusedDeputyProtection   an AWS service (CloudTrail, Config, SNS, ...)
+#                                       may act on our resources only on behalf of
+#                                       our organization, not another customer's
+#     EnforceTrustedGitHubRepositories  a role that trusts GitHub Actions OIDC can
+#                                       be assumed only from repositories of OUR
+#                                       GitHub organization
+#   Exceptions: TrustedExternalAccountIds (partners, ELB log delivery account) and
+#   resources tagged dp:exclude:identity=true (e.g. a public website bucket).
+#   Based on identity_perimeter_rcp.json (aws-samples/data-perimeter-policy-examples).
+#
+# Resources created
+#   - AWS::Organizations::Policy (RESOURCE_CONTROL_POLICY), attached to AttachToTargetId
+#
+# Pre-requisites
+#   - Deploy in the management account (or a delegated administrator for policies)
+#   - RCPs enabled on the root (one-time; CloudFormation cannot do it):
+#       aws organizations enable-policy-type --root-id r-xxxx --policy-type RESOURCE_CONTROL_POLICY
+#
+# Assumptions
+#   - Attach to a test account or OU first; review IAM Access Analyzer external
+#     access findings and CloudTrail AccessDenied events before widening
+#   - RCPs don't affect the management account's resources or service-linked roles
+#   - Only services on the RCP supported list are affected (all used here are)
+#   - Maximum RCP size is 5,120 characters
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Organization
+        Parameters:
+          - OrganizationId
+          - AttachToTargetId
+      - Label:
+          default: Trusted identities outside the organization
+        Parameters:
+          - TrustedExternalAccountIds
+          - GitHubOrganization
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  OrganizationId:
+    Type: String
+    AllowedPattern: "^o-[a-z0-9]{10,32}$"
+    Description: "This organization's ID (o-...): aws organizations describe-organization --query Organization.Id"
+
+  AttachToTargetId:
+    Type: String
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: "WHERE the policy applies: root (r-...) = every account, OU (ou-...-...) = accounts in that OU, or one account ID. Start with a test account"
+
+  TrustedExternalAccountIds:
+    Type: CommaDelimitedList
+    Description: "Accounts outside the organization allowed in - partner / SaaS vendor accounts, the ELB access-log account of your Region. None? Enter any account ID of your organization (no effect)"
+
+  GitHubOrganization:
+    Type: String
+    AllowedPattern: "^[A-Za-z0-9-]+$"
+    Description: Your GitHub organization (or user) name - only its repositories can assume roles through GitHub Actions OIDC
+
+Resources:
+
+  IdentityPerimeterResourceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-rcp-identity-perimeter"
+      Description: Only our organization, trusted accounts and our GitHub org can use our resources
+      Type: RESOURCE_CONTROL_POLICY # Update requires replacement
+      TargetIds: # Root, OU or account IDs this policy is attached to
+        - !Ref AttachToTargetId
+      Content: # JSON object (not a string) so drift detection works
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnforceOrgIdentities
+            Effect: Deny # Customer managed RCPs must Deny
+            Principal: "*" # Required in RCPs and must be "*"; narrow with Condition
+            Action:
+              - "s3:*"
+              - "sqs:*"
+              - "kms:*"
+              - "secretsmanager:*"
+              - "dynamodb:*"
+              - "ecr:*"
+              - "logs:*"
+              # STS: not AssumeRoleWithSAML / WithWebIdentity - federated users have no aws:PrincipalOrgID
+              - "sts:AssumeRole"
+              - "sts:DecodeAuthorizationMessage"
+              - "sts:GetAccessKeyInfo"
+              - "sts:GetFederationToken"
+              - "sts:GetServiceBearerToken"
+              - "sts:GetSessionToken"
+              - "sts:SetContext"
+            Resource: "*"
+            Condition: # Every condition must match to deny
+              StringNotEqualsIfExists: # Deny unless ANY of these is true; anonymous callers have no PrincipalOrgID -> denied
+                aws:PrincipalOrgID: !Ref OrganizationId
+                aws:PrincipalAccount: !Ref TrustedExternalAccountIds
+                aws:ResourceTag/dp:exclude:identity: "true" # Opt a resource out, e.g. public website bucket
+              BoolIfExists:
+                aws:PrincipalIsAWSService: "false" # Service principals are handled by the next statement
+
+          - Sid: EnforceConfusedDeputyProtection
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - "s3:*"
+              - "sqs:*"
+              - "kms:*"
+              - "secretsmanager:*"
+              - "dynamodb:*"
+              - "ecr:*"
+              - "logs:*"
+              - "sts:*"
+            Resource: "*"
+            Condition:
+              StringNotEqualsIfExists:
+                aws:SourceOrgID: !Ref OrganizationId # The resource the service acts for must be ours
+                aws:SourceAccount: !Ref TrustedExternalAccountIds
+                aws:ResourceTag/dp:exclude:identity: "true"
+              "Null":
+                aws:SourceAccount: "false" # Only when the service sends a source (CloudTrail, Config, SNS, ...)
+              Bool:
+                aws:PrincipalIsAWSService: "true" # Only service principals (cloudtrail.amazonaws.com, ...)
+
+          - Sid: EnforceTrustedGitHubRepositories
+            Effect: Deny
+            Principal: "*"
+            Action: sts:AssumeRoleWithWebIdentity
+            Resource: "*"
+            Condition:
+              StringNotLikeIfExists: # sub = "repo:<org>/<repo>:ref:..." etc.
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrganization}/*"
+              "Null":
+                token.actions.githubusercontent.com:sub: "false" # Only GitHub Actions tokens
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rcp-identity-perimeter"
+
+Outputs:
+
+  IdentityPerimeterResourceControlPolicyId:
+    Value: !GetAtt IdentityPerimeterResourceControlPolicy.Id
+
+  IdentityPerimeterResourceControlPolicyArn:
+    Value: !GetAtt IdentityPerimeterResourceControlPolicy.Arn

@@ -49,7 +49,7 @@ SCPs using the IAM policy elements now supported in both Allow and Deny statemen
 
 ### Organization - Resource Control Policies (RCP)
 
-Data perimeter RCP: deny non-TLS access and access by principals outside the organization, while letting AWS service principals through.
+Data perimeter RCPs: identity perimeter (org, partners, confused deputy, GitHub OIDC), network perimeter (org VPC endpoints / corporate IPs), S3 and KMS guardrails (TLS 1.2, SSE-C, presigned URL age, key deletion) and a Production OU boundary.
 
 [organizations-rcp/README.md](organizations-rcp/README.md)
 

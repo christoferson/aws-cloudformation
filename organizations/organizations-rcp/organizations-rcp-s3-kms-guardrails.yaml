@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations RCP - S3 and KMS guardrails (TLS 1.2+, no SSE-C ransomware, short presigned URLs, protected KMS keys)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Service-specific guardrails on every bucket and key in the target, whatever
+#   the bucket policy or key policy says:
+#     EnforceSecureTransport       no plain HTTP to S3 / SQS / KMS / Secrets Manager / STS
+#     EnforceS3TlsVersion          no TLS 1.0 / 1.1 to S3
+#     DenyS3SseCUploads            no uploads encrypted with SSE-C (a customer-
+#                                  provided key AWS doesn't keep). Attackers with
+#                                  stolen credentials use it to re-encrypt objects
+#                                  with a key only they hold, then demand ransom
+#     LimitS3PresignedUrlAge       no presigned URL (or any S3 signature) older
+#                                  than MaxSignatureAgeMilliseconds - a leaked link
+#                                  stops working
+#     ProtectKmsKeysFromDeletion   only KmsAdministratorRoleName may schedule key
+#                                  deletion or delete key material / aliases.
+#                                  Deleting a KMS key makes all data under it
+#                                  unreadable for good
+#   Based on aws-samples/resource-control-policy-examples (Service-specific-controls,
+#   Restrict-resource-access-patterns).
+#
+# Resources created
+#   - AWS::Organizations::Policy (RESOURCE_CONTROL_POLICY), attached to AttachToTargetId
+#
+# Pre-requisites
+#   - Deploy in the management account (or a delegated administrator for policies)
+#   - RCPs enabled on the root (one-time; CloudFormation cannot do it)
+#   - A role named KmsAdministratorRoleName in the accounts that manage keys
+#
+# Assumptions
+#   - Check that no workload uses SSE-C, TLS < 1.2 or long-lived presigned URLs
+#     (S3 server access logs / CloudTrail data events) before attaching
+#   - aws:SecureTransport is always in the request context; "false" = not TLS
+#   - Maximum RCP size is 5,120 characters
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Organization
+        Parameters:
+          - AttachToTargetId
+      - Label:
+          default: Guardrails
+        Parameters:
+          - MaxSignatureAgeMilliseconds
+          - KmsAdministratorRoleName
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  AttachToTargetId:
+    Type: String
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: "WHERE the policy applies: root (r-...) = every account, OU (ou-...-...) = accounts in that OU, or one account ID. Start with a test account"
+
+  MaxSignatureAgeMilliseconds:
+    Type: Number
+    Default: 3600000
+    MinValue: 60000
+    Description: Maximum age of an S3 request signature (3600000 = 1 hour). Presigned URLs older than this are denied
+
+  KmsAdministratorRoleName:
+    Type: String
+    Default: KmsAdministrator
+    Description: IAM role name (in any account of the target) allowed to delete KMS keys
+
+Resources:
+
+  S3KmsGuardrailsResourceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-rcp-s3-kms-guardrails"
+      Description: TLS 1.2+, no SSE-C uploads, short presigned URLs, protected KMS key deletion
+      Type: RESOURCE_CONTROL_POLICY
+      TargetIds:
+        - !Ref AttachToTargetId
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnforceSecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - "s3:*"
+              - "sqs:*"
+              - "kms:*"
+              - "secretsmanager:*"
+              - "sts:*"
+            Resource: "*"
+            Condition:
+              BoolIfExists:
+                aws:SecureTransport: "false"
+
+          - Sid: EnforceS3TlsVersion
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: "*"
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: "1.2"
+
+          - Sid: DenyS3SseCUploads
+            Effect: Deny
+            Principal: "*"
+            Action: s3:PutObject
+            Resource: "*"
+            Condition:
+              "Null":
+                s3:x-amz-server-side-encryption-customer-algorithm: "false" # Header present = SSE-C
+
+          - Sid: LimitS3PresignedUrlAge
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: "*"
+            Condition:
+              NumericGreaterThan:
+                s3:signatureAge: !Ref MaxSignatureAgeMilliseconds
+
+          - Sid: ProtectKmsKeysFromDeletion
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - kms:ScheduleKeyDeletion
+              - kms:DeleteAlias
+              - kms:DeleteCustomKeyStore
+              - kms:DeleteImportedKeyMaterial
+            Resource: "*"
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Sub "arn:aws:iam::*:role/${KmsAdministratorRoleName}"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rcp-s3-kms-guardrails"
+
+Outputs:
+
+  S3KmsGuardrailsResourceControlPolicyId:
+    Value: !GetAtt S3KmsGuardrailsResourceControlPolicy.Id

@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations RCP - network perimeter (our data only from our VPC endpoints or corporate IP ranges)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   "My resources can only be accessed from expected networks". Leaked access
+#   keys or a stolen session used from an attacker's laptop are denied, even
+#   though the credentials are valid. Expected networks:
+#     - VPC endpoints owned by any account in the organization (aws:VpceOrgID)
+#     - Corporate egress IP ranges (aws:SourceIp) - office, VPN, NAT gateways
+#     - AWS services calling with your credentials (aws:ViaAWSService, e.g. S3
+#       calling KMS for SSE-KMS, Athena reading S3) or as service principals
+#     - The EC2 infrastructure role (EBS volume decryption)
+#   Phased rollout: the Deny only applies to principals TAGGED
+#   dp:include:network=true (start with human roles, then workloads).
+#   Principals tagged dp:exclude:network=true and resources tagged
+#   dp:exclude:network=true are exempt.
+#   Based on network_perimeter_vpceorgid_rcp.json (aws-samples/data-perimeter-policy-examples).
+#
+# Resources created
+#   - AWS::Organizations::Policy (RESOURCE_CONTROL_POLICY), attached to AttachToTargetId
+#
+# Pre-requisites
+#   - Deploy in the management account (or a delegated administrator for policies)
+#   - RCPs enabled on the root (one-time; CloudFormation cannot do it)
+#   - Workloads reach S3 / KMS / SQS / ECR through VPC endpoints in an
+#     organization account, or egress through the CorporateCidrList ranges
+#
+# Assumptions
+#   - aws:VpceOrgID is only sent by supported services; cognito-identity, ecr,
+#     kms, s3 and sqs support it and RCPs. For others (dynamodb, logs,
+#     secretsmanager, sts) AWS uses aws:SourceVpc + aws:RequestedRegion instead
+#     (network_perimeter_sourcevpc_rcp.json)
+#   - Pair with the identity perimeter RCP: without it, an external account
+#     could tag its own role dp:exclude:network=true
+#   - Maximum RCP size is 5,120 characters
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Organization
+        Parameters:
+          - OrganizationId
+          - AttachToTargetId
+      - Label:
+          default: Expected networks
+        Parameters:
+          - CorporateCidrList
+          - TrustedExternalAccountIds
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  OrganizationId:
+    Type: String
+    AllowedPattern: "^o-[a-z0-9]{10,32}$"
+    Description: "This organization's ID (o-...): aws organizations describe-organization --query Organization.Id"
+
+  AttachToTargetId:
+    Type: String
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: "WHERE the policy applies: root (r-...) = every account, OU (ou-...-...) = accounts in that OU, or one account ID. Start with a test account"
+
+  CorporateCidrList:
+    Type: CommaDelimitedList
+    Description: Public egress IP ranges of your offices, VPN and NAT gateways (e.g. 203.0.113.0/24,198.51.100.10/32)
+
+  TrustedExternalAccountIds:
+    Type: CommaDelimitedList
+    Description: "Accounts whose own credentials call from AWS networks - e.g. the ELB access-log account of your Region. None? Enter any account ID of your organization"
+
+Resources:
+
+  NetworkPerimeterResourceControlPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-rcp-network-perimeter"
+      Description: Our resources only from organization VPC endpoints or corporate IP ranges
+      Type: RESOURCE_CONTROL_POLICY
+      TargetIds:
+        - !Ref AttachToTargetId
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnforceNetworkPerimeterVpceOrgID
+            Effect: Deny
+            Principal: "*"
+            Action: # Services that support aws:VpceOrgID and RCPs
+              - "s3:*"
+              - "kms:*"
+              - "sqs:*"
+              - "ecr:*"
+              - "cognito-identity:*"
+            Resource: "*"
+            Condition: # Deny only if ALL of these match
+              NotIpAddressIfExists:
+                aws:SourceIp: !Ref CorporateCidrList # Not from a corporate IP ...
+              StringNotEqualsIfExists: # ... and none of these exceptions apply
+                aws:VpceOrgID: !Ref OrganizationId # Not through one of our VPC endpoints
+                aws:PrincipalAccount: !Ref TrustedExternalAccountIds
+                aws:PrincipalTag/dp:exclude:network: "true"
+                aws:ResourceTag/dp:exclude:network: "true"
+              BoolIfExists:
+                aws:PrincipalIsAWSService: "false" # Not a service principal (CloudTrail -> S3)
+                aws:ViaAWSService: "false" # Not a service using our credentials (S3 -> KMS)
+              ArnNotLikeIfExists:
+                aws:PrincipalArn: "arn:aws:iam::*:role/aws:ec2-infrastructure" # EBS decryption by EC2
+              StringEquals:
+                aws:PrincipalTag/dp:include:network: "true" # Opt-in: only tagged principals are restricted
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rcp-network-perimeter"
+
+Outputs:
+
+  NetworkPerimeterResourceControlPolicyId:
+    Value: !GetAtt NetworkPerimeterResourceControlPolicy.Id

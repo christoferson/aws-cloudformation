@@ -34,6 +34,15 @@ Downloaded 2026-10-20. Each file starts with its source URL. Check the live page
 | [ug-orgs_manage_policies_ec2.md](ug-orgs_manage_policies_ec2.md) | EC2 policies: custom error messages, account status report |
 | [ug-orgs_manage_policies_ec2_syntax.md](ug-orgs_manage_policies_ec2_syntax.md) | EC2 policy syntax for each attribute (VPC BPA, serial console, AMI / snapshot BPA, IMDS, VPC encryption) |
 
+### AWS example policies (GitHub, downloaded 2026-10-22)
+
+Raw copies of the AWS sample repositories that the RCP and SCP examples pages point to. These are the basis for the RCP templates.
+
+| Folder | Source | Contents |
+|---|---|---|
+| [github/data-perimeter-policy-examples](github/data-perimeter-policy-examples/README.md) | https://github.com/aws-samples/data-perimeter-policy-examples | Identity / resource / network perimeter concepts, `dp:*` tag convention, RCPs (`identity_perimeter_rcp.json`, `network_perimeter_*_rcp.json`, `data_perimeter_governance_rcp.json`) and their rationale, plus S3 / STS / KMS service guidance |
+| [github/resource-control-policy-examples](github/resource-control-policy-examples/README.md) | https://github.com/aws-samples/resource-control-policy-examples | Service-specific RCPs (S3 TLS version, SSE-C, presigned URL age, KMS deletion, ...), OIDC providers (GitHub Actions), intra-organization (OU) boundaries |
+
 ### IAM User Guide
 
 | File | Topic |
