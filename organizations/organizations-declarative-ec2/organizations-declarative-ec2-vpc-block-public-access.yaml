@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations declarative policy (EC2) - VPC Block Public Access for a hub-and-spoke network (workloads fully blocked, network account ingress-blocked with exclusions)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   VPC Block Public Access (BPA) cuts the internet gateway path for every VPC in
+#   the account and Region, whatever the route tables and security groups say.
+#   Hub-and-spoke layout:
+#     Workloads OU   block_bidirectional, exclusions disabled, locked for children
+#                    -> no internet gateway traffic at all (no public IPs, no
+#                       internet-facing ALB / NLB, no NAT gateway). Workloads reach
+#                       the internet only through the Transit Gateway to the
+#                       central egress VPC - Transit Gateway, Site-to-Site VPN,
+#                       Client VPN and Verified Access are not affected by BPA
+#     Network OU     block_ingress, exclusions enabled
+#                    -> central NAT gateway egress keeps working (outbound only);
+#                       the network team creates exclusions for the subnets of the
+#                       public ALBs / Network Firewall endpoints that must be reachable
+#
+# Resources created
+#   - 2 x AWS::Organizations::Policy (DECLARATIVE_POLICY_EC2)
+#
+# Pre-requisites
+#   - Deploy in the management account (or a delegated administrator for policies)
+#   - Declarative EC2 policies enabled + trusted access for EC2 (one-time):
+#       aws organizations enable-policy-type --root-id r-xxxx --policy-type DECLARATIVE_POLICY_EC2
+#       aws organizations enable-aws-service-access --service-principal ec2.amazonaws.com
+#
+# Assumptions
+#   - Applies in every Region of the target accounts. Existing internet-facing
+#     resources in Workloads accounts STOP working when attached - check with the
+#     account status report and Network Access Analyzer first
+#   - Exclusions are created in the VPC owner account (create-vpc-block-public-access-exclusion);
+#     the policy only decides whether that is allowed
+#   - In shared VPC subnets the owner's BPA mode applies to participants too
+#   - Ingress-only mode is not supported in Local Zones without NAT / egress-only gateways
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Targets
+        Parameters:
+          - WorkloadsOuId
+          - NetworkOuId
+          - ExceptionMessage
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  WorkloadsOuId:
+    Type: String
+    AllowedPattern: "^(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: Workloads OU (ou-...-...) or a test account ID - fully blocked
+
+  NetworkOuId:
+    Type: String
+    AllowedPattern: "^(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: OU (or account) of the central network / egress / ingress account
+
+  ExceptionMessage:
+    Type: String
+    Default: "Direct internet access is blocked by VPC Block Public Access. Route through the central network account (Transit Gateway)."
+    Description: Error text returned when a call conflicts with the policy (no personal information)
+
+Resources:
+
+  WorkloadsVpcBlockPublicAccessPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-ec2-vpc-bpa-workloads"
+      Description: Workloads - block all internet gateway traffic, no exclusions
+      Type: DECLARATIVE_POLICY_EC2
+      TargetIds:
+        - !Ref WorkloadsOuId
+      Content:
+        ec2_attributes:
+          exception_message:
+            "@@assign": !Ref ExceptionMessage
+          vpc_block_public_access:
+            internet_gateway_block:
+              mode:
+                "@@operators_allowed_for_child_policies": ["@@none"] # Child OU / account policies can't change it
+                "@@assign": block_bidirectional # off | block_ingress | block_bidirectional
+              exclusions_allowed:
+                "@@operators_allowed_for_child_policies": ["@@none"]
+                "@@assign": disabled # Accounts can't create exclusions
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ec2-vpc-bpa-workloads"
+
+  NetworkVpcBlockPublicAccessPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-ec2-vpc-bpa-network"
+      Description: Network account - block inbound internet traffic, exclusions for public entry points
+      Type: DECLARATIVE_POLICY_EC2
+      TargetIds:
+        - !Ref NetworkOuId
+      Content:
+        ec2_attributes:
+          exception_message:
+            "@@assign": !Ref ExceptionMessage
+          vpc_block_public_access:
+            internet_gateway_block:
+              mode:
+                "@@assign": block_ingress # NAT / egress-only gateway traffic still allowed
+              exclusions_allowed:
+                "@@assign": enabled # Network team excludes the public ALB / firewall subnets
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ec2-vpc-bpa-network"
+
+Outputs:
+
+  WorkloadsVpcBlockPublicAccessPolicyId:
+    Value: !GetAtt WorkloadsVpcBlockPublicAccessPolicy.Id
+
+  NetworkVpcBlockPublicAccessPolicyId:
+    Value: !GetAtt NetworkVpcBlockPublicAccessPolicy.Id

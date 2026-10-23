@@ -32,7 +32,25 @@ Downloaded 2026-10-20. Each file starts with its source URL. Check the live page
 |---|---|
 | [ug-orgs_manage_policies_declarative.md](ug-orgs_manage_policies_declarative.md) | Management policy types overview |
 | [ug-orgs_manage_policies_ec2.md](ug-orgs_manage_policies_ec2.md) | EC2 policies: custom error messages, account status report |
-| [ug-orgs_manage_policies_ec2_syntax.md](ug-orgs_manage_policies_ec2_syntax.md) | EC2 policy syntax for each attribute (VPC BPA, serial console, AMI / snapshot BPA, IMDS, VPC encryption) |
+| [ug-orgs_manage_policies_ec2_syntax.md](ug-orgs_manage_policies_ec2_syntax.md) | EC2 policy syntax for each attribute (VPC BPA, serial console, AMI / snapshot BPA, Allowed AMIs, IMDS, VPC encryption) |
+| [ug-orgs_manage_policies-ec2_getting-started.md](ug-orgs_manage_policies-ec2_getting-started.md) | Enable EC2 policies + trusted access (2026-10-23) |
+| [ug-orgs_manage_policies_ec2_best-practices.md](ug-orgs_manage_policies_ec2_best-practices.md) | Status report first, start small, `DescribeEffectivePolicy` (2026-10-23) |
+| [ug-orgs_manage_policies_ec2_status-report.md](ug-orgs_manage_policies_ec2_status-report.md) | Account status report: prerequisites, permissions, CLI (2026-10-23) |
+| [ug-orgs_manage_policies_inheritance_mgmt.md](ug-orgs_manage_policies_inheritance_mgmt.md) | Understanding policy inheritance (2026-10-23) |
+| [ug-syntax-inheritance.md](ug-syntax-inheritance.md) | Declarative policy types and effective policies (2026-10-23) |
+| [ug-policy-operators.md](ug-policy-operators.md) | `@@assign`, `@@append`, `@@remove`, `@@operators_allowed_for_child_policies` (2026-10-23) |
+| [ug-inheritance-examples.md](ug-inheritance-examples.md) | Merge examples: overwrite, append, remove, lock children (2026-10-23) |
+
+### EC2 and VPC User Guides (downloaded 2026-10-23)
+
+| File | Topic |
+|---|---|
+| [ec2-allowed-amis.md](ec2-allowed-amis.md) | Allowed AMIs: criteria (AND / OR), providers and aliases, audit mode, limits, best practices |
+| [ec2-manage-settings-allowed-amis.md](ec2-manage-settings-allowed-amis.md) | Manage Allowed AMIs settings, find instances launched from non-allowed AMIs |
+| [vpc-security-vpc-bpa.md](vpc-security-vpc-bpa.md) | VPC Block Public Access: modes, exclusions |
+| [vpc-security-vpc-bpa-basics.md](vpc-security-vpc-bpa-basics.md) | What BPA blocks (IGW, NAT, internet-facing ELB, ...) and doesn't (TGW, VPN, ...), exclusions, CLI |
+| [vpc-security-vpc-bpa-assess-impact-main.md](vpc-security-vpc-bpa-assess-impact-main.md) | Assess impact (Network Access Analyzer, flow logs) |
+| [vpc-security-vpc-bpa-example.md](vpc-security-vpc-bpa-example.md) | Advanced example walkthrough |
 
 ### AWS example policies (GitHub, downloaded 2026-10-22)
 

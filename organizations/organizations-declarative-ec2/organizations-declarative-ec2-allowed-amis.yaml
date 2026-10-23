@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Organizations declarative policy (EC2) - Allowed AMIs (golden AMIs, current Amazon AMIs, Backup vault restores), Sandbox OU in audit mode
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Allowed AMIs: in the target accounts, only AMIs matching the criteria are
+#   visible (DescribeImages, console, AMI catalog) and launchable. Any criterion
+#   may match (OR); every filter inside one criterion must match (AND):
+#     criteria_1  golden AMIs: from GoldenAmiAccountId AND named GoldenAmiNamePattern
+#                 AND created in the last 90 days (forces regular re-baking / patching)
+#     criteria_2  Amazon / verified provider AMIs that are not deprecated
+#                 (ECS, EKS and other AWS managed services launch Amazon AMIs)
+#     criteria_3  AMIs restored from AWS Backup logically air-gapped vaults
+#   AMIs owned by the account itself are always allowed.
+#   Two policies show OU inheritance:
+#     WorkloadsAllowedAmisPolicy -> WorkloadsTargetId   state enabled (blocks)
+#     SandboxAllowedAmisPolicy   -> SandboxOuId         state audit_mode (@@assign
+#                                                       overrides the inherited state;
+#                                                       launches allowed, AMIs flagged
+#                                                       ImageAllowed=false)
+#
+# Resources created
+#   - 2 x AWS::Organizations::Policy (DECLARATIVE_POLICY_EC2)
+#
+# Pre-requisites
+#   - Deploy in the management account (or a delegated administrator for policies)
+#   - Declarative EC2 policies enabled + trusted access for EC2 (one-time):
+#       aws organizations enable-policy-type --root-id r-xxxx --policy-type DECLARATIVE_POLICY_EC2
+#       aws organizations enable-aws-service-access --service-principal ec2.amazonaws.com
+#   - Golden AMIs shared from GoldenAmiAccountId to the target accounts
+#
+# Assumptions
+#   - Start with AllowedAmisState audit_mode and find non-compliant instances
+#     (describe-instance-image-metadata, Config rule ec2-instance-launched-with-allowed-ami)
+#   - Applies in every Region of the target accounts; account admins can no longer
+#     change the Allowed AMIs settings themselves
+#   - Already running instances keep running; the criteria apply to discovery and launches
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Targets
+        Parameters:
+          - WorkloadsTargetId
+          - SandboxOuId
+      - Label:
+          default: Allowed AMIs
+        Parameters:
+          - AllowedAmisState
+          - GoldenAmiAccountId
+          - GoldenAmiNamePattern
+          - ExceptionMessage
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  WorkloadsTargetId:
+    Type: String
+    AllowedPattern: "^(r-[0-9a-z]{4,32})|(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: "WHERE the policy applies: root (r-...), Workloads OU (ou-...-...) or one account ID. Start with a test account"
+
+  SandboxOuId:
+    Type: String
+    AllowedPattern: "^(\\d{12})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$"
+    Description: Sandbox OU (or account) below WorkloadsTargetId that only audits - e.g. ou-ab12-33333333
+
+  AllowedAmisState:
+    Type: String
+    Default: audit_mode
+    AllowedValues: [audit_mode, enabled, disabled]
+    Description: audit_mode = report only (start here); enabled = block discovery and launches of other AMIs
+
+  GoldenAmiAccountId:
+    Type: String
+    AllowedPattern: "^\\d{12}$"
+    Description: Account that builds and shares the golden AMIs (e.g. the EC2 Image Builder pipeline account)
+
+  GoldenAmiNamePattern:
+    Type: String
+    Default: "golden-*"
+    Description: AMI name pattern of the golden AMIs (wildcards * and ?)
+
+  ExceptionMessage:
+    Type: String
+    Default: "Only approved AMIs can be used. Use the latest golden AMI or request an exception via the platform team."
+    Description: Error text returned when a call conflicts with the policy (no personal information)
+
+Resources:
+
+  WorkloadsAllowedAmisPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-ec2-allowed-amis"
+      Description: Only golden AMIs, current Amazon AMIs and Backup vault restores
+      Type: DECLARATIVE_POLICY_EC2
+      TargetIds:
+        - !Ref WorkloadsTargetId
+      Content:
+        ec2_attributes:
+          exception_message:
+            "@@assign": !Ref ExceptionMessage
+          allowed_images_settings:
+            state:
+              "@@assign": !Ref AllowedAmisState # enabled | disabled | audit_mode
+            image_criteria: # criteria_1 .. criteria_10, OR between criteria
+              criteria_1: # Golden AMIs - all filters must match (AND)
+                allowed_image_providers:
+                  "@@assign":
+                    - !Ref GoldenAmiAccountId
+                image_names:
+                  "@@assign":
+                    - !Ref GoldenAmiNamePattern
+                creation_date_condition:
+                  maximum_days_since_created:
+                    "@@assign": 90 # Too short breaks launches when re-baking slips
+              criteria_2: # Amazon AMIs, needed by ECS / EKS / other managed services
+                allowed_image_providers:
+                  "@@assign":
+                    - amazon # Owner aliases: amazon | aws_marketplace | aws_backup_vault
+                deprecation_time_condition:
+                  maximum_days_since_deprecated:
+                    "@@assign": 0 # 0 = not deprecated
+              criteria_3: # Restores from logically air-gapped AWS Backup vaults
+                allowed_image_providers:
+                  "@@assign":
+                    - aws_backup_vault
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ec2-allowed-amis"
+
+  # Child policy: inherits the criteria from WorkloadsAllowedAmisPolicy and only
+  # overrides the state. The effective policy = parent merged with this one.
+  SandboxAllowedAmisPolicy:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub "${Application}-${Environment}-ec2-allowed-amis-sandbox"
+      Description: Sandbox - same criteria, audit mode only
+      Type: DECLARATIVE_POLICY_EC2
+      TargetIds:
+        - !Ref SandboxOuId
+      Content:
+        ec2_attributes:
+          allowed_images_settings:
+            state:
+              "@@assign": audit_mode # Overrides the inherited state
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-ec2-allowed-amis-sandbox"
+
+Outputs:
+
+  WorkloadsAllowedAmisPolicyId:
+    Value: !GetAtt WorkloadsAllowedAmisPolicy.Id
+
+  SandboxAllowedAmisPolicyId:
+    Value: !GetAtt SandboxAllowedAmisPolicy.Id

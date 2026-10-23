@@ -55,7 +55,7 @@ Data perimeter RCPs: identity perimeter (org, partners, confused deputy, GitHub 
 
 ### Organization - Declarative Policies for EC2
 
-`DECLARATIVE_POLICY_EC2` baseline: block new public AMI and snapshot sharing, disable the serial console, enforce IMDSv2.
+`DECLARATIVE_POLICY_EC2`: baseline (no new public AMI / snapshot sharing, serial console off, IMDSv2), Allowed AMIs (golden AMIs, current Amazon AMIs, Sandbox OU in audit mode) and VPC Block Public Access for a hub-and-spoke network.
 
 [organizations-declarative-ec2/README.md](organizations-declarative-ec2/README.md)
 
