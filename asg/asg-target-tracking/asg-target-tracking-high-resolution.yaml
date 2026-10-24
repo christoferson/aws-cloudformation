@@ -1,0 +1,350 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 Auto Scaling target tracking on a 10-second high-resolution CPU metric (CloudWatch agent) plus ALB requests per target, for a spiky API tier
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Spiky API behind an ALB. Two target tracking policies on one group:
+#     CpuHighResolutionTargetTrackingPolicy
+#       CloudWatch agent publishes cpu_usage_active every 10 s, rolled up per
+#       Auto Scaling group (aggregation_dimensions). Target tracking reads it with
+#       Period 10 (high-resolution, November 2024) -> reacts to a spike in tens
+#       of seconds instead of minutes
+#     RequestCountTargetTrackingPolicy
+#       predefined ALBRequestCountPerTarget (1-minute ALB metric)
+#   Auto Scaling scales OUT if ANY policy asks and IN only if ALL agree.
+#   Target tracking creates and tunes its own CloudWatch alarms and adapts to the
+#   workload's pattern - nothing to configure; don't edit those alarms.
+#
+# Resources created
+#   - Security groups, ALB, target group, listener
+#   - SSM parameter (CloudWatch agent config), instance role + profile, launch template
+#   - Auto Scaling group (default instance warmup, group metrics), 2 target tracking policies
+#
+# Pre-requisites
+#   - VPC with 2-3 public subnets in different Availability Zones
+#
+# Assumptions
+#   - Period must be 10, 30 or 60; the metric must be published at the same or a
+#     finer resolution, or target tracking sees gaps (INSUFFICIENT_DATA = no scaling)
+#   - High-resolution custom metrics and the high-resolution alarms target tracking
+#     creates are priced higher than standard ones
+#   - Throughput targets (requests per target) are per instance per MINUTE, also
+#     when the period is shorter
+#   - Demo: HTTP only, instances in public subnets with public IPs
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+      - Label:
+          default: Capacity
+        Parameters:
+          - InstanceImageId
+          - InstanceType
+          - MinSize
+          - MaxSize
+      - Label:
+          default: Target tracking
+        Parameters:
+          - CpuTargetValue
+          - CpuMetricPeriod
+          - RequestCountPerTargetValue
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the load balancer and the instances
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 2-3 public subnets in different Availability Zones
+
+  InstanceImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 AMI (public SSM parameter)
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  MinSize:
+    Type: Number
+    Default: 2
+    Description: Minimum instances
+
+  MaxSize:
+    Type: Number
+    Default: 10
+    Description: Maximum instances
+
+  CpuTargetValue:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    MaxValue: 100
+    Description: Average CPU (%) to keep - high enough for cost, with headroom for spikes
+
+  CpuMetricPeriod:
+    Type: Number
+    Default: 10
+    AllowedValues: [10, 30, 60]
+    Description: Seconds per data point target tracking evaluates (below 60 = high-resolution)
+
+  RequestCountPerTargetValue:
+    Type: Number
+    Default: 1000
+    Description: ALB requests per instance per minute to keep
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Load balancer - HTTP from the internet
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer-securitygroup"
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: API instances - HTTP from the load balancer only
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-instance-securitygroup"
+
+  # ---------------------------------------------------------------
+  # Load Balancer
+  # ---------------------------------------------------------------
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${Application}-${Environment}-api-alb"
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref VpcSubnetList
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer"
+
+  LoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-api-tg"
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-targetgroup"
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref LoadBalancerTargetGroup
+
+  # ---------------------------------------------------------------
+  # CloudWatch Agent
+  # ---------------------------------------------------------------
+
+  # Name must start with AmazonCloudWatch- for CloudWatchAgentServerPolicy (ssm:GetParameter)
+  CloudWatchAgentConfigParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "AmazonCloudWatch-${Application}-${Environment}-api-highres"
+      Type: String
+      Description: CloudWatch agent - CPU every 10 seconds, rolled up per Auto Scaling group
+      Value: !Sub |
+        {
+          "metrics": {
+            "namespace": "${Application}/${Environment}/HighResolution",
+            "append_dimensions": { "AutoScalingGroupName": "${!aws:AutoScalingGroupName}" },
+            "aggregation_dimensions": [ ["AutoScalingGroupName"] ],
+            "metrics_collected": {
+              "cpu": {
+                "measurement": [ "usage_active" ],
+                "totalcpu": true,
+                "metrics_collection_interval": 10
+              }
+            }
+          }
+        }
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy # PutMetricData, DescribeTags, ssm:GetParameter AmazonCloudWatch-*
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore # Run Command for the load test
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-instance-role"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  # ---------------------------------------------------------------
+  # Auto Scaling Group
+  # ---------------------------------------------------------------
+
+  ApiLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${Application}-${Environment}-api"
+      LaunchTemplateData:
+        ImageId: !Ref InstanceImageId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true # Demo: package install without a NAT gateway
+            Groups:
+              - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            dnf install -y httpd amazon-cloudwatch-agent
+            echo "ok from $(hostname)" > /var/www/html/index.html
+            systemctl enable --now httpd
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
+              -c ssm:${CloudWatchAgentConfigParameter}
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${Application}-${Environment}-api"
+
+  ApiAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${Application}-${Environment}-api"
+      VPCZoneIdentifier: !Ref VpcSubnetList
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ApiLaunchTemplate
+        Version: !GetAtt ApiLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      TargetGroupARNs:
+        - !Ref LoadBalancerTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 60
+      # New instances are left out of the aggregated metric until warmed up, so a
+      # booting instance's CPU doesn't trigger another scale-out. Used by all policies
+      DefaultInstanceWarmup: 60
+      MetricsCollection: # Group metrics (GroupDesiredCapacity, GroupInServiceInstances) to watch scaling
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-autoscalinggroup"
+          PropagateAtLaunch: false
+
+  # ---------------------------------------------------------------
+  # Target Tracking Policies
+  # ---------------------------------------------------------------
+
+  CpuHighResolutionTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref ApiAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        TargetValue: !Ref CpuTargetValue
+        CustomizedMetricSpecification:
+          Namespace: !Sub "${Application}/${Environment}/HighResolution"
+          MetricName: cpu_usage_active # Agent names it <section>_<measurement>
+          Dimensions: # Must match the published (aggregated) dimensions exactly
+            - Name: AutoScalingGroupName
+              Value: !Ref ApiAutoScalingGroup
+          Statistic: Average
+          Period: !Ref CpuMetricPeriod # 10 | 30 | 60; < 60 = high-resolution
+
+  RequestCountTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref ApiAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        TargetValue: !Ref RequestCountPerTargetValue # Per instance per minute
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Sub "${LoadBalancer.LoadBalancerFullName}/${LoadBalancerTargetGroup.TargetGroupFullName}"
+
+Outputs:
+
+  LoadBalancerDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+
+  ApiAutoScalingGroupName:
+    Value: !Ref ApiAutoScalingGroup

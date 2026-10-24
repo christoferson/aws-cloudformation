@@ -1,0 +1,302 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 Auto Scaling target tracking on SQS backlog per instance (metric math, no custom metric) for a queue worker fleet
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Queue workers (e.g. image resizing). Target tracking needs a metric that
+#   falls when instances are added; queue length alone doesn't, so the policy
+#   divides it by the in-service instances with metric math:
+#     m1  AWS/SQS ApproximateNumberOfMessagesVisible   Sum
+#     m2  AWS/AutoScaling GroupInServiceInstances      Average
+#     e1  m1 / m2   -> backlog per instance (ReturnData true)
+#   Target = acceptable backlog per instance
+#          = acceptable latency / average processing time per message
+#          = 60 s / 0.5 s = 120 messages (defaults)
+#
+# Resources created
+#   - SQS queue + dead-letter queue
+#   - Security group, instance role + profile, launch template
+#   - Auto Scaling group (group metrics enabled for GroupInServiceInstances)
+#   - Target tracking policy with metric math
+#
+# Pre-requisites
+#   - VPC with public subnets (or private subnets with a NAT gateway / VPC endpoints)
+#
+# Assumptions
+#   - SQS metrics are 1-minute, so Period stays 60 (high-resolution needs a metric
+#     published at that resolution; GroupInServiceInstances is 1-minute too)
+#   - MinSize is at least 1: with 0 instances m2 is 0 and m1 / m2 has no value
+#   - Workers delete a message only after processing; unfinished messages return
+#     to the queue after the visibility timeout when an instance is terminated
+#   - Demo worker: "processes" a message by sleeping ProcessingSeconds
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+      - Label:
+          default: Capacity
+        Parameters:
+          - InstanceImageId
+          - InstanceType
+          - MinSize
+          - MaxSize
+      - Label:
+          default: Target tracking
+        Parameters:
+          - AcceptableBacklogPerInstance
+          - ProcessingSeconds
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the workers
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets in different Availability Zones
+
+  InstanceImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 AMI (public SSM parameter)
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  MinSize:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Minimum workers (at least 1 - see Assumptions)
+
+  MaxSize:
+    Type: Number
+    Default: 10
+    Description: Maximum workers
+
+  AcceptableBacklogPerInstance:
+    Type: Number
+    Default: 120
+    Description: Target messages waiting per worker = acceptable latency (s) / processing time per message (s)
+
+  ProcessingSeconds:
+    Type: Number
+    Default: 0.5
+    Description: Demo worker - seconds spent per message
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Queues
+  # ---------------------------------------------------------------
+
+  WorkDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-work-dlq"
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-work-dlq"
+
+  WorkQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-work"
+      VisibilityTimeout: 60 # Longer than one message takes; returns work of terminated workers
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WorkDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-work-queue"
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Queue workers - outbound only
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-worker-securitygroup"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  WorkerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: consume-work-queue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt WorkQueue.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-worker-instance-role"
+
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref WorkerInstanceRole
+
+  # ---------------------------------------------------------------
+  # Auto Scaling Group
+  # ---------------------------------------------------------------
+
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${Application}-${Environment}-worker"
+      LaunchTemplateData:
+        ImageId: !Ref InstanceImageId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt WorkerInstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true # Demo: reach SQS without a NAT gateway / endpoint
+            Groups:
+              - !Ref WorkerSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            cat > /usr/local/bin/worker.sh <<'EOF'
+            #!/bin/bash
+            while true; do
+              for h in $(aws sqs receive-message --region ${AWS::Region} --queue-url ${WorkQueue} \
+                  --max-number-of-messages 10 --wait-time-seconds 20 \
+                  --query 'Messages[].ReceiptHandle' --output text); do
+                [ "$h" = "None" ] && continue
+                sleep ${ProcessingSeconds}   # the "work"
+                aws sqs delete-message --region ${AWS::Region} --queue-url ${WorkQueue} --receipt-handle "$h"
+              done
+            done
+            EOF
+            chmod +x /usr/local/bin/worker.sh
+            nohup /usr/local/bin/worker.sh >/var/log/worker.log 2>&1 &
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${Application}-${Environment}-worker"
+
+  WorkerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${Application}-${Environment}-worker"
+      VPCZoneIdentifier: !Ref VpcSubnetList
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DefaultInstanceWarmup: 60
+      MetricsCollection: # Required: m2 uses GroupInServiceInstances
+        - Granularity: 1Minute
+          Metrics:
+            - GroupInServiceInstances
+            - GroupDesiredCapacity
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-autoscalinggroup"
+          PropagateAtLaunch: false
+
+  # ---------------------------------------------------------------
+  # Target Tracking Policy
+  # ---------------------------------------------------------------
+
+  BacklogPerInstanceTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WorkerAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        TargetValue: !Ref AcceptableBacklogPerInstance
+        CustomizedMetricSpecification:
+          Metrics: # Metric math instead of publishing a custom metric
+            - Id: m1
+              Label: Messages waiting in the queue
+              MetricStat:
+                Metric:
+                  Namespace: AWS/SQS
+                  MetricName: ApproximateNumberOfMessagesVisible
+                  Dimensions:
+                    - Name: QueueName
+                      Value: !GetAtt WorkQueue.QueueName
+                Stat: Sum
+                Period: 60
+              ReturnData: false
+            - Id: m2
+              Label: In-service instances
+              MetricStat:
+                Metric:
+                  Namespace: AWS/AutoScaling
+                  MetricName: GroupInServiceInstances
+                  Dimensions:
+                    - Name: AutoScalingGroupName
+                      Value: !Ref WorkerAutoScalingGroup
+                Stat: Average
+                Period: 60
+              ReturnData: false
+            - Id: e1
+              Label: Backlog per instance
+              Expression: m1 / m2
+              ReturnData: true # Only the final expression returns data
+
+Outputs:
+
+  WorkQueueUrl:
+    Description: Send test messages here (see README)
+    Value: !Ref WorkQueue
+
+  WorkerAutoScalingGroupName:
+    Value: !Ref WorkerAutoScalingGroup
