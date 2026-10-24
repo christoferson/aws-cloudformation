@@ -1,0 +1,377 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ARC zonal shift and zonal autoshift for a cross-zone ALB and an EC2 Auto Scaling group (pre-scaled web tier, weekly practice runs with alarms)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   A web tier that survives the loss of one Availability Zone:
+#     ALB (cross-zone, always on for ALB)   zonal_shift.config.enabled = true
+#     Auto Scaling group (3 AZs)            AvailabilityZoneImpairmentPolicy.ZonalShiftEnabled
+#   During a zonal shift / autoshift away from AZ "a":
+#     ALB  removes its AZ-a IP from DNS and stops sending traffic to AZ-a targets
+#          (cross-zone enabled: blocked for ALL nodes, not only the AZ-a node)
+#     ASG  launches new capacity only in AZ-b / AZ-c, blocks scale-in, and
+#          (IgnoreUnhealthy) does not replace unhealthy instances in AZ-a
+#   Zonal autoshift (AWS starts the shift when its telemetry sees an AZ impairment)
+#   is enabled for both resources, with the required weekly 30-minute practice run:
+#     OutcomeAlarm   composite (5XX errors OR p99 latency) -> ALARM ends the run, outcome FAILED
+#     BlockingAlarm  healthy targets below InstanceCount   -> run not started / stopped
+#     BlockedWindows weekly release window - no practice runs then
+#
+# Resources created
+#   - Security groups (load balancer, instances), launch template, Auto Scaling group
+#   - ALB, target group, HTTP listener
+#   - CloudWatch alarms (5XX, latency, composite outcome, capacity blocking)
+#   - 2 x AWS::ARCZonalShift::ZonalAutoshiftConfiguration (ALB, Auto Scaling group)
+#
+# Pre-requisites
+#   - VPC with 3 public subnets in 3 different Availability Zones
+#
+# Assumptions
+#   - Static stability: InstanceCount must still serve peak load with one AZ gone
+#     (needed load 4 -> 6 instances = 2 per AZ, 4 left after a shift). Autoshift
+#     does not wait for scale-out
+#   - Practice runs REALLY shift traffic away from one AZ for ~30 minutes, weekly
+#   - Ending shifts manually: cancel the Auto Scaling group shift first, wait for
+#     balanced capacity, then cancel the load balancer shift
+#   - The ZonalAutoshiftConfiguration CloudFormation reference still lists only ALB
+#     and NLB; the ARC Developer Guide lists Auto Scaling groups as supported for
+#     zonal shift and zonal autoshift
+#   - Demo: HTTP only, instances in public subnets with public IPs
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - VpcSubnetList
+      - Label:
+          default: Capacity
+        Parameters:
+          - InstanceImageId
+          - InstanceType
+          - InstanceCount
+      - Label:
+          default: Zonal autoshift
+        Parameters:
+          - PracticeRunBlockedWindows
+          - Target5XXThreshold
+          - TargetResponseTimeP99Threshold
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the load balancer and the instances
+
+  VpcSubnetList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 3 public subnets in 3 different Availability Zones
+
+  InstanceImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 AMI (public SSM parameter)
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  InstanceCount:
+    Type: Number
+    Default: 6
+    MinValue: 3
+    Description: Pre-scaled instance count across 3 AZs (multiple of 3). Two AZs must carry the full load
+
+  PracticeRunBlockedWindows:
+    Type: CommaDelimitedList
+    Default: "WED:01:00-WED:03:00"
+    Description: "UTC windows with no practice runs, DAY:HH:MM-DAY:HH:MM, same start and end day (e.g. release window)"
+
+  Target5XXThreshold:
+    Type: Number
+    Default: 10
+    Description: Target 5XX responses per minute that mean the practice run hurts the application
+
+  TargetResponseTimeP99Threshold:
+    Type: Number
+    Default: 1
+    Description: p99 target response time in seconds that means the practice run hurts the application
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Load balancer - HTTP from the internet
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer-securitygroup"
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Web instances - HTTP from the load balancer only
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-instance-securitygroup"
+
+  # ---------------------------------------------------------------
+  # Load Balancer
+  # ---------------------------------------------------------------
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${Application}-${Environment}-zonal-alb"
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref VpcSubnetList
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      LoadBalancerAttributes:
+        - Key: zonal_shift.config.enabled # Registers the ALB as an ARC managed resource
+          Value: "true"
+        - Key: client_keep_alive.seconds # Default 3600. Shifts are DNS-based; open connections stay until clients reconnect
+          Value: "300"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-loadbalancer"
+
+  LoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${Application}-${Environment}-zonal-tg"
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-targetgroup"
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref LoadBalancerTargetGroup
+
+  # ---------------------------------------------------------------
+  # Auto Scaling Group
+  # ---------------------------------------------------------------
+
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${Application}-${Environment}-zonal-web"
+      LaunchTemplateData:
+        ImageId: !Ref InstanceImageId
+        InstanceType: !Ref InstanceType
+        MetadataOptions:
+          HttpTokens: required # IMDSv2
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true # Demo: package install without a NAT gateway
+            Groups:
+              - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            dnf install -y httpd
+            TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+            AZ=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+            ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+            echo "served by $ID in $AZ" > /var/www/html/index.html
+            systemctl enable --now httpd
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${Application}-${Environment}-zonal-web"
+
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${Application}-${Environment}-zonal-web"
+      VPCZoneIdentifier: !Ref VpcSubnetList
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref InstanceCount # Pre-scaled: autoshift does not wait for scale-out
+      MaxSize: !Ref InstanceCount
+      DesiredCapacity: !Ref InstanceCount
+      TargetGroupARNs:
+        - !Ref LoadBalancerTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      AvailabilityZoneImpairmentPolicy:
+        ZonalShiftEnabled: true # Registers the group as an ARC managed resource
+        ImpairedZoneHealthCheckBehavior: IgnoreUnhealthy # Pre-scaled: don't churn instances in the impaired AZ
+      InstanceMaintenancePolicy: # Launch the replacement before terminating (docs: min healthy 100)
+        MinHealthyPercentage: 100
+        MaxHealthyPercentage: 150
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-autoscalinggroup"
+          PropagateAtLaunch: false
+
+  # ---------------------------------------------------------------
+  # Practice Run Alarms
+  # ---------------------------------------------------------------
+
+  Target5XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Application}-${Environment}-zonal-target-5xx"
+      AlarmDescription: Targets return 5XX errors
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref Target5XXThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  TargetLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Application}-${Environment}-zonal-target-latency-p99"
+      AlarmDescription: p99 target response time too high
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      ExtendedStatistic: p99
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref TargetResponseTimeP99Threshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # A practice run configuration takes exactly 1 outcome alarm -> combine KPIs in a composite alarm
+  PracticeRunOutcomeAlarm:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: !Sub "${Application}-${Environment}-zonal-practice-run-outcome"
+      AlarmDescription: Application hurt while traffic is shifted away from one AZ
+      AlarmRule: !Sub "ALARM(\"${Target5XXAlarm}\") OR ALARM(\"${TargetLatencyAlarm}\")"
+
+  # Don't start (or stop) a practice run while capacity isn't fully in service (deployments, scaling)
+  PracticeRunBlockingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Application}-${Environment}-zonal-capacity-not-ready"
+      AlarmDescription: Fewer healthy targets than the pre-scaled InstanceCount
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt LoadBalancerTargetGroup.TargetGroupFullName
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: !Ref InstanceCount
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+
+  # ---------------------------------------------------------------
+  # Zonal Autoshift
+  # ---------------------------------------------------------------
+
+  LoadBalancerZonalAutoshiftConfiguration:
+    Type: AWS::ARCZonalShift::ZonalAutoshiftConfiguration
+    Properties:
+      ResourceIdentifier: !Ref LoadBalancer # ARN; Replacement on change
+      ZonalAutoshiftStatus: ENABLED # Only value; delete the resource to disable
+      PracticeRunConfiguration: # Required when autoshift is enabled
+        OutcomeAlarms: # Exactly 1
+          - Type: CLOUDWATCH
+            AlarmIdentifier: !GetAtt PracticeRunOutcomeAlarm.Arn
+        BlockingAlarms: # Max 1
+          - Type: CLOUDWATCH
+            AlarmIdentifier: !GetAtt PracticeRunBlockingAlarm.Arn
+        BlockedWindows: !Ref PracticeRunBlockedWindows
+        # BlockedDates: ["2026-12-24", "2026-12-31"]   # YYYY-MM-DD (UTC), e.g. peak sales days
+
+  AutoScalingGroupZonalAutoshiftConfiguration:
+    Type: AWS::ARCZonalShift::ZonalAutoshiftConfiguration
+    Properties:
+      ResourceIdentifier: !GetAtt WebAutoScalingGroup.AutoScalingGroupARN # ARN includes a generated ID
+      ZonalAutoshiftStatus: ENABLED
+      PracticeRunConfiguration:
+        OutcomeAlarms:
+          - Type: CLOUDWATCH
+            AlarmIdentifier: !GetAtt PracticeRunOutcomeAlarm.Arn
+        BlockingAlarms:
+          - Type: CLOUDWATCH
+            AlarmIdentifier: !GetAtt PracticeRunBlockingAlarm.Arn
+        BlockedWindows: !Ref PracticeRunBlockedWindows
+
+Outputs:
+
+  LoadBalancerDnsName:
+    Description: curl http://<this>/ shows the instance and AZ that served the request
+    Value: !GetAtt LoadBalancer.DNSName
+
+  LoadBalancerArn:
+    Description: Resource identifier for aws arc-zonal-shift start-zonal-shift
+    Value: !Ref LoadBalancer
+
+  WebAutoScalingGroupArn:
+    Description: Resource identifier for aws arc-zonal-shift start-zonal-shift
+    Value: !GetAtt WebAutoScalingGroup.AutoScalingGroupARN
