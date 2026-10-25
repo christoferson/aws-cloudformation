@@ -1,0 +1,160 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DynamoDB global table, multi-Region strong consistency (MRSC), on-demand - 2 replicas + 1 witness, RPO 0
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Account balances / inventory that must never be read stale in any Region.
+#   With MRSC a write is synchronously stored in at least one other Region before
+#   it succeeds, and a strongly consistent read in ANY replica returns the latest
+#   version: RPO 0, at the cost of higher write and read latency (cross-Region
+#   round trip).
+#     MultiRegionConsistency: STRONG    set at creation; can't be changed later
+#     2 replicas + GlobalTableWitnesses  exactly 3 Regions in total; the witness
+#                                        stores replicated data for quorum, but
+#                                        can't be read or written. A witness has
+#                                        no replicated write, storage or transfer
+#                                        charges - cheaper than a third replica
+#   Same pricing change as MREC: replicated writes cost the same as normal writes.
+#
+# Resources created
+#   - AWS::DynamoDB::GlobalTable (MRSC) - replica in the stack Region and
+#     SecondRegion, witness in WitnessRegion
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - MRSC Regions (any 3, any continent): us-east-1, us-east-2, us-west-2,
+#     ca-central-1, eu-west-1, eu-west-2, eu-west-3, eu-central-1, eu-north-1,
+#     eu-south-2, ap-northeast-1, ap-northeast-2, ap-northeast-3, ap-south-1,
+#     ap-southeast-1. Deploy the stack in one of them; SecondRegion and
+#     WitnessRegion are limited to the list (AllowedValues) and must differ from
+#     the stack Region and from each other
+#   - Not supported on MRSC: TTL, local secondary indexes, transactions
+#     (TransactWriteItems / TransactGetItems return an error). GSIs are supported
+#     (reads from a GSI are eventually consistent)
+#   - Concurrent writes to the same item from two Regions: one fails with
+#     ReplicatedWriteConflictException and can be retried
+#   - Replicas can't be added later and a single replica / the witness can't be
+#     removed; the table must be empty when it becomes MRSC
+#   - Streams are optional on MRSC (replication doesn't use them)
+#   - DeletionProtection defaults to false so the demo stack can be deleted
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Regions (3 MRSC Regions in total)
+        Parameters:
+          - SecondRegion
+          - WitnessRegion
+      - Label:
+          default: Cost guard and protection
+        Parameters:
+          - MaxWriteRequestUnits
+          - ReplicaMaxReadRequestUnits
+          - ReplicaDeletionProtection
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SecondRegion:
+    Type: String
+    Default: us-east-2
+    AllowedValues: [us-east-1, us-east-2, us-west-2, ca-central-1, eu-west-1, eu-west-2, eu-west-3, eu-central-1, eu-north-1, eu-south-2, ap-northeast-1, ap-northeast-2, ap-northeast-3, ap-south-1, ap-southeast-1]
+    Description: Second full replica (read and write)
+
+  WitnessRegion:
+    Type: String
+    Default: us-west-2
+    AllowedValues: [us-east-1, us-east-2, us-west-2, ca-central-1, eu-west-1, eu-west-2, eu-west-3, eu-central-1, eu-north-1, eu-south-2, ap-northeast-1, ap-northeast-2, ap-northeast-3, ap-south-1, ap-southeast-1]
+    Description: Witness Region (no reads or writes; quorum only)
+
+  MaxWriteRequestUnits:
+    Type: Number
+    Default: 500
+    MinValue: 1
+    Description: Max write request units per second, the same on every replica
+
+  ReplicaMaxReadRequestUnits:
+    Type: Number
+    Default: 1000
+    MinValue: 1
+    Description: Max read request units per second on each replica
+
+  ReplicaDeletionProtection:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: true for production; false lets the demo stack be deleted
+
+Rules:
+  DistinctRegions: # Validation only (checked before the stack is created)
+    Assertions:
+      - Assert: !Not [!Equals [!Ref WitnessRegion, !Ref SecondRegion]]
+        AssertDescription: WitnessRegion must differ from SecondRegion
+
+Resources:
+
+  BalancesGlobalTable:
+    Type: AWS::DynamoDB::GlobalTable
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-balances"
+      BillingMode: PAY_PER_REQUEST
+      MultiRegionConsistency: STRONG # MRSC; immutable
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+      # No TimeToLiveSpecification, no LocalSecondaryIndexes (not supported on MRSC)
+      # No StreamSpecification needed (MRSC doesn't replicate through streams)
+      WriteOnDemandThroughputSettings:
+        MaxWriteRequestUnits: !Ref MaxWriteRequestUnits
+      GlobalTableWitnesses: # Exactly one; or use a third replica instead
+        - Region: !Ref WitnessRegion
+      Replicas:
+        - Region: !Ref AWS::Region
+          ReadOnDemandThroughputSettings:
+            MaxReadRequestUnits: !Ref ReplicaMaxReadRequestUnits
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          DeletionProtectionEnabled: !Ref ReplicaDeletionProtection
+          Tags:
+            - Key: Name
+              Value: !Sub "${Application}-${Environment}-balances-${AWS::Region}"
+        - Region: !Ref SecondRegion
+          ReadOnDemandThroughputSettings:
+            MaxReadRequestUnits: !Ref ReplicaMaxReadRequestUnits
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          DeletionProtectionEnabled: !Ref ReplicaDeletionProtection
+          Tags:
+            - Key: Name
+              Value: !Sub "${Application}-${Environment}-balances-${SecondRegion}"
+
+Outputs:
+
+  BalancesGlobalTableName:
+    Description: Same table name in both replica Regions
+    Value: !Ref BalancesGlobalTable
+
+  BalancesGlobalTableArn:
+    Value: !GetAtt BalancesGlobalTable.Arn

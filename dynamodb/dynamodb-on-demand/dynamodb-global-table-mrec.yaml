@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DynamoDB global table, multi-Region eventual consistency (MREC), on-demand, 3 Regions - active-active with the cheaper replicated writes
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Active-active user profile / session store in 3 Regions. Every Region reads
+#   and writes locally; changes replicate asynchronously (usually within seconds),
+#   conflicts resolve as "last writer wins" per item.
+#   Pricing (November 2024): replicated writes now cost the same as single-Region
+#   writes - 67% cheaper on on-demand, 33% on provisioned. A 1 KB write to a
+#   3-Region table = 3 replicated write units (one per replica Region), each at
+#   the normal write price. No cross-Region data transfer fee for
+#   replication.
+#     WriteOnDemandThroughputSettings   max writes/second, applied to all replicas
+#     Replica ReadOnDemandThroughputSettings   max reads/second per replica
+#     Replica PITR + DeletionProtection          set per replica
+#
+# Resources created
+#   - AWS::DynamoDB::GlobalTable (version 2019.11.21) with replicas in the stack
+#     Region, SecondRegion and ThirdRegion
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - Replicas must include the stack Region. Add or remove only ONE other replica
+#     per stack update; removing a replica deletes it and its data
+#   - Streams are required (NEW_AND_OLD_IMAGES) - MREC replicates from them
+#   - Transactions are atomic only in the Region where they run
+#   - Strongly consistent reads return the latest write made in THAT Region;
+#     use the MRSC template when every Region must read the latest write
+#   - DeletionProtection defaults to false so the demo stack can be deleted
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Regions
+        Parameters:
+          - SecondRegion
+          - ThirdRegion
+      - Label:
+          default: Cost guard and protection
+        Parameters:
+          - MaxWriteRequestUnits
+          - ReplicaMaxReadRequestUnits
+          - ReplicaDeletionProtection
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  SecondRegion:
+    Type: String
+    Default: eu-west-1
+    Description: Second replica Region (different from the stack Region)
+
+  ThirdRegion:
+    Type: String
+    Default: ap-northeast-1
+    Description: Third replica Region (different from the other two)
+
+  MaxWriteRequestUnits:
+    Type: Number
+    Default: 500
+    MinValue: 1
+    Description: Max write request units per second, the same on every replica
+
+  ReplicaMaxReadRequestUnits:
+    Type: Number
+    Default: 1000
+    MinValue: 1
+    Description: Max read request units per second on each replica
+
+  ReplicaDeletionProtection:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: true for production; false lets the demo stack be deleted
+
+Rules:
+  DistinctRegions: # Validation only (checked before the stack is created)
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ThirdRegion, !Ref SecondRegion]]
+        AssertDescription: ThirdRegion must differ from SecondRegion
+
+Resources:
+
+  ProfilesGlobalTable:
+    Type: AWS::DynamoDB::GlobalTable
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-profiles"
+      BillingMode: PAY_PER_REQUEST
+      # MultiRegionConsistency: EVENTUAL   # Default (MREC); can't be changed after creation
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      StreamSpecification: # Required with more than one replica
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TimeToLiveSpecification: # Synced to all replicas; the TTL delete is free locally, replicated deletes are charged
+        Enabled: true
+        AttributeName: expiresAt
+      WriteOnDemandThroughputSettings: # All replicas must have the same write limit
+        MaxWriteRequestUnits: !Ref MaxWriteRequestUnits
+      Replicas:
+        - Region: !Ref AWS::Region # The stack Region must be a replica
+          ReadOnDemandThroughputSettings:
+            MaxReadRequestUnits: !Ref ReplicaMaxReadRequestUnits
+          PointInTimeRecoverySpecification: # Per replica - each Region keeps its own backups
+            PointInTimeRecoveryEnabled: true
+          DeletionProtectionEnabled: !Ref ReplicaDeletionProtection
+          Tags:
+            - Key: Name
+              Value: !Sub "${Application}-${Environment}-profiles-${AWS::Region}"
+        - Region: !Ref SecondRegion
+          ReadOnDemandThroughputSettings:
+            MaxReadRequestUnits: !Ref ReplicaMaxReadRequestUnits
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          DeletionProtectionEnabled: !Ref ReplicaDeletionProtection
+          Tags:
+            - Key: Name
+              Value: !Sub "${Application}-${Environment}-profiles-${SecondRegion}"
+        - Region: !Ref ThirdRegion
+          ReadOnDemandThroughputSettings:
+            MaxReadRequestUnits: !Ref ReplicaMaxReadRequestUnits
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          DeletionProtectionEnabled: !Ref ReplicaDeletionProtection
+          Tags:
+            - Key: Name
+              Value: !Sub "${Application}-${Environment}-profiles-${ThirdRegion}"
+
+Outputs:
+
+  ProfilesGlobalTableName:
+    Description: Same table name in every replica Region
+    Value: !Ref ProfilesGlobalTable
+
+  ProfilesGlobalTableArn:
+    Value: !GetAtt ProfilesGlobalTable.Arn

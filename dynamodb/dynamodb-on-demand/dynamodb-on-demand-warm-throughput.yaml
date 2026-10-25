@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DynamoDB on-demand table pre-warmed for a launch-day peak (WarmThroughput on table and GSI)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   On-demand scales automatically, but a NEW table can only absorb so much
+#   traffic instantly: it starts with a warm throughput of 12,000 read and 4,000
+#   write units per second and grows from usage. A product launch, flash sale or
+#   migration cut-over that jumps straight to 10x-100x would throttle while
+#   DynamoDB scales. WarmThroughput pre-warms the table (and each GSI) to the
+#   peak BEFORE the traffic arrives.
+#     ReadUnitsPerSecond / WriteUnitsPerSecond   on the table and on the GSI
+#   Warm throughput is not a limit and not reserved capacity: you still pay
+#   per request; it only says what the table can serve instantly.
+#
+# Resources created
+#   - AWS::DynamoDB::Table (on-demand, 1 GSI, warm throughput)
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - Values at the defaults (12,000 / 4,000) cost nothing extra. Proactively
+#     raising warm throughput is charged (see DynamoDB pricing)
+#   - Once increased, warm throughput can't be decreased. Raise it again before
+#     the next peak with a stack update (or update-table)
+#   - Check the current values: aws dynamodb describe-table ... Table.WarmThroughput
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Warm throughput (expected peak per second)
+        Parameters:
+          - TableWarmReadUnitsPerSecond
+          - TableWarmWriteUnitsPerSecond
+          - IndexWarmReadUnitsPerSecond
+          - IndexWarmWriteUnitsPerSecond
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  TableWarmReadUnitsPerSecond:
+    Type: Number
+    Default: 12000
+    MinValue: 12000
+    Description: Peak read units per second the table must serve instantly (12000 = new-table default, no charge)
+
+  TableWarmWriteUnitsPerSecond:
+    Type: Number
+    Default: 4000
+    MinValue: 4000
+    Description: Peak write units per second the table must serve instantly (4000 = new-table default, no charge)
+
+  IndexWarmReadUnitsPerSecond:
+    Type: Number
+    Default: 12000
+    MinValue: 12000
+    Description: Peak read units per second for the GSI
+
+  IndexWarmWriteUnitsPerSecond:
+    Type: Number
+    Default: 4000
+    MinValue: 4000
+    Description: Peak write units per second for the GSI (every table write that changes the index also writes it)
+
+Resources:
+
+  TicketsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-tickets"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk # EVENT#<eventId>
+          AttributeType: S
+        - AttributeName: sk # SEAT#<seatId>
+          AttributeType: S
+        - AttributeName: buyerId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      WarmThroughput: # Pre-warm for the on-sale moment
+        ReadUnitsPerSecond: !Ref TableWarmReadUnitsPerSecond
+        WriteUnitsPerSecond: !Ref TableWarmWriteUnitsPerSecond
+      GlobalSecondaryIndexes:
+        - IndexName: by-buyer
+          KeySchema:
+            - AttributeName: buyerId
+              KeyType: HASH
+            - AttributeName: sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+          WarmThroughput: # Each GSI is warmed separately
+            ReadUnitsPerSecond: !Ref IndexWarmReadUnitsPerSecond
+            WriteUnitsPerSecond: !Ref IndexWarmWriteUnitsPerSecond
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-tickets-table"
+
+Outputs:
+
+  TicketsTableName:
+    Description: aws dynamodb describe-table --table-name <this> --query Table.WarmThroughput
+    Value: !Ref TicketsTable

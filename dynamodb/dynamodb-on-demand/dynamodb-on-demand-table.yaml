@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DynamoDB on-demand table - maximum throughput cost guard, GSI, deletion protection, PITR recovery period, cross-account read resource policy
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Orders table for a typical application, on-demand (PAY_PER_REQUEST):
+#   since the November 2024 price cut (on-demand throughput -50%), AWS calls
+#   on-demand the default and recommended mode for most workloads - no capacity
+#   planning, no auto scaling, pay per request.
+#     OnDemandThroughput     max read / write request units per second for the
+#                            table and, separately, the GSI. Bounds cost if a
+#                            bug or rogue process floods the table (requests above
+#                            the max are throttled, best effort)
+#     DeletionProtection     DeleteTable fails while enabled (any user or process)
+#     PITR                   RecoveryPeriodInDays 1-35 (default 35)
+#     ResourcePolicy         read-only access for a reporting account (cross-account
+#                            without assuming a role in this account)
+#
+# Resources created
+#   - AWS::DynamoDB::Table (on-demand, 1 GSI)
+#
+# Pre-requisites
+#   - None. The reporting account also needs an identity policy allowing the reads
+#
+# Assumptions
+#   - TableName is fixed (needed for the resource policy ARN); changes that need
+#     replacement then fail - rename the table to replace it
+#   - Table resource policies are limited to 20 KB; Block Public Access rejects
+#     policies that grant public access
+#   - DeletionProtection defaults to false so the demo stack can be deleted
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Cost guard (on-demand maximum throughput)
+        Parameters:
+          - TableMaxReadRequestUnits
+          - TableMaxWriteRequestUnits
+          - IndexMaxReadRequestUnits
+          - IndexMaxWriteRequestUnits
+      - Label:
+          default: Protection
+        Parameters:
+          - TableDeletionProtection
+          - PointInTimeRecoveryPeriodInDays
+          - ReportingAccountId
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  TableMaxReadRequestUnits:
+    Type: Number
+    Default: 1000
+    MinValue: 1
+    Description: Max read request units per second on the table (throttled above)
+
+  TableMaxWriteRequestUnits:
+    Type: Number
+    Default: 500
+    MinValue: 1
+    Description: Max write request units per second on the table (throttled above)
+
+  IndexMaxReadRequestUnits:
+    Type: Number
+    Default: 500
+    MinValue: 1
+    Description: Max read request units per second on the GSI
+
+  IndexMaxWriteRequestUnits:
+    Type: Number
+    Default: 500
+    MinValue: 1
+    Description: Max write request units per second on the GSI
+
+  TableDeletionProtection:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: true for production; false lets the demo stack be deleted
+
+  PointInTimeRecoveryPeriodInDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 35
+    Description: Days of continuous backups (PITR is priced on table size, not on the period)
+
+  ReportingAccountId:
+    Type: String
+    AllowedPattern: "^\\d{12}$"
+    Description: Account allowed read-only access through the resource policy (use this account ID if none)
+
+Resources:
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-orders"
+      BillingMode: PAY_PER_REQUEST # On-demand; no ProvisionedThroughput
+      TableClass: STANDARD # STANDARD_INFREQUENT_ACCESS: ~60% cheaper storage, higher request price - for rarely read data
+      AttributeDefinitions:
+        - AttributeName: pk # ORDER#<orderId>
+          AttributeType: S
+        - AttributeName: sk # METADATA | ITEM#<n>
+          AttributeType: S
+        - AttributeName: customerId
+          AttributeType: S
+        - AttributeName: orderDate
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      OnDemandThroughput: # Cost guard; -1 removes a limit
+        MaxReadRequestUnits: !Ref TableMaxReadRequestUnits
+        MaxWriteRequestUnits: !Ref TableMaxWriteRequestUnits
+      GlobalSecondaryIndexes:
+        - IndexName: by-customer # "orders of a customer, newest first"
+          KeySchema:
+            - AttributeName: customerId
+              KeyType: HASH
+            - AttributeName: orderDate
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE # Only what the query returns -> smaller index, cheaper writes
+            NonKeyAttributes:
+              - status
+              - total
+          OnDemandThroughput: # Separate limit per GSI
+            MaxReadRequestUnits: !Ref IndexMaxReadRequestUnits
+            MaxWriteRequestUnits: !Ref IndexMaxWriteRequestUnits
+      DeletionProtectionEnabled: !Ref TableDeletionProtection
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+        RecoveryPeriodInDays: !Ref PointInTimeRecoveryPeriodInDays # 1-35, default 35
+      SSESpecification:
+        SSEEnabled: false # false = AWS owned key (no KMS charges); true = AWS managed key aws/dynamodb
+      ResourcePolicy: # Applies to the table and its indexes
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: ReportingAccountReadOnly
+              Effect: Allow
+              Principal:
+                AWS: !Sub "arn:${AWS::Partition}:iam::${ReportingAccountId}:root" # Account delegates to its own IAM policies
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:BatchGetItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:DescribeTable
+              Resource:
+                - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Application}-${Environment}-orders"
+                - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Application}-${Environment}-orders/index/*"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orders-table"
+
+Outputs:
+
+  OrdersTableName:
+    Value: !Ref OrdersTable
+
+  OrdersTableArn:
+    Value: !GetAtt OrdersTable.Arn

@@ -1,5 +1,11 @@
 ## DynamoDB Cloudformation
 
+### DynamoDB - On-demand and global tables (current pricing)
+
+Since November 2024 on-demand throughput is 50% cheaper and global table replicated writes cost the same as single-Region writes (up to 67% cheaper), so on-demand is the recommended default. The templates below use provisioned capacity; these are the on-demand versions: maximum throughput cost guard, warm throughput, resource-based policy, and MREC / MRSC global tables.
+
+[dynamodb-on-demand/README.md](dynamodb-on-demand/README.md)
+
 ### DynamoDB - Concepts
 
 
