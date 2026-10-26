@@ -2,6 +2,12 @@
 ## Step Functions (Standard)
 
 
+### JSONata and variables
+
+Order pricing without Lambda: Assign variables, a Map that looks up catalog prices with DynamoDB getItem, $sum totals, Choice Condition discount rules and a JSONata-built DynamoDB item.
+
+[step-functions-jsonata/README.md](step-functions-jsonata/README.md)
+
 ### Standard - Step Functions Basic
 
 Example with a single step that invokes a lambda function

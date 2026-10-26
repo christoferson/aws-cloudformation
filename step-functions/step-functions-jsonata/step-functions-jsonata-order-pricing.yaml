@@ -1,0 +1,281 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Step Functions with JSONata and variables - order pricing without Lambda (price lookup per item, totals, discount rules, DynamoDB writes)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Order pricing done entirely in the state machine (no Lambda), using the two
+#   features added in November 2024:
+#     QueryLanguage: JSONata   "{% expression %}" anywhere: Arguments, Output,
+#                              Choice Condition, Items, Assign. Replaces InputPath /
+#                              Parameters / ResultSelector / ResultPath / OutputPath
+#                              and the ".$" suffix
+#     Variables (Assign)       store a value once, read it in ANY later state as
+#                              $name - no more carrying data through every output
+#   Flow:
+#     StoreOrder        Assign orderId ($uuid()), customerId, couponCode, orderedAt
+#     PriceItems (Map)  per item: DynamoDB getItem -> price from the catalog (never
+#                       trust the client), lineTotal; unknown product -> $error
+#                       Assign lines, subtotal ($sum)
+#     ChooseDiscount    Condition: coupon SAVE10 -> 10%, subtotal >= 100 -> 5%, else 0
+#     SaveOrder         DynamoDB putItem; JSONata builds the typed item, including
+#                       a List of Maps from $lines
+#     RejectOrder       Catch -> $states.errorOutput -> rejected response
+#
+# Resources created
+#   - DynamoDB tables (products catalog, orders), state machine role, Standard state machine
+#
+# Pre-requisites
+#   - Seed the products table (see README)
+#
+# Assumptions
+#   - JSONata 2.0.6 ($eval not available; Step Functions adds $partition, $range,
+#     $hash, $random, $uuid, $parse)
+#   - Expression errors (undefined values, type errors, > 1 s evaluation) raise
+#     States.QueryEvaluationError, which Catch / Retry can handle
+#   - Variables: max 256 KiB each, 10 MiB per execution; Map iterations have their
+#     own scope (they can read outer variables, not assign them)
+#   - Assign and Output are evaluated in parallel from the state's input/result;
+#     a variable assigned in a state is visible from the NEXT state on
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Tables
+  # ---------------------------------------------------------------
+
+  ProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-jsonata-products"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: productId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: productId
+          KeyType: HASH
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-jsonata-products-table"
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-jsonata-orders"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-jsonata-orders-table"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  OrderPricingStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: order-pricing
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadCatalog
+                Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt ProductsTable.Arn
+              - Sid: WriteOrders
+                Effect: Allow
+                Action: dynamodb:PutItem
+                Resource: !GetAtt OrdersTable.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orderpricing-statemachine-role"
+
+  # ---------------------------------------------------------------
+  # State Machine
+  # ---------------------------------------------------------------
+
+  OrderPricingStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${Application}-${Environment}-order-pricing"
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt OrderPricingStateMachineRole.Arn
+      DefinitionSubstitutions: # ${ProductsTable} / ${OrdersTable} inside Definition
+        ProductsTable: !Ref ProductsTable
+        OrdersTable: !Ref OrdersTable
+      Definition:
+        Comment: Order pricing with JSONata and variables
+        QueryLanguage: JSONata # Top level; a state can override it (incremental migration)
+        StartAt: StoreOrder
+        States:
+
+          StoreOrder:
+            Type: Pass
+            Assign: # Variables - readable in every later state as $orderId, $customerId, ...
+              orderId: "{% $uuid() %}"
+              customerId: "{% $states.input.customerId %}"
+              couponCode: "{% $exists($states.input.couponCode) ? $states.input.couponCode : '' %}"
+              orderedAt: "{% $now() %}"
+            Output: "{% $states.input.items %}" # Only the items go to the next state
+            Next: PriceItems
+
+          PriceItems:
+            Type: Map
+            Items: "{% $states.input %}" # Replaces ItemsPath
+            MaxConcurrency: 10
+            ItemProcessor:
+              ProcessorConfig:
+                Mode: INLINE
+              StartAt: GetProduct
+              States:
+                GetProduct:
+                  Type: Task
+                  Resource: arn:aws:states:::dynamodb:getItem
+                  Arguments: # Replaces Parameters - no ".$" suffix
+                    TableName: ${ProductsTable}
+                    Key:
+                      productId:
+                        S: "{% $states.input.productId %}"
+                  # $states.result = raw API result (typed DynamoDB attributes)
+                  Output: >-
+                    {% $exists($states.result.Item)
+                      ? {
+                          'productId': $states.input.productId,
+                          'name': $states.result.Item.name.S,
+                          'quantity': $states.input.quantity,
+                          'unitPrice': $number($states.result.Item.price.N),
+                          'lineTotal': $round($number($states.result.Item.price.N) * $states.input.quantity, 2)
+                        }
+                      : $error('Unknown product ' & $states.input.productId) %}
+                  End: true
+            Assign: # $states.result = array of iteration outputs
+              lines: "{% $states.result %}"
+              subtotal: "{% $round($sum($states.result.lineTotal), 2) %}"
+            Catch:
+              - ErrorEquals: ["States.ALL"] # $error -> States.QueryEvaluationError
+                Assign:
+                  rejectReason: "{% $states.errorOutput.Cause %}"
+                Next: RejectOrder
+            Next: ChooseDiscount
+
+          ChooseDiscount:
+            Type: Choice
+            Choices: # Condition replaces Variable + comparison operators
+              - Condition: "{% $couponCode = 'SAVE10' %}"
+                Assign:
+                  discount: "{% $round($subtotal * 0.10, 2) %}"
+                  discountRule: SAVE10
+                Next: SaveOrder
+              - Condition: "{% $subtotal >= 100 %}"
+                Assign:
+                  discount: "{% $round($subtotal * 0.05, 2) %}"
+                  discountRule: OVER_100
+                Next: SaveOrder
+            Default: NoDiscount
+
+          NoDiscount:
+            Type: Pass
+            Assign:
+              discount: 0
+              discountRule: NONE
+            Next: SaveOrder
+
+          SaveOrder:
+            Type: Task
+            Resource: arn:aws:states:::dynamodb:putItem
+            Arguments:
+              TableName: ${OrdersTable}
+              ConditionExpression: attribute_not_exists(orderId)
+              Item: # DynamoDB typed values built from variables
+                orderId:
+                  S: "{% $orderId %}"
+                customerId:
+                  S: "{% $customerId %}"
+                orderedAt:
+                  S: "{% $orderedAt %}"
+                subtotal:
+                  N: "{% $string($subtotal) %}"
+                discount:
+                  N: "{% $string($discount) %}"
+                discountRule:
+                  S: "{% $discountRule %}"
+                total:
+                  N: "{% $string($round($subtotal - $discount, 2)) %}"
+                lines: # Array of objects -> DynamoDB List of Maps
+                  L: >-
+                    {% $map($lines, function($line) {
+                         { 'M': {
+                             'productId': { 'S': $line.productId },
+                             'quantity':  { 'N': $string($line.quantity) },
+                             'lineTotal': { 'N': $string($line.lineTotal) }
+                         } }
+                       }) %}
+            Output: # Execution result
+              orderId: "{% $orderId %}"
+              status: PRICED
+              lines: "{% $lines %}"
+              subtotal: "{% $subtotal %}"
+              discount: "{% $discount %}"
+              discountRule: "{% $discountRule %}"
+              total: "{% $round($subtotal - $discount, 2) %}"
+            End: true
+
+          RejectOrder:
+            Type: Pass
+            Output:
+              orderId: "{% $orderId %}"
+              status: REJECTED
+              reason: "{% $rejectReason %}"
+            End: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orderpricing-statemachine"
+
+Outputs:
+
+  OrderPricingStateMachineArn:
+    Description: aws stepfunctions start-execution --state-machine-arn <this> --input file://order.json
+    Value: !Ref OrderPricingStateMachine
+
+  ProductsTableName:
+    Value: !Ref ProductsTable
+
+  OrdersTableName:
+    Value: !Ref OrdersTable
