@@ -8,6 +8,12 @@ Example Standard Queue
 
 sqs-queue-standard
 
+## SQS Queue - Fair Queues (multi-tenant)
+
+Standard queue shared by many tenants; MessageGroupId = tenant ID turns on fair queues (noisy-neighbor protection). Load generator, consumer, quiet-group SLA alarm and a dashboard comparing queue-wide vs quiet-tenant metrics.
+
+[sqs-fair-queue/README.md](sqs-fair-queue/README.md)
+
 ## SQS Queue - FIFO
 
 Example FIFO Queue

@@ -1,0 +1,387 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SQS fair queues - multi-tenant standard queue, tenant ID as MessageGroupId, noisy-neighbor demo with quiet-group metrics, alarms and dashboard
+
+# -----------------------------------------------------------------------------
+# Summary
+#   One standard queue shared by many tenants (customers). If tenant A suddenly
+#   sends 5,000 messages, consumers work through A's backlog while every other
+#   tenant waits behind it (noisy neighbor -> high dwell time for everyone).
+#   Fair queues: producers set MessageGroupId = tenant ID on a
+#   STANDARD queue. SQS watches in-flight messages per tenant; a tenant with a
+#   disproportionate share (> ~10% of in-flight and >= ~30 messages, or > ~10% of
+#   processing time) becomes "noisy", and consumers get the quiet tenants'
+#   messages first. Nothing is dropped or throttled: A's messages are delivered
+#   when there is spare capacity.
+#     - No queue setting, no consumer change, no throughput limit
+#     - MessageGroupId on a standard queue does NOT give ordering (FIFO only)
+#   Template:
+#     TenantMessageQueue + dead-letter queue   (plain standard queue)
+#     ProducerLambdaFunction    load generator: noisy tenant burst + quiet tenants
+#     ConsumerLambdaFunction    SQS event source mapping, simulated work per message
+#     Alarms                    SLA on ApproximateAgeOfOldestMessageInQuietGroups
+#                               (ignores the noisy tenant's aged backlog), noisy groups
+#     Dashboard                 queue-level vs quiet-group metrics side by side
+#
+# Resources created
+#   - SQS standard queue + DLQ, 2 Lambda functions (+ roles, log groups), event source mapping
+#   - 2 CloudWatch alarms, 1 CloudWatch dashboard
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - Detection needs enough messages in flight at once: in-flight ~= Lambda
+#     concurrency x batch size (here up to 10 x 10 = 100)
+#   - Fair-queue metrics are only emitted for messages with a MessageGroupId;
+#     messages without one each count as their own tenant
+#   - Demo only: the producer can send thousands of messages (SQS request charges)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Consumer sizing
+        Parameters:
+          - ConsumerMaximumConcurrency
+          - ConsumerBatchSize
+          - SecondsPerMessage
+      - Label:
+          default: Alarms
+        Parameters:
+          - QuietTenantMaxAgeSeconds
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  ConsumerMaximumConcurrency:
+    Type: Number
+    Default: 10
+    MinValue: 2
+    MaxValue: 1000
+    Description: Max concurrent consumer invocations for the queue (event source mapping)
+
+  ConsumerBatchSize:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 10
+    Description: Messages per consumer invocation (in flight ~= concurrency x batch size)
+
+  SecondsPerMessage:
+    Type: Number
+    Default: 0.2
+    Description: Simulated processing time per message
+
+  QuietTenantMaxAgeSeconds:
+    Type: Number
+    Default: 60
+    Description: SLA - oldest message of a QUIET tenant must be younger than this
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Queues
+  # ---------------------------------------------------------------
+
+  TenantMessageDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-tenant-messages-dlq"
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-tenant-messages-dlq"
+
+  # A plain STANDARD queue - fairness applies automatically to messages that carry a MessageGroupId
+  TenantMessageQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-tenant-messages"
+      VisibilityTimeout: 60 # >= consumer function timeout
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TenantMessageDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-tenant-messages-queue"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  ProducerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: produce-tenant-messages
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage # Also covers SendMessageBatch
+                Resource: !GetAtt TenantMessageQueue.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ProducerLambdaLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-producer-lambda-execution-role"
+
+  ConsumerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: consume-tenant-messages
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt TenantMessageQueue.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ConsumerLambdaLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-consumer-lambda-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  ProducerLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/tenant-producer"
+      RetentionInDays: 7
+
+  ConsumerLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/tenant-consumer"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Functions
+  # ---------------------------------------------------------------
+
+  # Load generator: invoke with
+  #   {"noisyTenant":"tenant-a","noisyCount":5000,"quietTenants":["tenant-b","tenant-c","tenant-d"],"quietCount":30}
+  ProducerLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Application}-${Environment}-tenant-producer"
+      Description: Sends a noisy-tenant burst plus quiet-tenant traffic, MessageGroupId = tenant ID
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 600
+      MemorySize: 256
+      Role: !GetAtt ProducerLambdaExecutionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref ProducerLambdaLogGroup
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref TenantMessageQueue
+      Code:
+        ZipFile: |
+          import json, os, time
+          from concurrent.futures import ThreadPoolExecutor
+          import boto3
+
+          sqs = boto3.client("sqs")
+          QUEUE_URL = os.environ["QUEUE_URL"]
+
+          def send(tenant, count):
+              for start in range(0, count, 10):
+                  entries = [{
+                      "Id": str(i),
+                      "MessageBody": json.dumps({"tenant": tenant, "n": start + i, "sentAt": time.time()}),
+                      "MessageGroupId": tenant,  # Tenant identifier -> fair queue (no ordering on standard queues)
+                  } for i in range(min(10, count - start))]
+                  sqs.send_message_batch(QueueUrl=QUEUE_URL, Entries=entries)
+              return tenant, count
+
+          def handler(event, context):
+              noisy = event.get("noisyTenant", "tenant-a")
+              plan = [(noisy, int(event.get("noisyCount", 5000)))]
+              plan += [(t, int(event.get("quietCount", 30))) for t in event.get("quietTenants", ["tenant-b", "tenant-c", "tenant-d"])]
+              # Noisy burst first, so the quiet tenants' messages land BEHIND it in the backlog
+              send(*plan[0])
+              with ThreadPoolExecutor(max_workers=4) as pool:
+                  sent = list(pool.map(lambda p: send(*p), plan[1:]))
+              result = {"sent": dict([plan[0]] + sent)}
+              print(json.dumps(result))
+              return result
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-tenant-producer-lambda"
+
+  ConsumerLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Application}-${Environment}-tenant-consumer"
+      Description: Processes tenant messages and logs dwell time per tenant
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 128
+      Role: !GetAtt ConsumerLambdaExecutionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref ConsumerLambdaLogGroup
+        LogFormat: JSON # Structured logs -> CloudWatch Logs Insights by tenant
+      Environment:
+        Variables:
+          SECONDS_PER_MESSAGE: !Ref SecondsPerMessage
+      Code:
+        ZipFile: |
+          import json, os, time, logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          SECONDS_PER_MESSAGE = float(os.environ["SECONDS_PER_MESSAGE"])
+
+          def handler(event, context):
+              for record in event["Records"]:
+                  body = json.loads(record["body"])
+                  time.sleep(SECONDS_PER_MESSAGE)  # Simulated work
+                  # Dwell time = time from send to processing, the metric fair queues protect
+                  logger.info("processed", extra={"tenant": body["tenant"],
+                                                  "dwellSeconds": round(time.time() - body["sentAt"], 1)})
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-tenant-consumer-lambda"
+
+  ConsumerEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt TenantMessageQueue.Arn
+      FunctionName: !Ref ConsumerLambdaFunction
+      BatchSize: !Ref ConsumerBatchSize
+      ScalingConfig:
+        MaximumConcurrency: !Ref ConsumerMaximumConcurrency # Caps consumers -> a burst creates a backlog
+
+  # ---------------------------------------------------------------
+  # Alarms and Dashboard
+  # ---------------------------------------------------------------
+
+  # SLA alarm that is NOT tripped by the noisy tenant's own aged backlog
+  QuietTenantMessageAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Application}-${Environment}-quiet-tenant-message-age"
+      AlarmDescription: Oldest message of a quiet (non-noisy) tenant is too old - fairness can't keep up, scale consumers
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessageInQuietGroups
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TenantMessageQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: !Ref QuietTenantMaxAgeSeconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  NoisyTenantAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Application}-${Environment}-noisy-tenants"
+      AlarmDescription: At least one tenant is currently treated as a noisy neighbor (informational)
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfNoisyGroups
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TenantMessageQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  FairQueueDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${Application}-${Environment}-fair-queue"
+      DashboardBody: !Sub
+        - |
+          {
+            "widgets": [
+              { "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+                "properties": { "title": "Backlog: whole queue vs quiet tenants", "region": "${AWS::Region}", "stat": "Maximum", "period": 60,
+                  "metrics": [
+                    [ "AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${QueueName}", { "label": "All tenants" } ],
+                    [ "AWS/SQS", "ApproximateNumberOfMessagesVisibleInQuietGroups", "QueueName", "${QueueName}", { "label": "Quiet tenants" } ] ] } },
+              { "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+                "properties": { "title": "Oldest message age (s): whole queue vs quiet tenants", "region": "${AWS::Region}", "stat": "Maximum", "period": 60,
+                  "metrics": [
+                    [ "AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", "${QueueName}", { "label": "All tenants" } ],
+                    [ "AWS/SQS", "ApproximateAgeOfOldestMessageInQuietGroups", "QueueName", "${QueueName}", { "label": "Quiet tenants" } ] ] } },
+              { "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+                "properties": { "title": "Noisy tenants (message groups)", "region": "${AWS::Region}", "stat": "Maximum", "period": 60,
+                  "metrics": [ [ "AWS/SQS", "ApproximateNumberOfNoisyGroups", "QueueName", "${QueueName}" ] ] } },
+              { "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
+                "properties": { "title": "In flight: whole queue vs quiet tenants", "region": "${AWS::Region}", "stat": "Maximum", "period": 60,
+                  "metrics": [
+                    [ "AWS/SQS", "ApproximateNumberOfMessagesNotVisible", "QueueName", "${QueueName}", { "label": "All tenants" } ],
+                    [ "AWS/SQS", "ApproximateNumberOfMessagesNotVisibleInQuietGroups", "QueueName", "${QueueName}", { "label": "Quiet tenants" } ] ] } }
+            ]
+          }
+        - QueueName: !GetAtt TenantMessageQueue.QueueName
+
+Outputs:
+
+  TenantMessageQueueUrl:
+    Value: !Ref TenantMessageQueue
+
+  ProducerLambdaFunctionName:
+    Description: Load generator (see README for the payload)
+    Value: !Ref ProducerLambdaFunction
+
+  ConsumerLogGroupName:
+    Description: Logs Insights - dwell time per tenant
+    Value: !Ref ConsumerLambdaLogGroup
+
+  FairQueueDashboardUrl:
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${Application}-${Environment}-fair-queue"
