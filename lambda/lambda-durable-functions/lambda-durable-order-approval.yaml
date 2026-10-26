@@ -1,0 +1,300 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda durable function - order workflow with checkpointed steps, human approval callback and a free wait (same workflow as the Step Functions template)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Order workflow written as ordinary Python in ONE Lambda function:
+#     reserve -> wait_for_callback (human approval, up to ApprovalTimeoutSeconds)
+#             -> approved: charge -> wait ShippingDelaySeconds -> ship
+#             -> rejected / timed out: release
+#   Durable execution = checkpoint + replay. Each step's result is checkpointed;
+#   while waiting (callback or timer) the function is NOT running and NOT billed
+#   for compute. When it resumes, Lambda invokes the handler again from the top
+#   and the SDK replays: completed steps return their stored result instead of
+#   running again.
+#     DurableConfig.ExecutionTimeout   whole workflow, up to 1 year (here 7 days)
+#     Function Timeout                 each invocation (here 60 s)
+#   Order status is written to DynamoDB so you can watch the workflow and find
+#   the callback ID to approve.
+#
+# Resources created
+#   - DynamoDB table (orders), log group, execution role
+#   - Lambda function (python3.13, DurableConfig), version + alias "live"
+#   - Managed policy for approvers (SendDurableExecutionCallbackSuccess / Failure)
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - Durable execution can only be enabled when the function is CREATED
+#   - Invoke a version or alias (qualified ARN); an execution stays pinned to
+#     the version that started it, so new code only affects new executions
+#   - The SDK used here is the one bundled in the python3.13 runtime (fine for a
+#     demo); AWS recommends packaging the SDK with the function for production
+#   - Code outside steps must be deterministic (no random / time / API calls) -
+#     it runs again on every replay
+#   - Steps are at-least-once: the DynamoDB updates here are idempotent
+#   - AWS::Lambda::Version is not republished on code changes; replace it
+#     (new logical ID) to publish a new version
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Durable execution
+        Parameters:
+          - ExecutionTimeoutSeconds
+          - RetentionPeriodInDays
+          - ApprovalTimeoutSeconds
+          - ShippingDelaySeconds
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  ExecutionTimeoutSeconds:
+    Type: Number
+    Default: 604800
+    MinValue: 60
+    MaxValue: 31536000
+    Description: Max duration of one whole workflow (604800 = 7 days, max 1 year)
+
+  RetentionPeriodInDays:
+    Type: Number
+    Default: 14
+    MinValue: 1
+    MaxValue: 90
+    Description: Days the execution history is kept after the workflow ends
+
+  ApprovalTimeoutSeconds:
+    Type: Number
+    Default: 86400
+    MinValue: 60
+    Description: How long to wait for the approval callback (86400 = 1 day)
+
+  ShippingDelaySeconds:
+    Type: Number
+    Default: 60
+    MinValue: 1
+    Description: Durable wait between charge and ship (no compute charge while waiting)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Table
+  # ---------------------------------------------------------------
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-durable-orders"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-durable-orders-table"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  OrderWorkflowLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # lambda:CheckpointDurableExecution + GetDurableExecutionState + basic logs
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+      Policies:
+        - PolicyName: order-workflow
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: OrdersTable
+                Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt OrdersTable.Arn
+              - Sid: WriteLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt OrderWorkflowLambdaLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orderworkflow-lambda-execution-role"
+
+  # Attach to the people / systems that approve orders. Callbacks are authorized
+  # against the durable execution ARN: function:<name>:<version>/durable-execution/...
+  OrderApproverManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Application}-${Environment}-durable-order-approver"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SendApprovalCallbacks
+            Effect: Allow
+            Action:
+              - lambda:SendDurableExecutionCallbackSuccess
+              - lambda:SendDurableExecutionCallbackFailure
+              - lambda:SendDurableExecutionCallbackHeartbeat
+            Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${Application}-${Environment}-order-workflow:*" # ":*" - an unqualified ARN never matches
+          - Sid: ReadOrders
+            Effect: Allow
+            Action: dynamodb:GetItem
+            Resource: !GetAtt OrdersTable.Arn
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  OrderWorkflowLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/order-workflow"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # Function
+  # ---------------------------------------------------------------
+
+  OrderWorkflowLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Application}-${Environment}-order-workflow"
+      Description: Durable order workflow - reserve, approval callback, charge, wait, ship
+      Runtime: python3.13 # Durable runtimes: python3.13/3.14, nodejs22.x/24.x, java17/21/25, dotnet8/10
+      Handler: index.handler
+      Timeout: 60 # Per invocation. Waits don't count against it
+      MemorySize: 256
+      Role: !GetAtt OrderWorkflowLambdaExecutionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref OrderWorkflowLambdaLogGroup
+      DurableConfig: # Only at creation; can't be added to an existing function
+        ExecutionTimeout: !Ref ExecutionTimeoutSeconds # Required. Whole workflow, max 1 year
+        RetentionPeriodInDays: !Ref RetentionPeriodInDays # 1-90, default 14
+        # KMSKeyArn: arn:aws:kms:...      # Customer managed key for checkpoint data
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+          APPROVAL_TIMEOUT_SECONDS: !Ref ApprovalTimeoutSeconds
+          SHIPPING_DELAY_SECONDS: !Ref ShippingDelaySeconds
+      Code:
+        ZipFile: |
+          import json, os
+          import boto3
+          from aws_durable_execution_sdk_python import CallbackError, DurableContext, durable_execution
+          from aws_durable_execution_sdk_python.config import Duration, WaitForCallbackConfig
+
+          table = boto3.resource("dynamodb").Table(os.environ["ORDERS_TABLE"])
+          APPROVAL_TIMEOUT = int(os.environ["APPROVAL_TIMEOUT_SECONDS"])
+          SHIPPING_DELAY = int(os.environ["SHIPPING_DELAY_SECONDS"])
+
+          def set_status(order_id, status, **attributes):
+              # Idempotent: steps are at-least-once, setting the same values twice is harmless
+              names, values, sets = {"#status": "status"}, {":status": status}, ["#status = :status"]
+              for key, value in attributes.items():
+                  names[f"#{key}"], values[f":{key}"] = key, value
+                  sets.append(f"#{key} = :{key}")
+              table.update_item(Key={"orderId": order_id}, UpdateExpression="SET " + ", ".join(sets),
+                                ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+              return status
+
+          @durable_execution
+          def handler(event, context: DurableContext):
+              # Runs again on every replay - keep it deterministic (only the event and env vars)
+              order_id = event["orderId"]
+              amount = str(event.get("amount", "0"))
+
+              # Step: checkpointed after it succeeds, retried if it fails, skipped on replay
+              context.step(lambda _: set_status(order_id, "RESERVED", amount=amount), name="reserve")
+
+              # Callback: the submitter stores the callback ID, then the function SUSPENDS
+              # (no compute charge) until someone calls SendDurableExecutionCallbackSuccess/Failure
+              def request_approval(callback_id, wait_context):
+                  set_status(order_id, "AWAITING_APPROVAL", callbackId=callback_id)
+
+              try:
+                  approval = context.wait_for_callback(
+                      request_approval,
+                      name="approval",
+                      config=WaitForCallbackConfig(timeout=Duration.from_seconds(APPROVAL_TIMEOUT)),
+                  )
+                  approval = json.loads(approval) if isinstance(approval, str) and approval else (approval or {})
+              # Catch only CallbackError: the SDK suspends by raising SuspendExecution (a
+              # BaseException) - a bare "except:" would swallow it and break the workflow
+              except CallbackError as error:  # Timed out, or SendDurableExecutionCallbackFailure
+                  approval = {"approved": False, "reason": type(error).__name__}
+
+              if not approval.get("approved"):
+                  context.step(lambda _: set_status(order_id, "RELEASED", reason=str(approval.get("reason", "rejected"))),
+                               name="release")
+                  return {"orderId": order_id, "status": "RELEASED"}
+
+              context.step(lambda _: set_status(order_id, "CHARGED"), name="charge")
+
+              # Durable wait: suspends the execution; resumes after the delay (no compute charge)
+              context.wait(Duration.from_seconds(SHIPPING_DELAY), name="shipping-delay")
+
+              context.step(lambda _: set_status(order_id, "SHIPPED"), name="ship")
+              return {"orderId": order_id, "status": "SHIPPED"}
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orderworkflow-lambda"
+
+  # Durable functions must be invoked with a qualified ARN (version, alias or $LATEST)
+  OrderWorkflowLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref OrderWorkflowLambdaFunction
+      Description: Executions started on this version replay on this version
+
+  OrderWorkflowLambdaAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref OrderWorkflowLambdaFunction
+      FunctionVersion: !GetAtt OrderWorkflowLambdaVersion.Version
+      Name: live
+
+Outputs:
+
+  OrderWorkflowAliasArn:
+    Description: Invoke this (qualified ARN), e.g. aws lambda invoke --invocation-type Event
+    Value: !Ref OrderWorkflowLambdaAlias
+
+  OrdersTableName:
+    Value: !Ref OrdersTable
+
+  OrderApproverManagedPolicyArn:
+    Value: !Ref OrderApproverManagedPolicy

@@ -1,0 +1,264 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Step Functions Standard workflow - the same order workflow as the durable function, with a task-token callback for human approval
+
+# -----------------------------------------------------------------------------
+# Summary
+#   The SAME order workflow as lambda-durable-order-approval.yaml, built the
+#   classic way - the expected exam answer for "orchestrate a multi-step /
+#   human-approval / long-running workflow":
+#     Reserve -> WaitForApproval (.waitForTaskToken) -> IsApproved
+#             -> Charge -> WaitBeforeShipping (Wait state) -> Ship
+#             -> Release (rejected, timed out or failed)
+#   No Lambda function at all: every step is a direct DynamoDB service
+#   integration; the state machine itself is the durable state.
+#     .waitForTaskToken   pause until SendTaskSuccess / SendTaskFailure with the
+#                         token (Standard workflows only; up to the 1-year limit)
+#     Wait state          timer, no compute
+#     TimeoutSeconds      on the callback task -> States.Timeout -> Release
+#
+# Resources created
+#   - DynamoDB table (orders), state machine role, Standard state machine
+#   - Managed policy for approvers (states:SendTaskSuccess / SendTaskFailure)
+#
+# Pre-requisites
+#   - None
+#
+# Assumptions
+#   - Standard workflow (Express doesn't support .waitForTaskToken, max 5 minutes)
+#   - The task token is stored in the order item; the approver reads it there.
+#     Tokens must be sent back from the same account
+#   - ASL with JSONPath (DefinitionString + !Sub so numbers stay unquoted)
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Workflow
+        Parameters:
+          - ApprovalTimeoutSeconds
+          - ShippingDelaySeconds
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  ApprovalTimeoutSeconds:
+    Type: Number
+    Default: 86400
+    MinValue: 60
+    Description: How long to wait for the approval task token (86400 = 1 day)
+
+  ShippingDelaySeconds:
+    Type: Number
+    Default: 60
+    MinValue: 1
+    Description: Wait state between charge and ship
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Table
+  # ---------------------------------------------------------------
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-sfn-orders"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-sfn-orders-table"
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  OrderWorkflowStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: order-workflow
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: OrdersTable
+                Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt OrdersTable.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orderworkflow-statemachine-role"
+
+  OrderApproverManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Application}-${Environment}-sfn-order-approver"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SendApprovalTaskTokens
+            Effect: Allow
+            Action:
+              - states:SendTaskSuccess
+              - states:SendTaskFailure
+              - states:SendTaskHeartbeat
+            Resource: !Ref OrderWorkflowStateMachine
+          - Sid: ReadOrders
+            Effect: Allow
+            Action: dynamodb:GetItem
+            Resource: !GetAtt OrdersTable.Arn
+
+  # ---------------------------------------------------------------
+  # State Machine
+  # ---------------------------------------------------------------
+
+  OrderWorkflowStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${Application}-${Environment}-order-workflow"
+      StateMachineType: STANDARD # Callbacks and waits up to 1 year; Express can't wait for tokens
+      RoleArn: !GetAtt OrderWorkflowStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Order workflow - reserve, approval callback, charge, wait, ship",
+          "StartAt": "Reserve",
+          "States": {
+            "Reserve": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${OrdersTable}",
+                "Key": { "orderId": { "S.$": "$.orderId" } },
+                "UpdateExpression": "SET #status = :status, #amount = :amount",
+                "ExpressionAttributeNames": { "#status": "status", "#amount": "amount" },
+                "ExpressionAttributeValues": {
+                  ":status": { "S": "RESERVED" },
+                  ":amount": { "S.$": "States.Format('{}', $.amount)" }
+                }
+              },
+              "ResultPath": null,
+              "Retry": [ { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2 } ],
+              "Next": "WaitForApproval"
+            },
+            "WaitForApproval": {
+              "Type": "Task",
+              "Comment": "AWS SDK integration + .waitForTaskToken: store the token, then pause until SendTaskSuccess/Failure",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:updateItem.waitForTaskToken",
+              "Parameters": {
+                "TableName": "${OrdersTable}",
+                "Key": { "orderId": { "S.$": "$.orderId" } },
+                "UpdateExpression": "SET #status = :status, #taskToken = :token",
+                "ExpressionAttributeNames": { "#status": "status", "#taskToken": "taskToken" },
+                "ExpressionAttributeValues": {
+                  ":status": { "S": "AWAITING_APPROVAL" },
+                  ":token": { "S.$": "$$.Task.Token" }
+                }
+              },
+              "TimeoutSeconds": ${ApprovalTimeoutSeconds},
+              "ResultPath": "$.approval",
+              "Catch": [ { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Release" } ],
+              "Next": "IsApproved"
+            },
+            "IsApproved": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "And": [
+                    { "Variable": "$.approval.approved", "IsPresent": true },
+                    { "Variable": "$.approval.approved", "BooleanEquals": true }
+                  ],
+                  "Next": "Charge"
+                }
+              ],
+              "Default": "Release"
+            },
+            "Charge": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${OrdersTable}",
+                "Key": { "orderId": { "S.$": "$.orderId" } },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": { "#status": "status" },
+                "ExpressionAttributeValues": { ":status": { "S": "CHARGED" } }
+              },
+              "ResultPath": null,
+              "Next": "WaitBeforeShipping"
+            },
+            "WaitBeforeShipping": {
+              "Type": "Wait",
+              "Seconds": ${ShippingDelaySeconds},
+              "Next": "Ship"
+            },
+            "Ship": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${OrdersTable}",
+                "Key": { "orderId": { "S.$": "$.orderId" } },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": { "#status": "status" },
+                "ExpressionAttributeValues": { ":status": { "S": "SHIPPED" } }
+              },
+              "ResultPath": null,
+              "End": true
+            },
+            "Release": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:updateItem",
+              "Parameters": {
+                "TableName": "${OrdersTable}",
+                "Key": { "orderId": { "S.$": "$.orderId" } },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": { "#status": "status" },
+                "ExpressionAttributeValues": { ":status": { "S": "RELEASED" } }
+              },
+              "ResultPath": null,
+              "End": true
+            }
+          }
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-orderworkflow-statemachine"
+
+Outputs:
+
+  OrderWorkflowStateMachineArn:
+    Description: aws stepfunctions start-execution --state-machine-arn <this>
+    Value: !Ref OrderWorkflowStateMachine
+
+  OrdersTableName:
+    Value: !Ref OrdersTable
+
+  OrderApproverManagedPolicyArn:
+    Value: !Ref OrderApproverManagedPolicy

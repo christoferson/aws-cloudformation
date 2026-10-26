@@ -75,6 +75,12 @@
 - arn:aws:iam::aws:policy/service-role/AWSLambdaKinesisExecutionRole
 - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
 
+### Lambda - Durable Functions (vs Step Functions)
+
+Order workflow with checkpointed steps, a human-approval callback and a free wait, written as Python in one durable function (up to 1 year), next to the same workflow as a Step Functions Standard state machine with .waitForTaskToken (the expected exam answer for orchestration).
+
+[lambda-durable-functions/README.md](lambda-durable-functions/README.md)
+
 ### Lambda - Basic - Inline NodeJS
 
 Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.
