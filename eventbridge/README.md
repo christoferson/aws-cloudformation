@@ -40,6 +40,12 @@ CodePipeline Pipeline Execution State Change: CANCELED | FAILED | RESUMED | STAR
 
 [eventbridge-rule-health](eventbridge-rule-health.yaml)
 
+### EventBridge - Rule - Health - Catch-all in US West (Oregon)
+
+AWS Health also delivers every event to us-west-2 (backup Region), so one stack there receives account-specific Health events from all Regions: readable email (page 1) and full events to SQS. README covers what it doesn't catch (public, global, HA, other accounts).
+
+[eventbridge-health/README.md](eventbridge-health/README.md)
+
 ### EventBridge - Rule - Custom
 
 [eventbridge-rule-custom](eventbridge-rule-custom.yaml)

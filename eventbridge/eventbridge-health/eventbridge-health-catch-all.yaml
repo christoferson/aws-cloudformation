@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Health catch-all - one EventBridge setup in US West (Oregon) receives account-specific Health events from every Region (email + queue)
+
+# -----------------------------------------------------------------------------
+# Summary
+#   AWS Health sends every event to the affected Region AND to a backup Region:
+#   US West (Oregon) is the backup for all other standard-partition Regions
+#   (US East (N. Virginia) is the backup for Oregon). So instead of one rule per
+#   Region, ONE stack in us-west-2 ("simplified integration") sees account-specific
+#   events (scheduled maintenance, EC2 retirements, certificate expiry, issues
+#   affecting your resources, ...) from all Regions:
+#     NotifyRule   ACCOUNT_SPECIFIC, page 1 only  -> SNS email (readable text via
+#                  input transformer: Region, service, event type, status, action)
+#     RecordRule   ACCOUNT_SPECIFIC, all pages    -> SQS queue (full JSON, for
+#                  automation / ticketing; big events are split into pages)
+#   detail.backupEvent tells whether a copy arrived here as a backup ("true") or
+#   because the event is for us-west-2 itself ("false"); both are wanted here.
+#
+# Resources created
+#   - SNS topic + email subscription, SQS queue (+ DLQ) with queue policy
+#   - 2 x AWS::Events::Rule on the default event bus
+#
+# Pre-requisites
+#   - Deploy THIS stack in us-west-2. Confirm the SNS email subscription
+#
+# Assumptions
+#   - Not covered by this single rule (see README): public events (Health
+#     Dashboard service events), global events (e.g. IAM - need a rule in
+#     us-east-1), and high availability (needs rules in the event Region + backup
+#     Region and de-duplication on eventArn + communicationId)
+#   - Delivery is at least once; consumers of the queue should be idempotent
+#   - Only events of THIS account. For all accounts, deploy in the management or
+#     Health delegated administrator account with organizational view enabled
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Notification
+        Parameters:
+          - NotificationEmail
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  NotificationEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: Email address for Health notifications (confirm the subscription)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Targets
+  # ---------------------------------------------------------------
+
+  HealthNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${Application}-${Environment}-health-notifications"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-health-notifications-topic"
+
+  HealthNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref HealthNotificationTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowNotifyRule
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref HealthNotificationTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt HealthNotifyRule.Arn
+
+  HealthEventDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-health-events-dlq"
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-health-events-dlq"
+
+  # The rule target's DLQ needs its own permission for EventBridge
+  HealthEventDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref HealthEventDeadLetterQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowRecordRuleDeadLetter
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt HealthEventDeadLetterQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt HealthRecordRule.Arn
+
+  HealthEventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Application}-${Environment}-health-events"
+      MessageRetentionPeriod: 1209600 # 14 days to process / archive
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt HealthEventDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-health-events-queue"
+
+  HealthEventQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref HealthEventQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowRecordRule
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt HealthEventQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt HealthRecordRule.Arn
+
+  # ---------------------------------------------------------------
+  # Rules (default event bus - Health events arrive there)
+  # ---------------------------------------------------------------
+
+  HealthNotifyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${Application}-${Environment}-health-notify"
+      Description: Account-specific Health events from all Regions (page 1) -> email
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.health # Exact value; "aws.health*" wildcards don't match
+        detail-type:
+          - AWS Health Event
+        detail:
+          eventScopeCode:
+            - ACCOUNT_SPECIFIC # Public events are not aggregated in Oregon
+          page:
+            - "1" # Large events are split into pages; humans need one message
+      Targets:
+        - Id: email
+          Arn: !Ref HealthNotificationTopic
+          InputTransformer:
+            InputPathsMap:
+              region: $.detail.eventRegion
+              service: $.detail.service
+              eventTypeCode: $.detail.eventTypeCode
+              category: $.detail.eventTypeCategory
+              status: $.detail.statusCode
+              actionability: $.detail.actionability
+              backup: $.detail.backupEvent
+              startTime: $.detail.startTime
+              eventArn: $.detail.eventArn
+              description: $.detail.eventDescription[0].latestDescription
+            # Quoted string template -> plain-text email body
+            InputTemplate: >-
+              "AWS Health: <service> <eventTypeCode> in <region> | Category: <category> | Status: <status> |
+              Actionability: <actionability> | Start: <startTime> | Backup copy: <backup> | Event: <eventArn> |
+              <description>"
+
+  HealthRecordRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${Application}-${Environment}-health-record"
+      Description: Account-specific Health events from all Regions (all pages) -> queue
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.health
+        detail-type:
+          - AWS Health Event
+        detail:
+          eventScopeCode:
+            - ACCOUNT_SPECIFIC
+      Targets:
+        - Id: queue
+          Arn: !GetAtt HealthEventQueue.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 10
+            MaximumEventAgeInSeconds: 86400
+          DeadLetterConfig: # Events EventBridge couldn't deliver to the queue
+            Arn: !GetAtt HealthEventDeadLetterQueue.Arn
+
+Outputs:
+
+  HealthNotificationTopicArn:
+    Value: !Ref HealthNotificationTopic
+
+  HealthEventQueueUrl:
+    Description: Full Health events (all pages) - de-duplicate on detail.eventArn + detail.communicationId
+    Value: !Ref HealthEventQueue
