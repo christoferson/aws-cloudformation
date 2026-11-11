@@ -1,0 +1,241 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: GuardDuty Runtime Monitoring for EC2 - detector with automated agent management, runtime finding notifications, coverage alerting
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Turns on GuardDuty Runtime Monitoring for Amazon EC2 and lets GuardDuty
+#   deploy and update the security agent itself (automated agent management).
+#   Runtime Monitoring is the eBPF-based agent that reports process execution,
+#   file access, network connections and DNS from inside the instance, so
+#   GuardDuty can detect reverse shells, crypto miners, container escapes and
+#   credential theft that CloudTrail / VPC flow logs never show.
+#   Enablement is two steps, and this template does both:
+#     1. RUNTIME_MONITORING          turn the feature on for the account+Region
+#     2. EC2_AGENT_MANAGEMENT        let GuardDuty install/update the agent
+#   It also routes what the agent finds:
+#     RuntimeFindingRule             any *:Runtime/* finding at or above the
+#                                    severity threshold -> SNS email
+#     RuntimeCoverageRule            GuardDuty Runtime Protection Unhealthy /
+#                                    Healthy -> SNS email. Unhealthy coverage
+#                                    means no runtime findings are generated at
+#                                    all, so it is the alert that matters most
+#
+# Resources created
+#   - AWS::GuardDuty::Detector (Features: RUNTIME_MONITORING + EC2_AGENT_MANAGEMENT)
+#   - SNS topic + email subscription + topic policy
+#   - 2 x AWS::Events::Rule on the default event bus
+#
+# Pre-requisites
+#   - GuardDuty must NOT already be enabled in this account+Region. One detector
+#     per account per Region: if a detector exists, stack creation fails with
+#     "detector already exists for the current account". Either delete it, or
+#     import it into the stack, or configure the existing detector with
+#     "aws guardduty update-detector --features ..." instead of this template
+#   - Instances must be SSM managed, on a supported kernel, and able to reach
+#     GuardDuty. See guardduty-runtime-monitoring-ec2-instance.yaml
+#   - In an organization, the SCP must allow guardduty:SendSecurityTelemetry
+#
+# Assumptions
+#   - Standalone account. CloudFormation has no GuardDuty organization
+#     configuration resource, so org-wide auto-enable is a CLI/API step - see
+#     README
+#   - All EC2 instances in the account are in scope. Opt an instance out with
+#     the GuardDutyManaged=false tag - see
+#     guardduty-runtime-monitoring-ec2-instance.yaml. To invert that to opt-in,
+#     set EC2_AGENT_MANAGEMENT to DISABLED and tag GuardDutyManaged=true
+#   - EKS and ECS-on-Fargate agent management are left off, so this stack only
+#     affects EC2. RUNTIME_MONITORING already covers EKS, so never also enable
+#     the legacy EKS_RUNTIME_MONITORING feature - that combination errors
+#   - Runtime Monitoring is billed per vCPU-hour of monitored instances. While
+#     the agent reports, GuardDuty stops charging VPC flow log analysis for
+#     that instance, so the two do not double-bill
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Notification
+        Parameters:
+          - NotificationEmail
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  NotificationEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: Email address for runtime findings and coverage alerts (confirm the subscription)
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Detector - the GuardDuty configuration for this account + Region
+  # ---------------------------------------------------------------
+
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES # Only affects updates to existing findings; new findings publish immediately
+      Features:
+        - Name: RUNTIME_MONITORING
+          Status: ENABLED
+          AdditionalConfiguration:
+            # GuardDuty creates one SSM association, GuardDutyRuntimeMonitoring-do-not-delete,
+            # and uses it to install and update the agent on SSM-managed instances
+            - Name: EC2_AGENT_MANAGEMENT
+              Status: ENABLED
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-detector"
+
+  # ---------------------------------------------------------------
+  # Notification target
+  # ---------------------------------------------------------------
+
+  RuntimeFindingTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${Application}-${Environment}-guardduty-runtime-findings"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-runtime-findings-topic"
+
+  RuntimeFindingTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref RuntimeFindingTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowRuntimeFindingRule
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref RuntimeFindingTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt RuntimeFindingRule.Arn
+          - Sid: AllowRuntimeCoverageRule
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref RuntimeFindingTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt RuntimeCoverageRule.Arn
+
+  # ---------------------------------------------------------------
+  # EventBridge - runtime findings and coverage status
+  # ---------------------------------------------------------------
+
+  RuntimeFindingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${Application}-${Environment}-guardduty-runtime-finding"
+      Description: GuardDuty Runtime Monitoring findings at or above the severity threshold
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+        detail:
+          type:
+            # Every Runtime Monitoring finding type contains ":Runtime/", for example
+            # Execution:Runtime/ReverseShell or PrivilegeEscalation:Runtime/RuncContainerEscape.
+            # Without this, the rule also matches CloudTrail- and DNS-based findings
+            - wildcard: "*:Runtime/*"
+          severity:
+            # Medium and above. Severity bands: Low 1.0-3.9, Medium 4.0-6.9,
+            # High 7.0-8.9, Critical 9.0-10.0. Kept a literal because EventBridge
+            # numeric matching needs a JSON number, not a Ref that may render as a string
+            - numeric:
+                - ">="
+                - 4
+      Targets:
+        - Id: email
+          Arn: !Ref RuntimeFindingTopic
+          InputTransformer:
+            InputPathsMap:
+              account: $.detail.accountId
+              region: $.detail.region
+              type: $.detail.type
+              severity: $.detail.severity
+              title: $.detail.title
+              description: $.detail.description
+              instanceId: $.detail.resource.instanceDetails.instanceId
+              processName: $.detail.service.runtimeDetails.process.name
+              processPath: $.detail.service.runtimeDetails.process.executablePath
+              findingId: $.detail.id
+            # Quoted string template -> plain-text email body
+            InputTemplate: >-
+              "GuardDuty runtime finding (severity <severity>): <type> | Instance: <instanceId> | Process: <processName> (<processPath>) |
+              Account: <account> in <region> | <title> | <description> | Finding: <findingId>"
+
+  RuntimeCoverageRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${Application}-${Environment}-guardduty-runtime-coverage"
+      Description: GuardDuty Runtime Monitoring coverage status changes for EC2 instances
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          # Unhealthy coverage is silent failure - the agent is not reporting, so
+          # GuardDuty generates no runtime findings for that instance at all
+          - GuardDuty Runtime Protection Unhealthy
+          - GuardDuty Runtime Protection Healthy
+        detail:
+          resourceDetails:
+            resourceType:
+              - EC2
+      Targets:
+        - Id: email
+          Arn: !Ref RuntimeFindingTopic
+          InputTransformer:
+            InputPathsMap:
+              detailType: $.detail-type
+              account: $.detail.resourceAccountId
+              current: $.detail.currentStatus
+              previous: $.detail.previousStatus
+              instanceId: $.detail.resourceDetails.ec2InstanceDetails.instanceId
+              instanceType: $.detail.resourceDetails.ec2InstanceDetails.instanceType
+              agentVersion: $.detail.resourceDetails.ec2InstanceDetails.agentDetails.version
+              managementType: $.detail.resourceDetails.ec2InstanceDetails.managementType
+              issue: $.detail.issue
+            InputTemplate: >-
+              "<detailType>: instance <instanceId> (<instanceType>) went <previous> -> <current> | Agent: <agentVersion> |
+              Managed: <managementType> | Account: <account> | Issue: <issue>"
+
+Outputs:
+
+  GuardDutyDetectorId:
+    Description: Detector ID - needed for aws guardduty list-coverage and get-coverage-statistics
+    Value: !Ref GuardDutyDetector
+
+  RuntimeFindingTopicArn:
+    Value: !Ref RuntimeFindingTopic

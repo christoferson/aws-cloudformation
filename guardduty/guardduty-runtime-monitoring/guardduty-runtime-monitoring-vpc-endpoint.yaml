@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Customer-owned guardduty-data VPC endpoint for Runtime Monitoring - keeps GuardDuty from creating one your IaC tool cannot delete
+
+# -----------------------------------------------------------------------------
+# Summary
+#   Creates the com.amazonaws.<region>.guardduty-data interface endpoint and its
+#   security group in your own stack, before you enable automated agent
+#   management. Two reasons to do this:
+#     1. Deletability. When GuardDuty creates the endpoint itself it tags it
+#        GuardDutyManaged=true and only removes it when you disable Runtime
+#        Monitoring. Until then your VPC stack fails to delete its subnets with
+#        "has dependencies and cannot be deleted" (DependencyViolation),
+#        because an endpoint CloudFormation does not know about sits in them.
+#        If the endpoint already exists, GuardDuty reuses it instead of creating
+#        its own, and deletion order stays inside one stack
+#     2. Manual agent management, and Regions where link-local connectivity is
+#        not supported, both require an endpoint
+#   New enablements of automated agent management connect over a link-local
+#   address instead and need no endpoint at all, so deploy this only for the
+#   cases above.
+#
+# Resources created
+#   - AWS::EC2::SecurityGroup (inbound 443 from the VPC CIDR)
+#   - AWS::EC2::VPCEndpoint (Interface, private DNS, endpoint policy)
+#
+# Pre-requisites
+#   - An existing VPC and private subnets, one per Availability Zone you run in
+#   - Deploy this BEFORE enabling Runtime Monitoring automated agent management.
+#     A VPC that GuardDuty already set up keeps using GuardDuty's endpoint until
+#     you turn Runtime Monitoring off and on again
+#
+# Assumptions
+#   - The endpoint is restricted to principals in this account. To share it
+#     across an organization, swap aws:PrincipalAccount for aws:PrincipalOrgID
+#   - No GuardDutyManaged tag is set on purpose. That tag is how GuardDuty
+#     identifies endpoints and security groups it owns and may delete, and the
+#     whole point here is that this stack owns them
+#   - Private DNS is on, so the agent resolves guardduty-data.<region>.amazonaws.com
+#     to the endpoint. The VPC needs DNS hostnames and DNS support enabled
+#   - There is no charge for the GuardDuty data endpoint itself
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - VpcCidrBlock
+          - VpcSubnetIdList
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC whose instances run the GuardDuty security agent
+
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+    Description: IPv4 CIDR of the VPC - the only source allowed to reach the endpoint on 443
+
+  VpcSubnetIdList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets for the endpoint network interfaces, one per Availability Zone in use
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Group
+  # ---------------------------------------------------------------
+
+  GuardDutyDataEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: GuardDuty Runtime Monitoring data endpoint - inbound HTTPS from the VPC
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Coverage goes Unhealthy if the agent cannot reach 443 here. The docs
+        # allow 0.0.0.0/0 as a fallback while troubleshooting, but recommend the VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCidrBlock
+          Description: Runtime events from the GuardDuty security agent on instances in this VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-data-endpoint-securitygroup"
+
+  # ---------------------------------------------------------------
+  # VPC Endpoint
+  # ---------------------------------------------------------------
+
+  GuardDutyDataEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.guardduty-data"
+      VpcEndpointType: Interface
+      VpcId: !Ref VpcId
+      SubnetIds: !Ref VpcSubnetIdList
+      SecurityGroupIds:
+        - !Ref GuardDutyDataEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      # Allow, then deny everything from outside this account. The agent runs as
+      # an instance identity role, so principal-based allow lists are not practical
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowGuardDutyAgentTelemetry
+            Effect: Allow
+            Principal: "*"
+            Action: "*"
+            Resource: "*"
+          - Sid: DenyOutsideThisAccount
+            Effect: Deny
+            Principal: "*"
+            Action: "*"
+            Resource: "*"
+            Condition:
+              StringNotEquals:
+                aws:PrincipalAccount: !Ref AWS::AccountId
+
+Outputs:
+
+  GuardDutyDataEndpointId:
+    Description: Enable Runtime Monitoring automated agent management after this exists, so GuardDuty reuses it
+    Value: !Ref GuardDutyDataEndpoint
+
+  GuardDutyDataEndpointSecurityGroupId:
+    Value: !Ref GuardDutyDataEndpointSecurityGroup

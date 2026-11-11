@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 instances prepared for the GuardDuty Runtime Monitoring agent - SSM managed, IMDS tags enabled, one monitored and one opted out
+
+# -----------------------------------------------------------------------------
+# Summary
+#   The workload side of Runtime Monitoring. Enabling the feature is not enough:
+#   GuardDuty installs the security agent through an SSM association, so an
+#   instance only reaches Healthy coverage when it is SSM managed, runs a
+#   supported kernel and can reach GuardDuty. This template builds two
+#   instances that show both sides of the GuardDutyManaged tag:
+#     MonitoredInstance   no GuardDutyManaged tag, so with automated agent
+#                         management ENABLED it is covered by default
+#     OptedOutInstance    GuardDutyManaged=false, so GuardDuty never installs
+#                         the agent. The realistic reason to do this is an
+#                         instance whose vCPU-hours you do not want to pay for,
+#                         or one already running a third-party runtime sensor
+#   Both instances enable instance metadata tags. That is not cosmetic:
+#   GuardDuty reads the exclusion tag from IMDS, so without it the
+#   GuardDutyManaged=false tag is invisible and the instance gets the agent.
+#
+# Resources created
+#   - IAM role + instance profile (AmazonSSMManagedInstanceCore)
+#   - Security group (no inbound, HTTPS egress)
+#   - 2 x AWS::EC2::Instance
+#
+# Pre-requisites
+#   - Runtime Monitoring enabled with EC2_AGENT_MANAGEMENT - see
+#     guardduty-runtime-monitoring-ec2.yaml
+#   - A subnet with a route to the SSM endpoints: either a public subnet with a
+#     public IP, a private subnet behind a NAT gateway, or VPC endpoints for
+#     ssm, ssmmessages and ec2messages
+#   - Add the exclusion tag BEFORE launching. An instance that launches without
+#     it is picked up by automated agent management, and adding the tag later
+#     stops GuardDuty managing the agent but does not uninstall it
+#
+# Assumptions
+#   - Amazon Linux 2023 x86_64 from the public SSM AMI parameter. Runtime
+#     Monitoring needs AMD64 or ARM64 Graviton2+ (first-generation Graviton, the
+#     A1 family, is not supported) and a verified kernel with
+#     CONFIG_DEBUG_INFO_BTF=y. AL2023 ships kernel 6.1, which is supported
+#   - No inbound rules and no key pair. Connect with Session Manager
+#   - The agent is capped at 10% of the instance vCPU, and at 128 MB of memory
+#     below 8 GB RAM, 256 MB from 8 GB to under 32 GB, 1 GB at 32 GB and above
+#   - t3.micro is only for a coverage test. On kernels 5.10 and older you also
+#     need RLIMIT_MEMLOCK at 32 MB or more; AL2023 is past that
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - VpcSubnetId
+      - Label:
+          default: Instance
+        Parameters:
+          - InstanceType
+          - InstanceAmiId
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the instances
+
+  VpcSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet with a network path to the AWS Systems Manager endpoints
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: Instance type (AMD64, or ARM64 on Graviton2 and later)
+
+  InstanceAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Public SSM parameter resolving to the latest Amazon Linux 2023 AMI
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Group
+  # ---------------------------------------------------------------
+
+  MonitoredInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: GuardDuty Runtime Monitoring instances - outbound HTTPS only
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        # Systems Manager, and the agent's own telemetry. If you tighten this,
+        # keep 443 open to the link-local range 169.254.170.248/29 (and
+        # fd00:ec2:6d00::/64 on IPv6) that the agent sends runtime events to,
+        # or coverage goes Unhealthy with no obvious cause
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS to AWS service endpoints and the GuardDuty data plane
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-instance-securitygroup"
+
+  # ---------------------------------------------------------------
+  # IAM Role - Systems Manager only
+  # ---------------------------------------------------------------
+
+  # The security agent authenticates with the EC2 instance identity role, not
+  # this profile, so no guardduty permissions belong here. The profile exists
+  # purely so GuardDuty can reach the instance through SSM to install the agent
+  MonitoredInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-instance-role"
+
+  MonitoredInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref MonitoredInstanceRole
+
+  # ---------------------------------------------------------------
+  # Instances
+  # ---------------------------------------------------------------
+
+  MonitoredInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref InstanceAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref MonitoredInstanceProfile
+      SubnetId: !Ref VpcSubnetId
+      SecurityGroupIds:
+        - !Ref MonitoredInstanceSecurityGroup
+      MetadataOptions:
+        HttpEndpoint: enabled # The agent needs the instance identity document from IMDS
+        HttpTokens: required # IMDSv2
+        InstanceMetadataTags: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-monitored-instance"
+
+  OptedOutInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref InstanceAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref MonitoredInstanceProfile
+      SubnetId: !Ref VpcSubnetId
+      SecurityGroupIds:
+        - !Ref MonitoredInstanceSecurityGroup
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        InstanceMetadataTags: enabled # Without this GuardDuty cannot read the exclusion tag below
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-guardduty-optedout-instance"
+        # Exclusion tag. Coverage for this instance reports the issue
+        # "Instances with exclusion tags are excluded from Runtime Monitoring".
+        # Control who can change this tag with an SCP or IAM policy, otherwise
+        # anyone who can tag an instance can turn off its runtime detection
+        - Key: GuardDutyManaged
+          Value: "false"
+
+Outputs:
+
+  MonitoredInstanceId:
+    Description: Expect Healthy coverage within minutes - aws guardduty list-coverage --detector-id <id>
+    Value: !Ref MonitoredInstance
+
+  OptedOutInstanceId:
+    Description: Expect no agent and an exclusion-tag issue in coverage
+    Value: !Ref OptedOutInstance
