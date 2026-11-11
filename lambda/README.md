@@ -81,6 +81,12 @@ Order workflow with checkpointed steps, a human-approval callback and a free wai
 
 [lambda-durable-functions/README.md](lambda-durable-functions/README.md)
 
+### Lambda - MicroVMs (basic, multi-tenant sandbox, VPC networking)
+
+Firecracker MicroVMs for running user- or AI-generated code: an image built from a Dockerfile and snapshotted, one isolated MicroVM per tenant behind a session broker with lifecycle hooks and port-scoped tokens, and a VPC egress connector that takes the internet away from tenant code.
+
+[lambda-microvms/README.md](lambda-microvms/README.md)
+
 ### Lambda - Basic - Inline NodeJS
 
 Provision a Lambda and Execution Role with Inline Code. Code in NodeJS.

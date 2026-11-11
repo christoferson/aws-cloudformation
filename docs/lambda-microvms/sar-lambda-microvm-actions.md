@@ -1,0 +1,75 @@
+<!-- Source: https://docs.aws.amazon.com/service-authorization/latest/reference/list_lambda.html -->
+<!-- Downloaded: 2026-11-12 -->
+<!-- Extract: rows mentioning MicroVM or NetworkConnector. Columns are API | IAM action(s) | resource type | condition keys | access level -->
+
+# AWS Lambda - MicroVM and network connector IAM actions (extract)
+
+- CreateNetworkConnector | lambda-core | lambda:CreateNetworkConnector |  |  | Write
+- DeleteNetworkConnector | lambda-core | lambda:DeleteNetworkConnector |  |  | Write
+- GetNetworkConnector | lambda-core | lambda:GetNetworkConnector |  |  | Read
+- ListNetworkConnectorVersions | lambda-core | lambda:ListNetworkConnectorVersions |  |  | List
+- ListNetworkConnectors | lambda-core | lambda:ListNetworkConnectors |  |  | List
+- UpdateNetworkConnector | lambda-core | lambda:UpdateNetworkConnector |  |  | Write
+- CreateMicrovmAuthToken | lambda-microvms | lambda:CreateMicrovmAuthToken |  |  | Write
+- CreateMicrovmImage | lambda-microvms | lambda:CreateMicrovmImage |  |  | Write
+- lambda:PassNetworkConnector |  |  | Write
+- CreateMicrovmShellAuthToken | lambda-microvms | lambda:CreateMicrovmShellAuthToken |  |  | Write
+- DeleteMicrovmImage | lambda-microvms | lambda:DeleteMicrovmImage |  |  | Write
+- DeleteMicrovmImageVersion | lambda-microvms | lambda:DeleteMicrovmImageVersion |  |  | Write
+- GetMicrovm | lambda-microvms | lambda:GetMicrovm |  |  | Read
+- GetMicrovmImage | lambda-microvms | lambda:GetMicrovmImage |  |  | Read
+- GetMicrovmImageBuild | lambda-microvms | lambda:GetMicrovmImageBuild |  |  | Read
+- GetMicrovmImageVersion | lambda-microvms | lambda:GetMicrovmImageVersion |  |  | Read
+- ListManagedMicrovmImageVersions | lambda-microvms | lambda:ListManagedMicrovmImageVersions |  |  | List
+- ListManagedMicrovmImages | lambda-microvms | lambda:ListManagedMicrovmImages |  |  | List
+- ListMicrovmImageBuilds | lambda-microvms | lambda:ListMicrovmImageBuilds |  |  | List
+- ListMicrovmImageVersions | lambda-microvms | lambda:ListMicrovmImageVersions |  |  | List
+- ListMicrovmImages | lambda-microvms | lambda:ListMicrovmImages |  |  | List
+- ListMicrovms | lambda-microvms | lambda:ListMicrovms |  |  | List
+- ListTags | lambda-microvms | lambda:ListTags |  |  | Read
+- ResumeMicrovm | lambda-microvms | lambda:ResumeMicrovm |  |  | Write
+- RunMicrovm | lambda-microvms | lambda:PassNetworkConnector |  |  | Write
+- lambda:RunMicrovm |  |  | Write
+- SuspendMicrovm | lambda-microvms | lambda:SuspendMicrovm |  |  | Write
+- TagResource | lambda-microvms | lambda:TagResource |  |  | Tagging, Write
+- TerminateMicrovm | lambda-microvms | lambda:TerminateMicrovm |  |  | Write
+- UntagResource | lambda-microvms | lambda:UntagResource |  |  | Tagging, Write
+- UpdateMicrovmImage | lambda-microvms | lambda:PassNetworkConnector |  |  | Write
+- lambda:UpdateMicrovmImage |  |  | Write
+- UpdateMicrovmImageVersion | lambda-microvms | lambda:UpdateMicrovmImageVersion |  |  | Write
+- lambda:PassNetworkConnector |  |  | Write
+- lambda:PassNetworkConnector |  |  | Write
+- CreateMicrovmAuthToken | Grants permission to create an auth token for an AWS Lambda MicroVM | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- CreateMicrovmImage | Grants permission to create an AWS Lambda MicroVM image |  | aws:RequestTag/${TagKey} aws:TagKeys | Write
+- CreateMicrovmShellAuthToken | Grants permission to create a shell auth token for an AWS Lambda MicroVM | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- CreateNetworkConnector | Grants permission to create an AWS Lambda network connector | networkConnector* | aws:RequestTag/${TagKey} aws:ResourceTag/${TagKey} aws:TagKeys lambda:SecurityGroupIds lambda:SubnetIds | Write
+- DeleteMicrovmImage | Grants permission to delete an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- DeleteMicrovmImageVersion | Grants permission to delete a version of an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- DeleteNetworkConnector | Grants permission to delete an AWS Lambda network connector | networkConnector* | aws:ResourceTag/${TagKey} | Write
+- GetMicrovm | Grants permission to view information about an AWS Lambda MicroVM | microvmImage* | aws:ResourceTag/${TagKey} | Read
+- GetMicrovmImage | Grants permission to view information about an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Read
+- GetMicrovmImageBuild | Grants permission to view information about a build of an AWS Lambda MicroVM image version | microvmImage* | aws:ResourceTag/${TagKey} | Read
+- GetMicrovmImageVersion | Grants permission to view information about a version of an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Read
+- GetNetworkConnector | Grants permission to view details about an AWS Lambda network connector | networkConnector* | aws:ResourceTag/${TagKey} | Read
+- ListManagedMicrovmImageVersions | Grants permission to retrieve a list of versions for a managed AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | List
+- ListManagedMicrovmImages | Grants permission to retrieve a list of managed AWS Lambda MicroVM images |  |  | List
+- ListMicrovmImageBuilds | Grants permission to retrieve a list of builds for an AWS Lambda MicroVM image version | microvmImage* | aws:ResourceTag/${TagKey} | List
+- ListMicrovmImageVersions | Grants permission to retrieve a list of versions for an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | List
+- ListMicrovmImages | Grants permission to retrieve a list of AWS Lambda MicroVM images |  |  | List
+- ListMicrovms | Grants permission to retrieve a list of AWS Lambda MicroVMs |  |  | List
+- ListNetworkConnectorVersions | Grants permission to retrieve a list of versions of an AWS Lambda network connector | networkConnector* | aws:ResourceTag/${TagKey} | List
+- ListNetworkConnectors | Grants permission to retrieve a list of AWS Lambda network connectors |  |  | List
+- microvmImage | aws:ResourceTag/${TagKey}
+- ResumeMicrovm | Grants permission to resume a suspended AWS Lambda MicroVM | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- RunMicrovm | Grants permission to run an AWS Lambda MicroVM from a MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- SuspendMicrovm | Grants permission to suspend an AWS Lambda MicroVM | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- microvmImage | aws:RequestTag/${TagKey} aws:ResourceTag/${TagKey} aws:TagKeys
+- TerminateMicrovm | Grants permission to terminate an AWS Lambda MicroVM | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- microvmImage | aws:ResourceTag/${TagKey} aws:TagKeys
+- UpdateMicrovmImage | Grants permission to update an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- UpdateMicrovmImageVersion | Grants permission to update a version of an AWS Lambda MicroVM image | microvmImage* | aws:ResourceTag/${TagKey} | Write
+- UpdateNetworkConnector | Grants permission to update an AWS Lambda network connector | networkConnector* | aws:ResourceTag/${TagKey} | Write
+- ConnectMicrovm | Grants permission to connect to a Lambda MicroVM via HTTP (VPC Endpoint only) |  |  | Write
+- PassNetworkConnector | Grants permission to pass an AWS Lambda network connector to a service |  |  | Write
+- microvmImage | arn:${Partition}:lambda:${Region}:${Account}:microvm-image:${MicrovmImageName} | aws:ResourceTag/${TagKey}
+- networkConnector | arn:${Partition}:lambda:${Region}:${Account}:network-connector:${NetworkConnectorId} | aws:ResourceTag/${TagKey}

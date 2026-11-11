@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda MicroVM basic - one MicroVM image built from a Dockerfile, plus build and execution roles
+
+# -----------------------------------------------------------------------------
+# Summary
+#   The smallest useful Lambda MicroVM setup. CloudFormation owns the long-lived
+#   pieces; the MicroVMs themselves are per-session and launched with the CLI:
+#     BasicMicrovmImage     Lambda unzips app/basic from S3, runs the Dockerfile
+#                           on the managed AL2023 base, starts node app.js, and
+#                           snapshots memory + disk. Every MicroVM restores from
+#                           that snapshot instead of booting
+#     MicrovmBuildRole      used during the image build (read the zip, write
+#                           build logs)
+#     MicrovmExecutionRole  passed to run-microvm. Without it the MicroVM's
+#                           stdout/stderr never reaches CloudWatch
+#   There is no CloudFormation resource for a running MicroVM. run-microvm
+#   returns a dedicated HTTPS endpoint; every request needs a JWE token from
+#   create-microvm-auth-token in the X-aws-proxy-auth header.
+#
+# Resources created
+#   - AWS::Lambda::MicrovmImage
+#   - 2 x AWS::IAM::Role (build, execution)
+#   - AWS::Logs::LogGroup (build and runtime logs)
+#
+# Pre-requisites
+#   - basic-app.zip (Dockerfile + app.js at the zip root) uploaded to an S3
+#     bucket in THIS Region: python package.py <bucket>
+#   - Lambda MicroVMs available in the Region
+#   - The deploying principal needs iam:PassRole and lambda:PassNetworkConnector
+#
+# Assumptions
+#   - CloudFormation waits for the build to reach CREATED, so stack creation
+#     takes as long as the Dockerfile build + snapshot (minutes)
+#   - CloudFormation requires every property of AWS::Lambda::MicrovmImage, even
+#     ones the API treats as optional, so empty lists / objects are passed for
+#     unused features (no OS capabilities, no hooks)
+#   - Changing CodeArtifactKey (or any other build input) triggers a new image
+#     version; existing MicroVMs keep running their old version
+#   - Terminate MicroVMs launched from this image before deleting the stack
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Code artifact
+        Parameters:
+          - CodeArtifactBucket
+          - CodeArtifactKey
+      - Label:
+          default: MicroVM image
+        Parameters:
+          - BaseImageVersion
+          - CpuArchitecture
+          - BaselineMemoryInMiB
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  CodeArtifactBucket:
+    Type: String
+    Description: S3 bucket (same Region) holding the application zip
+
+  CodeArtifactKey:
+    Type: String
+    Default: microvms/basic-app.zip
+    Description: Object key of the zip. Upload under a new key to roll out a new image version
+
+  BaseImageVersion:
+    Type: String
+    Default: "3"
+    Description: Managed AL2023 base image version - list with aws lambda-microvms list-managed-microvm-image-versions. Version 3 is the first with X86_64
+
+  CpuArchitecture:
+    Type: String
+    Default: ARM_64
+    AllowedValues: [ARM_64, X86_64]
+    Description: Must match the container FROM image and any prebuilt binaries
+
+  BaselineMemoryInMiB:
+    Type: Number
+    Default: 1024
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+    Description: Baseline size; vCPU = memory / 2 GB, and the MicroVM can burst to 4x. 1024 = 0.5 vCPU baseline, 4 GB / 2 vCPU peak
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # IAM Roles
+  # ---------------------------------------------------------------
+
+  MicrovmBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+      Policies:
+        - PolicyName: microvm-build
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${CodeArtifactBucket}/${CodeArtifactKey}"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt MicrovmLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-microvm-build-role"
+
+  MicrovmExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+      # Logs only. Whatever this role allows, code running inside the MicroVM can use
+      Policies:
+        - PolicyName: microvm-runtime-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt MicrovmLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-microvm-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Group
+  # ---------------------------------------------------------------
+
+  MicrovmLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda-microvms/${Application}/${Environment}/basic"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # MicroVM Image
+  # ---------------------------------------------------------------
+
+  BasicMicrovmImage:
+    Type: AWS::Lambda::MicrovmImage
+    Properties:
+      Name: !Sub "${Application}-${Environment}-basic"
+      Description: Minimal Node.js HTTP server on port 8080
+      BaseImageArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:aws:microvm-image:al2023-1"
+      BaseImageVersion: !Ref BaseImageVersion
+      BuildRoleArn: !GetAtt MicrovmBuildRole.Arn
+      CodeArtifact:
+        Uri: !Sub "s3://${CodeArtifactBucket}/${CodeArtifactKey}"
+      CpuConfigurations:
+        - Architecture: !Ref CpuArchitecture
+      Resources:
+        - MinimumMemoryInMiB: !Ref BaselineMemoryInMiB
+      # Build-time only, so the Dockerfile can pull node:24-alpine. Runtime egress is chosen per MicroVM in run-microvm
+      EgressNetworkConnectors:
+        - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:aws:network-connector:aws-network-connector:INTERNET_EGRESS"
+      AdditionalOsCapabilities: [] # ALL is the only other value; not needed for a web server
+      Hooks: {} # No /ready hook: Lambda snapshots once the CMD process is up
+      EnvironmentVariables:
+        - Key: APP_ENV
+          Value: !Ref Environment
+      Logging:
+        CloudWatch:
+          LogGroup: !Ref MicrovmLogGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-basic-microvm-image"
+
+Outputs:
+
+  BasicMicrovmImageArn:
+    Description: Pass to run-microvm --image-identifier
+    Value: !Ref BasicMicrovmImage
+
+  MicrovmExecutionRoleArn:
+    Description: Pass to run-microvm --execution-role-arn
+    Value: !GetAtt MicrovmExecutionRole.Arn
+
+  MicrovmLogGroupName:
+    Value: !Ref MicrovmLogGroup
+
+  RunMicrovmCommand:
+    Description: Launches one MicroVM - suspends after 5 min idle, terminates 1 hour later, hard stop after 2 hours
+    Value: !Sub >-
+      aws lambda-microvms run-microvm --region ${AWS::Region}
+      --image-identifier ${BasicMicrovmImage}
+      --execution-role-arn ${MicrovmExecutionRole.Arn}
+      --ingress-network-connectors arn:${AWS::Partition}:lambda:${AWS::Region}:aws:network-connector:aws-network-connector:HTTP_INGRESS
+      --egress-network-connectors arn:${AWS::Partition}:lambda:${AWS::Region}:aws:network-connector:aws-network-connector:INTERNET_EGRESS
+      --idle-policy autoResumeEnabled=true,maxIdleDurationSeconds=300,suspendedDurationSeconds=3600
+      --maximum-duration-in-seconds 7200
+      --logging cloudWatch={logGroup=${MicrovmLogGroup}}

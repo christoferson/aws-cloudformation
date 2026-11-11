@@ -1,0 +1,446 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda MicroVM multi-tenant code sandbox - one isolated MicroVM per tenant, session broker, lifecycle hooks
+
+# -----------------------------------------------------------------------------
+# Summary
+#   A SaaS "run my code" backend, the pattern behind AI code interpreters and
+#   browser IDEs. Each tenant gets its OWN MicroVM: own kernel, memory and disk.
+#   Tenant A's code can crash, fork-bomb or read every file it likes, and
+#   tenant B never notices.
+#
+#     your backend ── invoke {action: open, tenantId} ──► SessionBrokerFunction
+#                                                          │ 1. table lookup
+#                                                          │ 2. reuse the live MicroVM,
+#                                                          │    or RunMicrovm (tenant -> /run hook)
+#                                                          │ 3. CreateMicrovmAuthToken (port 8080 only)
+#     client ◄── {url, headers, 15 min} ───────────────────┘
+#     client ── POST /exec {"code": ...} ──► https://<id>.lambda-microvm.<region>.on.aws
+#
+#   The broker is the only thing allowed to start MicroVMs or mint tokens. The
+#   client talks to the MicroVM directly; there is no load balancer, and one
+#   endpoint always means one MicroVM.
+#
+#   Inside the image (app/sandbox/server.py):
+#     8080  tenant API: POST /exec runs Python in /workspace, GET /health
+#     9000  lifecycle hooks. Tokens are scoped to 8080, so nobody outside can
+#           call /run or /terminate on someone's MicroVM
+#     /ready     build: imports done -> snapshot
+#     /validate  build: runs code once on the new snapshot, so Lambda can
+#                prefetch the pages /exec touches
+#     /run       receives {"tenantId"} from RunMicrovm's runHookPayload
+#     /suspend /resume /terminate  logged
+#
+#   Idle tenants cost nothing for compute: after MaxIdleSeconds without
+#   traffic the MicroVM suspends (memory + disk kept), the next request
+#   auto-resumes it, and SuspendedSeconds later Lambda terminates it.
+#
+# Resources created
+#   - AWS::Lambda::MicrovmImage (hooks on port 9000)
+#   - AWS::Lambda::Function (session broker) + role + log group
+#   - AWS::DynamoDB::Table (tenantId -> microvmId, TTL)
+#   - 2 x AWS::IAM::Role for the image (build, execution) + log group
+#
+# Pre-requisites
+#   - sandbox-app.zip and broker.zip in an S3 bucket in THIS Region:
+#     python package.py <bucket>
+#   - Lambda MicroVMs available in the Region; account memory quota for as many
+#     concurrent tenants as you expect (RUNNING + SUSPENDED both count)
+#   - The deploying principal needs iam:PassRole and lambda:PassNetworkConnector
+#
+# Assumptions
+#   - Runtime egress is the public internet unless RuntimeEgressConnectorArn is
+#     set. For untrusted code, point it at the VPC connector from
+#     lambda-microvm-vpc-egress.yaml to control what tenants can reach
+#   - The image execution role is shared by all tenants and is assumed to be
+#     reachable from tenant code, so it only writes logs
+#   - No OS capabilities beyond the default set, and tenant code runs as an
+#     unprivileged user
+#   - State lives at most MaxDurationSeconds (8 h max). Persist anything
+#     important outside the MicroVM
+#   - Terminate tenant MicroVMs (action: close) before deleting the stack
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Code artifacts
+        Parameters:
+          - CodeArtifactBucket
+          - SandboxArtifactKey
+          - BrokerArtifactKey
+      - Label:
+          default: MicroVM image
+        Parameters:
+          - BaseImageVersion
+          - CpuArchitecture
+          - BaselineMemoryInMiB
+      - Label:
+          default: Tenant session lifecycle
+        Parameters:
+          - MaxIdleSeconds
+          - SuspendedSeconds
+          - MaxDurationSeconds
+          - TokenMinutes
+          - RuntimeEgressConnectorArn
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  CodeArtifactBucket:
+    Type: String
+    Description: S3 bucket (same Region) holding sandbox-app.zip and broker.zip
+
+  SandboxArtifactKey:
+    Type: String
+    Default: microvms/sandbox-app.zip
+    Description: MicroVM application zip (Dockerfile + server.py at the root)
+
+  BrokerArtifactKey:
+    Type: String
+    Default: microvms/broker.zip
+    Description: Session broker Lambda zip (broker.py + vendored boto3)
+
+  BaseImageVersion:
+    Type: String
+    Default: "3"
+    Description: Managed AL2023 base image version - list with aws lambda-microvms list-managed-microvm-image-versions
+
+  CpuArchitecture:
+    Type: String
+    Default: ARM_64
+    AllowedValues: [ARM_64, X86_64]
+    Description: Must match the container FROM image
+
+  BaselineMemoryInMiB:
+    Type: Number
+    Default: 1024
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+    Description: Per-tenant baseline (vCPU = memory / 2 GB), bursts to 4x while the tenant's code runs
+
+  MaxIdleSeconds:
+    Type: Number
+    Default: 600
+    MinValue: 60
+    MaxValue: 28800
+    Description: Seconds with no requests before a tenant's MicroVM suspends
+
+  SuspendedSeconds:
+    Type: Number
+    Default: 3600
+    MinValue: 0
+    Description: Seconds a suspended MicroVM is kept before Lambda terminates it and its /workspace is gone
+
+  MaxDurationSeconds:
+    Type: Number
+    Default: 28800
+    MinValue: 60
+    MaxValue: 28800
+    Description: Hard lifetime per MicroVM, running + suspended
+
+  TokenMinutes:
+    Type: Number
+    Default: 15
+    MinValue: 1
+    MaxValue: 60
+    Description: Lifetime of the endpoint token handed to the client. The client calls open again to refresh
+
+  RuntimeEgressConnectorArn:
+    Type: String
+    Default: ""
+    Description: Empty = public internet. Set to a VPC egress network connector ARN to route tenant traffic through your VPC
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # IAM Roles - MicroVM image
+  # ---------------------------------------------------------------
+
+  SandboxBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+      # Also the role the /ready and /validate hooks run under
+      Policies:
+        - PolicyName: microvm-build
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${CodeArtifactBucket}/${SandboxArtifactKey}"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt SandboxLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-sandbox-build-role"
+
+  SandboxExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+      # Shared by every tenant's MicroVM and the runtime hooks. Treat it as
+      # usable by tenant code: never add data access (S3, DynamoDB, Secrets) here
+      Policies:
+        - PolicyName: microvm-runtime-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt SandboxLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-sandbox-execution-role"
+
+  # ---------------------------------------------------------------
+  # Log Groups
+  # ---------------------------------------------------------------
+
+  SandboxLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda-microvms/${Application}/${Environment}/sandbox"
+      RetentionInDays: 7
+
+  SessionBrokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/lambda/${Application}/${Environment}/session-broker"
+      RetentionInDays: 7
+
+  # ---------------------------------------------------------------
+  # MicroVM Image
+  # ---------------------------------------------------------------
+
+  SandboxMicrovmImage:
+    Type: AWS::Lambda::MicrovmImage
+    Properties:
+      Name: !Sub "${Application}-${Environment}-sandbox"
+      Description: Per-tenant Python code sandbox with lifecycle hooks
+      BaseImageArn: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:aws:microvm-image:al2023-1"
+      BaseImageVersion: !Ref BaseImageVersion
+      BuildRoleArn: !GetAtt SandboxBuildRole.Arn
+      CodeArtifact:
+        Uri: !Sub "s3://${CodeArtifactBucket}/${SandboxArtifactKey}"
+      CpuConfigurations:
+        - Architecture: !Ref CpuArchitecture
+      Resources:
+        - MinimumMemoryInMiB: !Ref BaselineMemoryInMiB
+      # Build time only: dnf install python3. What tenants reach at runtime is set by the broker
+      EgressNetworkConnectors:
+        - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:aws:network-connector:aws-network-connector:INTERNET_EGRESS"
+      # Do NOT set ALL for untrusted code: it would let tenant code mount
+      # filesystems, load eBPF programs and build network namespaces
+      AdditionalOsCapabilities: []
+      Hooks:
+        # A separate hook port. Client tokens only open 8080, so 9000 is not reachable through the endpoint
+        Port: 9000
+        MicrovmImageHooks:
+          Ready: ENABLED
+          ReadyTimeoutInSeconds: 300
+          Validate: ENABLED
+          ValidateTimeoutInSeconds: 120
+        MicrovmHooks:
+          # Traffic is held until /run returns 200, so a tenant never sees an uninitialized MicroVM
+          Run: ENABLED
+          RunTimeoutInSeconds: 10
+          Suspend: ENABLED
+          SuspendTimeoutInSeconds: 10
+          Resume: ENABLED
+          ResumeTimeoutInSeconds: 10
+          Terminate: ENABLED
+          TerminateTimeoutInSeconds: 10
+      # Image-wide, identical for every tenant. Per-tenant values go in runHookPayload instead
+      EnvironmentVariables:
+        - Key: APP_PORT
+          Value: "8080"
+        - Key: HOOK_PORT
+          Value: "9000"
+        - Key: WORKSPACE
+          Value: /workspace
+        - Key: EXEC_TIMEOUT_SECONDS
+          Value: "30"
+      Logging:
+        CloudWatch:
+          LogGroup: !Ref SandboxLogGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-sandbox-microvm-image"
+
+  # ---------------------------------------------------------------
+  # Tenant -> MicroVM mapping
+  # ---------------------------------------------------------------
+
+  TenantSessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Application}-${Environment}-tenant-sessions"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tenantId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenantId
+          KeyType: HASH
+      # Records expire with the MicroVM's maximum duration. The broker also checks
+      # GetMicrovm, so an early termination (idle timeout) is handled before TTL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-tenant-sessions-table"
+
+  # ---------------------------------------------------------------
+  # IAM Role - session broker
+  # ---------------------------------------------------------------
+
+  SessionBrokerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: session-broker
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # MicroVM actions are authorized against the IMAGE the MicroVM runs
+              # from, so this role can only touch MicroVMs of the sandbox image
+              - Sid: ManageTenantMicrovms
+                Effect: Allow
+                Action:
+                  - lambda:RunMicrovm
+                  - lambda:GetMicrovm
+                  - lambda:TerminateMicrovm
+                  - lambda:CreateMicrovmAuthToken
+                Resource: !Ref SandboxMicrovmImage
+              # RunMicrovm requires this for the ingress/egress connectors it attaches
+              - Sid: AttachNetworkConnectors
+                Effect: Allow
+                Action: lambda:PassNetworkConnector
+                Resource: "*"
+              - Sid: PassSandboxExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt SandboxExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
+              - Sid: TenantSessions
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt TenantSessionTable.Arn
+              - Sid: BrokerLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt SessionBrokerLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-session-broker-role"
+
+  # ---------------------------------------------------------------
+  # Session broker
+  # ---------------------------------------------------------------
+
+  SessionBrokerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Application}-${Environment}-session-broker"
+      Description: Opens and closes one isolated MicroVM per tenant and issues endpoint tokens
+      Runtime: python3.13
+      Handler: broker.handler
+      Role: !GetAtt SessionBrokerLambdaExecutionRole.Arn
+      # Covers waiting for PENDING -> RUNNING on a cold launch
+      Timeout: 90
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref CodeArtifactBucket
+        S3Key: !Ref BrokerArtifactKey
+      LoggingConfig:
+        LogGroup: !Ref SessionBrokerLogGroup
+      Environment:
+        Variables:
+          SESSION_TABLE: !Ref TenantSessionTable
+          IMAGE_ARN: !Ref SandboxMicrovmImage
+          EXECUTION_ROLE_ARN: !GetAtt SandboxExecutionRole.Arn
+          LOG_GROUP: !Ref SandboxLogGroup
+          INGRESS_CONNECTORS: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:aws:network-connector:aws-network-connector:HTTP_INGRESS"
+          EGRESS_CONNECTORS: !Ref RuntimeEgressConnectorArn
+          TENANT_PORT: "8080"
+          TOKEN_MINUTES: !Ref TokenMinutes
+          MAX_IDLE_SECONDS: !Ref MaxIdleSeconds
+          SUSPENDED_SECONDS: !Ref SuspendedSeconds
+          MAX_DURATION_SECONDS: !Ref MaxDurationSeconds
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-session-broker-function"
+
+Outputs:
+
+  SessionBrokerFunctionName:
+    Description: Invoke with {"action":"open|status|close","tenantId":"acme"}
+    Value: !Ref SessionBrokerFunction
+
+  SandboxMicrovmImageArn:
+    Value: !Ref SandboxMicrovmImage
+
+  TenantSessionTableName:
+    Value: !Ref TenantSessionTable
+
+  SandboxLogGroupName:
+    Description: Build logs plus one stream per tenant launch (tenant/<tenantId>/<generation>)
+    Value: !Ref SandboxLogGroup

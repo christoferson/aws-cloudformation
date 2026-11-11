@@ -1,0 +1,253 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda MicroVM VPC networking - egress connector limited to one internal destination, private ingress endpoint
+
+# -----------------------------------------------------------------------------
+# Summary
+#   By default a MicroVM's outbound traffic goes straight to the internet. For a
+#   sandbox running tenant- or AI-generated code that is the exfiltration path:
+#   anything the code can read, it can POST anywhere. This stack replaces that
+#   default with your VPC, and opens a private way in:
+#
+#     Egress   MicrovmNetworkConnector puts ENIs in your subnets. MicroVMs run
+#              with this connector send ALL outbound traffic through them, so
+#              your security group, route tables and NACLs decide what tenant
+#              code can reach. MicrovmEgressSecurityGroup allows exactly one
+#              destination (AllowedDestinationCidr:AllowedDestinationPort), for
+#              example an internal package mirror or datasets API, and nothing
+#              else: no internet, even if the subnets have a NAT gateway
+#     Ingress  MicrovmConnectivityEndpoint (com.amazonaws.<region>.lambda-microvm)
+#              lets clients inside the VPC reach MicroVM endpoints over
+#              PrivateLink. With private DNS on, the normal endpoint hostname
+#              resolves to it, so no client change is needed. Its policy only
+#              allows connections to MicroVMs owned by this account
+#
+#   Use it from lambda-microvm-multi-tenant.yaml by setting
+#   RuntimeEgressConnectorArn to the NetworkConnectorArn output.
+#
+# Resources created
+#   - AWS::Lambda::NetworkConnector (VPC egress, MicroVm)
+#   - AWS::IAM::Role (connector operator - manages the ENIs)
+#   - 2 x AWS::EC2::SecurityGroup (connector egress, endpoint ingress)
+#   - AWS::EC2::VPCEndpoint (Interface, lambda-microvm)
+#
+# Pre-requisites
+#   - A VPC with DNS support and DNS hostnames enabled
+#   - Private subnets in at least two Availability Zones with free IP addresses
+#   - The destination must allow inbound from MicrovmEgressSecurityGroup
+#   - The deploying principal needs iam:PassRole on the operator role
+#
+# Assumptions
+#   - Security groups don't filter traffic to the Amazon-provided DNS resolver,
+#     so tenant code can still resolve names; it just can't connect to them
+#   - The connector's compute type (MicroVm) is fixed. A connector for web
+#     functions is a separate resource
+#   - Updating the connector creates a new immutable version. The unqualified
+#     ARN follows the latest version, the version-qualified ARN pins one. Either
+#     way, terminate MicroVMs using the connector before updating or deleting it
+#   - Auth tokens are still required through the private endpoint; the
+#     endpoint policy is an extra filter, not a replacement
+# -----------------------------------------------------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - Application
+          - Environment
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - VpcCidrBlock
+          - VpcSubnetIdList
+      - Label:
+          default: What tenant code may reach
+        Parameters:
+          - AllowedDestinationCidr
+          - AllowedDestinationPort
+
+Parameters:
+
+  Application:
+    Type: String
+    Default: myapp
+    Description: Application name used as a prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prod]
+    Description: Deployment environment
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the connector ENIs and the private ingress endpoint
+
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+    Description: IPv4 CIDR of the VPC - clients allowed to use the private ingress endpoint
+
+  VpcSubnetIdList:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets in at least two Availability Zones (1 to 16)
+
+  AllowedDestinationCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+    Description: The only network tenant code can connect to, for example your internal API subnet
+
+  AllowedDestinationPort:
+    Type: Number
+    Default: 443
+    MinValue: 1
+    MaxValue: 65535
+    Description: The only TCP port tenant code can connect to on that network
+
+Resources:
+
+  # ---------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------
+
+  MicrovmEgressSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Lambda MicroVM egress connector - one internal destination only
+      VpcId: !Ref VpcId
+      # Declaring any egress rule removes the default allow-all rule. This is the
+      # line that takes the internet away from tenant code
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: !Ref AllowedDestinationPort
+          ToPort: !Ref AllowedDestinationPort
+          CidrIp: !Ref AllowedDestinationCidr
+          Description: Internal service tenant code is allowed to call
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-microvm-egress-securitygroup"
+
+  MicrovmEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Lambda MicroVM private ingress endpoint - HTTPS from the VPC
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCidrBlock
+          Description: Clients in the VPC connecting to MicroVM endpoints
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-microvm-endpoint-securitygroup"
+
+  # ---------------------------------------------------------------
+  # IAM Role - connector operator
+  # ---------------------------------------------------------------
+
+  # Lambda assumes this to create the connector's ENIs. It is not the MicroVM
+  # execution role, and tenant code never gets it
+  NetworkConnectorOperatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: network-connector-eni
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CreateEni
+                Effect: Allow
+                Action: ec2:CreateNetworkInterface
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+              - Sid: TagEni
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+                Condition:
+                  StringEquals:
+                    ec2:ManagedResourceOperator: network-connectors.lambda.amazonaws.com
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-microvm-connector-operator-role"
+
+  # ---------------------------------------------------------------
+  # Egress - network connector
+  # ---------------------------------------------------------------
+
+  MicrovmNetworkConnector:
+    Type: AWS::Lambda::NetworkConnector
+    Properties:
+      Name: !Sub "${Application}-${Environment}-microvm-egress"
+      OperatorRole: !GetAtt NetworkConnectorOperatorRole.Arn
+      Configuration:
+        VpcEgressConfiguration:
+          AssociatedComputeResourceTypes:
+            - MicroVm
+          NetworkProtocol: IPv4
+          SubnetIds: !Ref VpcSubnetIdList
+          SecurityGroupIds:
+            - !Ref MicrovmEgressSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-microvm-egress-connector"
+
+  # ---------------------------------------------------------------
+  # Ingress - private endpoint for MicroVM connectivity
+  # ---------------------------------------------------------------
+
+  MicrovmConnectivityEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.lambda-microvm"
+      VpcEndpointType: Interface
+      VpcId: !Ref VpcId
+      SubnetIds: !Ref VpcSubnetIdList
+      SecurityGroupIds:
+        - !Ref MicrovmEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      # Connections carry a MicroVM token, not SigV4, so they are evaluated as an
+      # anonymous principal: Principal and Resource must be "*". Scope by the
+      # MicroVM owner instead. ConnectMicrovm is valid only in endpoint policies
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OnlyThisAccountsMicrovms
+            Effect: Allow
+            Principal: "*"
+            Action: lambda:ConnectMicrovm
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:ResourceAccount: !Ref AWS::AccountId
+
+Outputs:
+
+  NetworkConnectorArn:
+    Description: Unqualified ARN (always the latest version). Pass to run-microvm --egress-network-connectors, or as RuntimeEgressConnectorArn of the multi-tenant stack
+    Value: !Ref MicrovmNetworkConnector
+
+  NetworkConnectorLatestVersionArn:
+    Description: Version-qualified ARN, to pin MicroVMs to this exact configuration
+    Value: !GetAtt MicrovmNetworkConnector.LatestVersionArn
+
+  MicrovmEgressSecurityGroupId:
+    Description: Allow inbound from this group on the destination service
+    Value: !Ref MicrovmEgressSecurityGroup
+
+  MicrovmConnectivityEndpointId:
+    Value: !Ref MicrovmConnectivityEndpoint
